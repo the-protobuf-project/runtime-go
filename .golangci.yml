@@ -1,0 +1,153 @@
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    # ── Correctness ───────────────────────────────────────────────────────────
+    - errcheck       # unchecked errors
+    - govet          # go vet checks
+    - staticcheck    # SA/QF/ST/S rules from staticcheck.io
+    - ineffassign    # assignments whose value is never used
+    - unused         # unexported symbols that are never used
+    - nilerr         # returns nil when err != nil (logic inversion bug)
+    - nilnil         # simultaneously returns nil error and nil value
+    - durationcheck  # two time.Duration values multiplied together
+    - wastedassign   # assigned value is never read before next assignment
+    - bodyclose      # HTTP response body not closed
+    - noctx          # net/http calls without a context
+    - errorlint      # errors compared without errors.Is / errors.As
+    - makezero       # slices made with non-zero length and then append'd
+
+    # ── Security ──────────────────────────────────────────────────────────────
+    - gosec          # common security issues (with exclusions below)
+    - nolintlint     # malformed or unjustified //nolint directives
+
+    # ── Code quality ──────────────────────────────────────────────────────────
+    - misspell       # typos in comments and string literals
+    - gocritic       # diagnostic + performance checks
+    - prealloc       # slices that could be pre-allocated
+    - unconvert      # unnecessary type conversions
+    - unparam        # parameters always called with the same value
+    - copyloopvar    # loop variable captured by closure (pre-Go-1.22 compat)
+    - revive         # drop-in golint replacement
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # not worth the forced struct reordering in a library
+        # reflect.Ptr is deprecated in favour of reflect.Pointer — a migration
+        # task, not a correctness issue. Disable until the rename is done.
+        - inline
+
+    gosec:
+      excludes:
+        # File paths come from the caller — intentional in config/io.go.
+        - G304
+        # exec.Command arguments are string literals, not user input.
+        - G204
+        # uint64 → int64 for ULID timestamps; epoch ms won't overflow int64
+        # for ~292 million years, so this is not a real risk.
+        - G115
+        # InsecureSkipVerify is set intentionally in grpc/h1.go with a comment
+        # directing callers to swap it for RootCAs in production.
+        - G402
+        # math/rand used only for selecting a display message, not for secrets.
+        - G404
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+      disabled-checks:
+        - hugeParam         # value-receiver structs are intentional
+
+    revive:
+      rules:
+        # Allow "Get" prefix on methods — backward-compat aliases use it.
+        - name: var-naming
+          disabled: true
+        # doc-comment format enforcement produces too much noise across the
+        # codebase; disable until a dedicated comment-style pass is done.
+        - name: exported
+          disabled: true
+
+    errcheck:
+      # Blank-identifier assignments (e.g. _ = body.Close()) are intentional.
+      check-blank: false
+      # Type assertions already use the two-value form throughout.
+      check-type-assertions: false
+
+    misspell:
+      locale: US
+
+  exclusions:
+    rules:
+      # Test files: relax error-handling and security checks.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+
+      # Generated GraphQL server code.
+      - path: generated\.go
+        linters:
+          - errcheck
+          - govet
+          - staticcheck
+          - revive
+          - gocritic
+          - unused
+
+      # Example programs are illustrative, not production code.
+      - path: (examples|example)/
+        linters:
+          - errcheck
+          - gosec
+          - unparam
+          - gocritic
+          - revive
+          - misspell
+
+      # system/linux intentionally calls privileged OS commands.
+      - path: system/linux/
+        linters:
+          - gosec
+          - noctx
+
+      # The package-level Generate() / GenerateString() panics in ulid are
+      # documented design choices (only fails when crypto/rand is broken).
+      - path: ulid/ulid\.go
+        text: "calls to panic"
+        linters:
+          - revive
+
+      # charmbracelet/log Logger methods unexpectedly return errors;
+      # checking them everywhere adds noise with no actionable signal.
+      - source: "Pulse\\.Logger\\."
+        linters:
+          - errcheck
+          - gosec
+
+      # defer resp.Body.Close() after the body has been read — the close
+      # error is never actionable at that point.
+      - source: "defer resp\\.Body\\.Close\\(\\)"
+        linters:
+          - errcheck
+
+      # net.Listen in startGRPCServer — server binding does not need a
+      # context; noctx targets outbound HTTP calls, not server listeners.
+      - path: grpc/grpc\.go
+        linters:
+          - noctx
+
+
+issues:
+  # Surface every finding — do not cap per-linter or per-type.
+  max-issues-per-linter: 0
+  max-same-issues: 0

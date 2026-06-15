@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+  GOLANGCI_LINT_VERSION: "v2.12.2"
+
+jobs:
+  # ------------------------------------------------------------------
+  # Detect which workspace modules exist so we can fan-out per module.
+  # ------------------------------------------------------------------
+  detect-modules:
+    name: Detect modules
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Parse go.work and emit matrix
+        id: set-matrix
+        run: |
+          # Extract module directories from go.work, skip lines that aren't paths
+          modules=$(grep -E '^\s+\./[a-z]' go.work | tr -d ' \t' | sed 's|^\./||')
+          # Filter to only directories that actually have a go.mod
+          valid=()
+          for m in $modules; do
+            if [ -f "$m/go.mod" ]; then
+              valid+=("$m")
+            fi
+          done
+          # Build JSON array
+          json=$(printf '%s\n' "${valid[@]}" | jq -R . | jq -cs .)
+          echo "matrix={\"module\":$json}" >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------------------------------
+  # Build and test every module in parallel.
+  # ------------------------------------------------------------------
+  test:
+    name: Test (${{ matrix.module }})
+    needs: detect-modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-modules.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Sync workspace
+        run: go work sync
+
+      - name: Vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./... -race -timeout 120s -coverprofile=coverage.out -covermode=atomic
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage-${{ matrix.module }}
+          path: ${{ matrix.module }}/coverage.out
+          retention-days: 7
+
+  # ------------------------------------------------------------------
+  # Lint — runs golangci-lint across every module.
+  # ------------------------------------------------------------------
+  lint:
+    name: Lint (${{ matrix.module }})
+    needs: detect-modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-modules.outputs.matrix) }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Sync workspace
+        run: go work sync
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          working-directory: ${{ matrix.module }}
+          args: --timeout=5m
+
+  # ------------------------------------------------------------------
+  # Single status gate that PRs can require before merge.
+  # ------------------------------------------------------------------
+  ci-gate:
+    name: CI gate
+    runs-on: ubuntu-latest
+    needs: [test, lint]
+    if: always()
+    steps:
+      - name: Check all jobs passed
+        run: |
+          if [[ "${{ needs.test.result }}" != "success" || "${{ needs.lint.result }}" != "success" ]]; then
+            echo "One or more CI jobs failed."
+            exit 1
+          fi
+          echo "All CI jobs passed."

@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # Workspace-wide release:  v1.2.3
+      # Module-scoped release:   ulid/v1.2.3  network/v0.5.0  etc.
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+      - "*/v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # full history for changelog generation
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Sync workspace
+        run: go work sync
+
+      # Determine which module this tag targets.
+      # Tags like "ulid/v1.2.3" scope to the ulid module;
+      # tags like "v1.2.3" are workspace-wide.
+      - name: Identify module scope
+        id: scope
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [[ "$TAG" == *"/"* ]]; then
+            MODULE="${TAG%%/*}"
+            VERSION="${TAG#*/}"
+          else
+            MODULE="."
+            VERSION="$TAG"
+          fi
+          echo "module=$MODULE" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # Run tests for the tagged module before publishing
+      - name: Test tagged module
+        run: |
+          MODULE="${{ steps.scope.outputs.module }}"
+          if [ "$MODULE" = "." ]; then
+            # workspace-wide tag — test everything
+            for dir in $(grep -E '^\s+\./[a-z]' go.work | tr -d ' \t' | sed 's|^\./||'); do
+              if [ -f "$dir/go.mod" ]; then
+                (cd "$dir" && go test ./... -race -timeout 120s)
+              fi
+            done
+          else
+            (cd "$MODULE" && go test ./... -race -timeout 120s)
+          fi
+
+      # Build release binaries if an examples/cmd directory exists
+      - name: Build release artifacts
+        id: artifacts
+        run: |
+          MODULE="${{ steps.scope.outputs.module }}"
+          VERSION="${{ steps.scope.outputs.version }}"
+          mkdir -p dist
+          if [ "$MODULE" != "." ] && [ -d "$MODULE/cmd" ]; then
+            GOOS=linux  GOARCH=amd64 go build -C "$MODULE" -o "../dist/${MODULE}_linux_amd64"   ./cmd/...
+            GOOS=linux  GOARCH=arm64 go build -C "$MODULE" -o "../dist/${MODULE}_linux_arm64"   ./cmd/...
+            GOOS=darwin GOARCH=arm64 go build -C "$MODULE" -o "../dist/${MODULE}_darwin_arm64"  ./cmd/...
+          fi
+          echo "has_artifacts=$(ls dist/ 2>/dev/null | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+
+      # Generate a changelog from commits since the previous tag
+      - name: Generate changelog
+        id: changelog
+        run: |
+          TAG="${{ steps.scope.outputs.tag }}"
+          MODULE="${{ steps.scope.outputs.module }}"
+
+          # Find the previous tag for this module (or any tag for workspace-wide)
+          if [ "$MODULE" = "." ]; then
+            PREV=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | sed -n '2p')
+          else
+            PREV=$(git tag --sort=-version:refname | grep -E "^${MODULE}/v" | sed -n '2p')
+          fi
+
+          if [ -z "$PREV" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV}..HEAD"
+          fi
+
+          NOTES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges | head -50)
+          if [ -z "$NOTES" ]; then
+            NOTES="No changes listed."
+          fi
+
+          # Write to a file to avoid shell quoting issues
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$NOTES"
+            echo ""
+            if [ "$MODULE" != "." ]; then
+              echo "**Module:** \`github.com/the-protobuf-project/runtime-go/${MODULE}\`"
+            fi
+            echo "**Full diff:** https://github.com/${{ github.repository }}/compare/${PREV}...${TAG}"
+          } > release_notes.md
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.scope.outputs.tag }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: |
+            dist/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
