@@ -11,4 +11,4 @@ Issues and pull requests are welcome. Please open an issue before submitting a l
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
-© 2026 oh-tarnished
+© 2026 the-protobuf-project
