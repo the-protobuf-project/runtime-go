@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	mcpRuntime "github.com/machanirobotics/grpc-mcp-gateway/runtime"
+	mcpRuntime "github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
 	"google.golang.org/grpc"
 )
 

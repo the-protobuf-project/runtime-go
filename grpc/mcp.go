@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/machanirobotics/grpc-mcp-gateway/runtime"
+	"github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 )
 

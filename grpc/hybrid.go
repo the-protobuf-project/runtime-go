@@ -32,6 +32,13 @@ type HybridServer struct {
 	cert             *tls.Certificate   // TLS certificate for secure connections
 	dashboardFS      fs.FS              // caller-provided FS containing *.json dashboard files
 	dashboardFSDir   string             // sub-directory inside dashboardFS to scan (e.g. ".grafana")
+
+	// restMarshal / restUnmarshal configure the grpc-gateway JSON codec. They
+	// default to camelCase field names with EmitUnpopulated and are applied when
+	// the mux is built (after functional options run), so options such as
+	// WithRESTSnakeCase can override them.
+	restMarshal   protojson.MarshalOptions
+	restUnmarshal protojson.UnmarshalOptions
 }
 
 // NewHybridServer constructs a new HybridServer with the given base options.
@@ -49,21 +56,37 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 
 	s := &HybridServer{
 		opts: opts,
-		// EmitUnpopulated ensures default values (false, 0, "", []) appear in JSON
-		// responses so clients receive the full Grafana dashboard shape.
-		mux: runtime.NewServeMux(
-			runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
-				MarshalOptions: protojson.MarshalOptions{
-					EmitUnpopulated: true,
-					UseProtoNames:   false, // keep camelCase JSON names
-				},
-				UnmarshalOptions: protojson.UnmarshalOptions{
-					DiscardUnknown: true,
-				},
-			}),
-		),
+		// Defaults: EmitUnpopulated ensures default values (false, 0, "", [])
+		// appear in JSON responses so clients receive the full Grafana dashboard
+		// shape; camelCase field names match the historical gateway behavior.
+		restMarshal: protojson.MarshalOptions{
+			EmitUnpopulated: true,
+			UseProtoNames:   false, // camelCase JSON names by default
+		},
+		restUnmarshal: protojson.UnmarshalOptions{
+			DiscardUnknown: true,
+		},
 	}
-	shared.Pulse.Logger.Debugf("NewHybridServer: grpc-gateway mux created (EmitUnpopulated=true, camelCase JSON)")
+
+	shared.Pulse.Logger.Debugf("NewHybridServer: applying %d functional option(s)", len(extraOpts))
+	for _, o := range extraOpts {
+		o(s)
+	}
+
+	// Build the gateway mux after options run so codec overrides (e.g.
+	// WithRESTSnakeCase / WithRESTMarshaler) take effect.
+	s.mux = runtime.NewServeMux(
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions:   s.restMarshal,
+			UnmarshalOptions: s.restUnmarshal,
+		}),
+		// Map gRPC codes to proper HTTP statuses with a consistent JSON envelope.
+		// Routing errors (404/405/400) are funneled through this handler by
+		// grpc-gateway's default routing error handler.
+		runtime.WithErrorHandler(httpErrorHandler),
+	)
+	shared.Pulse.Logger.Debugf("NewHybridServer: grpc-gateway mux created (EmitUnpopulated=%t, UseProtoNames=%t)",
+		s.restMarshal.EmitUnpopulated, s.restMarshal.UseProtoNames)
 
 	if opts.ExperimentalHttp3 {
 		shared.Pulse.Logger.Debugf("NewHybridServer: HTTP/3 experimental enabled — pre-creating http3.Server on port %d", opts.HTTP.Port+1)
@@ -71,11 +94,6 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 			Addr:    fmt.Sprintf("%s:%d", opts.HTTP.Host, opts.HTTP.Port+1),
 			Handler: s.mux,
 		}
-	}
-
-	shared.Pulse.Logger.Debugf("NewHybridServer: applying %d functional option(s)", len(extraOpts))
-	for _, o := range extraOpts {
-		o(s)
 	}
 
 	return s
@@ -97,6 +115,28 @@ func WithHTTPGateways(services ...HTTPServiceFunc) Option {
 	return func(s *HybridServer) {
 		shared.Pulse.Logger.Debugf("WithHTTPGateways: appending %d HTTP gateway func(s)", len(services))
 		s.httpServiceFuncs = append(s.httpServiceFuncs, services...)
+	}
+}
+
+// WithRESTSnakeCase returns a server Option that makes the HTTP/REST gateway
+// emit and accept snake_case JSON field names (proto field names) instead of
+// the default camelCase. This matches the field naming used by the MCP layer.
+func WithRESTSnakeCase() Option {
+	return func(s *HybridServer) {
+		shared.Pulse.Logger.Debugf("WithRESTSnakeCase: enabling snake_case JSON field names")
+		s.restMarshal.UseProtoNames = true
+	}
+}
+
+// WithRESTMarshaler returns a server Option that fully overrides the protojson
+// marshal and unmarshal options used by the HTTP/REST gateway, for callers that
+// need finer control than WithRESTSnakeCase (e.g. toggling EmitUnpopulated).
+func WithRESTMarshaler(marshal protojson.MarshalOptions, unmarshal protojson.UnmarshalOptions) Option {
+	return func(s *HybridServer) {
+		shared.Pulse.Logger.Debugf("WithRESTMarshaler: overriding gateway codec (EmitUnpopulated=%t, UseProtoNames=%t, DiscardUnknown=%t)",
+			marshal.EmitUnpopulated, marshal.UseProtoNames, unmarshal.DiscardUnknown)
+		s.restMarshal = marshal
+		s.restUnmarshal = unmarshal
 	}
 }
 

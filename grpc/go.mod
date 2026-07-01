@@ -7,10 +7,10 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/joho/godotenv v1.5.1
-	github.com/machanirobotics/grpc-mcp-gateway v1.5.63
 	github.com/machanirobotics/pulse/pulse-go v0.0.0-20260524060824-a62605622128
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/quic-go/quic-go v0.60.0
+	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
