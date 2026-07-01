@@ -87,7 +87,7 @@ func (d *Driver) Get(ctx context.Context, res *store.Resource, key string) (prot
 		return nil, err
 	}
 	var out []any
-	if err := b.Call(&bind.CallOpts{Context: ctx}, &out, "get", key); err != nil {
+	if err = b.Call(&bind.CallOpts{Context: ctx}, &out, "get", key); err != nil {
 		return nil, d.classify(err)
 	}
 	if len(out) == 0 {
@@ -287,7 +287,7 @@ func page(opts store.ListOptions, total int) (offset, limit int) {
 		limit = total
 	}
 	if opts.PageToken != "" {
-		fmt.Sscanf(opts.PageToken, "%d", &offset)
+		_, _ = fmt.Sscanf(opts.PageToken, "%d", &offset)
 	}
 	if offset > total {
 		offset = total

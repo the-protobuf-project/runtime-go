@@ -30,7 +30,7 @@ func TestRevertToError(t *testing.T) {
 		t.Errorf("unrecognized reason: got %v", got)
 	}
 	// No reason → the original error passes through.
-	if got := revertToError(base, ""); got != base {
+	if got := revertToError(base, ""); !errors.Is(got, base) {
 		t.Errorf("empty reason should pass the original error, got %v", got)
 	}
 }

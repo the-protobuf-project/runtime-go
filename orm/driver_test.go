@@ -116,7 +116,7 @@ func TestDriverCRUD(t *testing.T) {
 	}
 
 	// Update the title.
-	if _, err := d.Update(ctx, res, newBook(md, "books/dune", "Dune (1965)", 1965, 1)); err != nil {
+	if _, err = d.Update(ctx, res, newBook(md, "books/dune", "Dune (1965)", 1965, 1)); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	got, _ = d.Get(ctx, res, "books/dune")
@@ -125,7 +125,7 @@ func TestDriverCRUD(t *testing.T) {
 	}
 
 	// Second record + List.
-	if _, err := d.Create(ctx, res, newBook(md, "books/hobbit", "The Hobbit", 1937, 1)); err != nil {
+	if _, err = d.Create(ctx, res, newBook(md, "books/hobbit", "The Hobbit", 1937, 1)); err != nil {
 		t.Fatalf("Create 2: %v", err)
 	}
 	lr, err := d.List(ctx, res, store.ListOptions{PageSize: 10, OrderBy: "id"})
@@ -172,7 +172,7 @@ func TestDriverManagedColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE notes (
+	if err = db.Exec(`CREATE TABLE notes (
 		id TEXT PRIMARY KEY,
 		body TEXT NOT NULL,
 		created_at DATETIME NOT NULL,

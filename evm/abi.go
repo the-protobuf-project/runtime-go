@@ -30,15 +30,6 @@ func inputTuple(parsed abi.ABI, method string) (abi.Type, error) {
 	return m.Inputs[0].Type, nil
 }
 
-// outputTuple returns the record tuple type of get()'s single output.
-func outputTuple(parsed abi.ABI) (abi.Type, error) {
-	m, ok := parsed.Methods["get"]
-	if !ok || len(m.Outputs) != 1 || m.Outputs[0].Type.T != abi.TupleTy {
-		return abi.Type{}, fmt.Errorf("evm: ABI get() does not return a single tuple")
-	}
-	return m.Outputs[0].Type, nil
-}
-
 // encodeRecord builds the go-ethereum tuple value for a record, taking column
 // values by index against the ABI tuple components (which the generator emits in
 // resource-column order).
