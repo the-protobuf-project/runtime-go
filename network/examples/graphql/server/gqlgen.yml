@@ -1,0 +1,40 @@
+# Where are all the schema files located? globs are supported eg  src/**/*.graphqls
+schema:
+  - schema.graphqls
+
+# Where should the generated server code go?
+exec:
+  filename: generated.go
+  package: main
+
+# Where should any generated models go?
+model:
+  filename: models_gen.go
+  package: main
+
+# Where should the resolver implementations go?
+resolver:
+  layout: follow-schema
+  dir: .
+  package: main
+  filename_template: "{name}.resolvers.go"
+
+# Optional: turn on to not generate the gqlgen schema stitching runtime code
+# skip_runtime: true
+
+# Optional: turn on to not generate the gqlgen validation code
+# skip_validation: true
+
+# gqlgen will search for any type names in the schema in these go packages
+# if they match it will use them, otherwise it will generate them.
+autobind:
+  - "github.com/the-protobuf-project/generateql/runtime/go/network/examples/graphql-gqlgen"
+
+# This section declares type mapping between the GraphQL and go type systems
+models:
+  ID:
+    model:
+      - github.com/99designs/gqlgen/graphql.ID
+      - github.com/99designs/gqlgen/graphql.Int
+      - github.com/99designs/gqlgen/graphql.Int64
+      - github.com/99designs/gqlgen/graphql.Int32

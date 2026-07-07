@@ -5,6 +5,7 @@ use (
 	./evm
 	./fabric
 	./grpc
+	./network
 	./orm
 	./store
 )
