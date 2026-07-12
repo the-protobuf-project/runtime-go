@@ -12,8 +12,8 @@
 //	srv := grpc.NewHybridServer(options.Options{
 //	    ServiceName: "my-service",
 //	    Environment: options.Production,
-//	    GRPC:        options.GRPCOptions{Host: "0.0.0.0", Port: 50051},
-//	    HTTP:        options.HTTPOptions{Host: "0.0.0.0", Port: 8080},
+//	    GRPC:        options.Endpoint{Host: "0.0.0.0", Port: 50051},
+//	    HTTP:        options.Endpoint{Host: "0.0.0.0", Port: 8080},
 //	})
 //
 //	srv.RegisterGRPC(func(s *grpc.Server) {

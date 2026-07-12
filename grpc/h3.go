@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/quic-go/quic-go/http3"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
+	"github.com/quic-go/quic-go/http3"
 )
 
 // startHTTP3ExperimentalServer initializes and runs an experimental HTTP/3 server,

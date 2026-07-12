@@ -41,7 +41,7 @@ type GraphQLClient struct {
 // request modifier that applies ConnectionOptions.Headers (e.g. auth tokens) to
 // every request. Without this, headers set in opts would be dropped for GraphQL.
 func newGraphQLClient(fullURL string, opts ConnectionOptions) *graphql.Client {
-	client := graphql.NewClient(fullURL, &http.Client{Timeout: opts.Timeout})
+	client := graphql.NewClient(fullURL, newPooledClient(opts.Timeout))
 	if len(opts.Headers) > 0 {
 		headers := opts.Headers
 		client = client.WithRequestModifier(func(r *http.Request) {

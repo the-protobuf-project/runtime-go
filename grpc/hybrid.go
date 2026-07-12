@@ -8,9 +8,9 @@ import (
 	"net/http"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/quic-go/quic-go/http3"
 	"github.com/the-protobuf-project/runtime-go/grpc/options"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
+	"github.com/quic-go/quic-go/http3"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -25,11 +25,14 @@ type HybridServer struct {
 	mux              *runtime.ServeMux  // grpc-gateway mux
 	http3Server      *http3.Server      // experimental HTTP/3 server
 	mcpCancel        context.CancelFunc // cancels MCP server goroutines
+	mcpHTTPServer    *http.Server       // shared MCP listener fronting every service (one port)
 	mcpEndpoints     []mcpEndpointInfo  // resolved MCP endpoints (populated on start)
 	grpcServiceFuncs []GRPCServiceFunc  // registered gRPC service functions
 	httpServiceFuncs []HTTPServiceFunc  // registered HTTP gateway functions
 	mcpServiceFuncs  []MCPServiceFunc   // registered MCP service functions
 	cert             *tls.Certificate   // TLS certificate for secure connections
+	unaryInts        []grpc.UnaryServerInterceptor // caller-supplied unary interceptors (chained in order)
+	enableValidation bool               // prepend the protovalidate interceptor at Start (WithValidation)
 	dashboardFS      fs.FS              // caller-provided FS containing *.json dashboard files
 	dashboardFSDir   string             // sub-directory inside dashboardFS to scan (e.g. ".grafana")
 
@@ -115,6 +118,17 @@ func WithHTTPGateways(services ...HTTPServiceFunc) Option {
 	return func(s *HybridServer) {
 		shared.Pulse.Logger.Debugf("WithHTTPGateways: appending %d HTTP gateway func(s)", len(services))
 		s.httpServiceFuncs = append(s.httpServiceFuncs, services...)
+	}
+}
+
+// WithUnaryInterceptors returns a server Option that installs one or more
+// unary server interceptors on the gRPC server, chained in the order given
+// (after the built-in OpenTelemetry stats handler). Use it for cross-cutting
+// request middleware such as protovalidate request validation or auth.
+func WithUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) Option {
+	return func(s *HybridServer) {
+		shared.Pulse.Logger.Debugf("WithUnaryInterceptors: appending %d unary interceptor(s)", len(interceptors))
+		s.unaryInts = append(s.unaryInts, interceptors...)
 	}
 }
 
@@ -251,6 +265,14 @@ func (s *HybridServer) Stop() error {
 		shared.Pulse.Logger.Info("Shutting down MCP server...")
 		s.mcpCancel()
 		shared.Pulse.Logger.Debugf("Stop: MCP context canceled")
+	}
+	if s.mcpHTTPServer != nil {
+		shared.Pulse.Logger.Debugf("Stop: shutting down shared MCP HTTP server")
+		if err := s.mcpHTTPServer.Shutdown(context.Background()); err != nil {
+			return fmt.Errorf("failed to shutdown MCP HTTP server: %w", err)
+		}
+		s.mcpHTTPServer = nil
+		shared.Pulse.Logger.Debugf("Stop: MCP HTTP server stopped")
 	}
 	return nil
 }

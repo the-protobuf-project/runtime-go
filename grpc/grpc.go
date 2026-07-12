@@ -44,6 +44,21 @@ func (s *HybridServer) startGRPCServer() error {
 	shared.Pulse.Logger.Debugf("gRPC: setting up OpenTelemetry exporter")
 	otelServerOpts := setupOtelExporter()
 	serverOpts = append(serverOpts, otelServerOpts...)
+	// Resolve WithValidation into the interceptor chain here, before either
+	// consumer reads it: the gRPC server below, and startMCPServer (which runs
+	// after this in Start) pushing the same chain down to MCP tool dispatch.
+	if s.enableValidation {
+		validate, err := NewValidationInterceptor()
+		if err != nil {
+			return err
+		}
+		s.unaryInts = append([]grpc.UnaryServerInterceptor{validate}, s.unaryInts...)
+		s.enableValidation = false // resolved; Restart must not prepend twice
+	}
+	if len(s.unaryInts) > 0 {
+		shared.Pulse.Logger.Debugf("gRPC: chaining %d unary interceptor(s)", len(s.unaryInts))
+		serverOpts = append(serverOpts, grpc.ChainUnaryInterceptor(s.unaryInts...))
+	}
 	shared.Pulse.Logger.Debugf("gRPC: %d server option(s) configured (TLS + OTel)", len(serverOpts))
 
 	s.grpcServer = grpc.NewServer(serverOpts...)

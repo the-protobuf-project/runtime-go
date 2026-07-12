@@ -1,3 +1,4 @@
+// Package options defines configuration structures for the HybridServer.
 package options
 
 // Options defines the complete set of configuration options for a HybridServer.
