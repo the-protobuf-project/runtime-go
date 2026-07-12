@@ -15,8 +15,8 @@ const (
 	// KindUnknown is the zero value; treat as KindString.
 	KindUnknown Kind = iota
 	KindString
-	KindInt    // signed integer (proto int32/int64/sint*)
-	KindUint   // unsigned integer (proto uint32/uint64/fixed*)
+	KindInt  // signed integer (proto int32/int64/sint*)
+	KindUint // unsigned integer (proto uint32/uint64/fixed*)
 	KindBool
 	KindBytes
 	KindFloat

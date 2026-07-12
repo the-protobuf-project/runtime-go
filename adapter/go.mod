@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/the-protobuf-project/runtime-go/store v0.0.0
-	google.golang.org/grpc v1.81.1
+	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.11
 )
 
