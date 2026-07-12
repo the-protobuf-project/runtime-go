@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
+	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 )
 
 // mcpEndpointInfo carries resolved endpoint details from the OnReady callback.
