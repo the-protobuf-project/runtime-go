@@ -3,6 +3,7 @@
 // This file provides the GraphQLClient used when ClientType is GraphQLConnClient.
 // Operation methods (Query, Mutation, raw exec, Subscribe) live in the
 // graphql_ops.go, graphql_raw.go, and graphql_subscription.go files.
+
 package network
 
 import (

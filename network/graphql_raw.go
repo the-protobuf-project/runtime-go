@@ -19,9 +19,9 @@ func (g *GraphQLClient) ExecuteRawQuery(ctx context.Context, query string, varia
 			resultChan <- GraphQLResult{Error: fmt.Errorf("GraphQL client is not initialized")}
 			return
 		}
-		ctx, cancel := context.WithTimeout(ctx, g.Timeout)
+		opCtx, cancel := context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
-		raw, err := g.client.ExecRaw(ctx, query, variables)
+		raw, err := g.client.ExecRaw(opCtx, query, variables)
 		if err != nil {
 			resultChan <- GraphQLResult{Error: fmt.Errorf("failed to execute raw query: %w", err)}
 			return
@@ -53,9 +53,9 @@ func (g *GraphQLClient) ExecRawMutation(ctx context.Context, mutation any, varia
 			resultChan <- GraphQLResult{Error: fmt.Errorf("mutation must be a string")}
 			return
 		}
-		ctx, cancel := context.WithTimeout(ctx, g.Timeout)
+		opCtx, cancel := context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
-		raw, err := g.client.MutateRaw(ctx, mutationStr, variables)
+		raw, err := g.client.MutateRaw(opCtx, mutationStr, variables)
 		if err != nil {
 			resultChan <- GraphQLResult{Error: fmt.Errorf("failed to execute raw mutation: %w", err)}
 			return

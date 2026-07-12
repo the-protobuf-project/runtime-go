@@ -30,7 +30,7 @@ func (s *Subscription) Stop() error { return s.client.Close() }
 // sent as null). result must be a pointer to the typed selection; each server message
 // is decoded into a fresh value of that type and delivered (as Response) on the
 // returned Subscription's Updates channel. Headers are sent on the WebSocket handshake.
-// Cancelling ctx stops the subscription (equivalent to calling Stop); Stop still works
+// Canceling ctx stops the subscription (equivalent to calling Stop); Stop still works
 // independently.
 func (g *GraphQLClient) SubscribeFields(ctx context.Context, field string, result any, args map[string]interface{}) (*Subscription, error) {
 	rv := reflect.ValueOf(result)
@@ -73,7 +73,7 @@ func (g *GraphQLClient) SubscribeFields(ctx context.Context, field string, resul
 		}
 	}()
 
-	// Stop the subscription when ctx is cancelled. The watcher also exits when the
+	// Stop the subscription when ctx is canceled. The watcher also exits when the
 	// subscription ends on its own (done closed), so it never outlives the stream.
 	if ctx != nil {
 		go func() {
@@ -94,7 +94,9 @@ func (s *Subscription) handler(wrapperType reflect.Type) func([]byte, error) err
 	return func(message []byte, err error) error {
 		if err != nil {
 			s.updates <- GraphQLResult{Error: err}
-			return nil
+			// Deliver the error on the channel but keep the subscription alive;
+			// returning err would tear down the stream.
+			return nil //nolint:nilerr
 		}
 		out := reflect.New(wrapperType)
 		if decodeErr := graphql.UnmarshalGraphQL(message, out.Interface()); decodeErr != nil {

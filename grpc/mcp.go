@@ -64,8 +64,9 @@ func (s *HybridServer) startMCPServer() {
 
 	// All services are mounted; open the one listener that fronts them all.
 	s.mcpHTTPServer = &http.Server{
-		Addr:    fmt.Sprintf("%s:%d", s.opts.MCP.Host, s.opts.MCP.Port),
-		Handler: mux,
+		Addr:              fmt.Sprintf("%s:%d", s.opts.MCP.Host, s.opts.MCP.Port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 	go func() {
 		if err := s.mcpHTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -39,7 +39,7 @@ func TestHTTPStatusFromCode(t *testing.T) {
 func decodeEnvelope(t *testing.T, err error) (*httptest.ResponseRecorder, gatewayError) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/v1/things/42", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/things/42", nil)
 	httpErrorHandler(context.Background(), nil, &runtime.JSONPb{}, rec, req, err)
 
 	var env gatewayError

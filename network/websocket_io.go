@@ -52,7 +52,7 @@ func (ws *WebSocketClient) RetrySend(messageType int, message []byte, maxRetries
 }
 
 // Listen reads messages in a loop and calls handleMessage for each. It returns a
-// channel that receives a single error when the loop stops (context cancelled,
+// channel that receives a single error when the loop stops (context canceled,
 // connection closed, or read error; if auto-reconnect is enabled and reconnection
 // fails, that error is sent). The channel is closed after the error is sent.
 func (ws *WebSocketClient) Listen(ctx context.Context, handleMessage func(messageType int, message []byte)) <-chan error {

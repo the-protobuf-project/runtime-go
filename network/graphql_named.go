@@ -44,14 +44,14 @@ func (g *GraphQLClient) execFields(ctx context.Context, mutation bool, field str
 		}
 		wrapper := newOpStruct(field, rv.Type().Elem(), args)
 
-		ctx, cancel := context.WithTimeout(ctx, g.Timeout)
+		opCtx, cancel := context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
 
 		var err error
 		if mutation {
-			err = g.client.Mutate(ctx, wrapper.Interface(), args)
+			err = g.client.Mutate(opCtx, wrapper.Interface(), args)
 		} else {
-			err = g.client.Query(ctx, wrapper.Interface(), args)
+			err = g.client.Query(opCtx, wrapper.Interface(), args)
 		}
 		if err != nil {
 			resultChan <- GraphQLResult{Error: fmt.Errorf("failed to execute operation: %w", err)}

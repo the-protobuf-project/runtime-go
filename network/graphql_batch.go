@@ -61,9 +61,9 @@ func (g *GraphQLClient) BatchMutate(ctx context.Context, ops []BatchOp) <-chan G
 		}
 		wrapper := reflect.New(reflect.StructOf(fields))
 
-		ctx, cancel := context.WithTimeout(ctx, g.Timeout)
+		opCtx, cancel := context.WithTimeout(ctx, g.Timeout)
 		defer cancel()
-		if err := g.client.Mutate(ctx, wrapper.Interface(), variables); err != nil {
+		if err := g.client.Mutate(opCtx, wrapper.Interface(), variables); err != nil {
 			resultChan <- GraphQLResult{Error: fmt.Errorf("failed to execute batch mutation: %w", err)}
 			return
 		}

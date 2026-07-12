@@ -119,7 +119,7 @@ func (ws *WebSocketClient) SetAutoReconnect(enabled bool, delay time.Duration) {
 }
 
 // startPingPong sends a ping every 30 seconds and refreshes the read deadline on pong.
-// The goroutine exits when ws.ctx is cancelled (e.g. on Close).
+// The goroutine exits when ws.ctx is canceled (e.g. on Close).
 func (ws *WebSocketClient) startPingPong() {
 	ws.conn.SetPongHandler(func(string) error {
 		return ws.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
