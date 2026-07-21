@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // HTTPResponse holds the result of an HTTP request: raw body bytes and an error
@@ -49,7 +51,7 @@ func (h *HTTPClient) Request(ctx context.Context, method HTTPMethod, urlOptions 
 				resultChan <- HTTPResponse{Error: fmt.Errorf("failed to build URL: %w", err)}
 				return
 			}
-			req, err := h.buildRequest(requestCtx, method, fullURL, body, headers)
+			req, err := h.buildRequest(requestCtx, method, fullURL, body, headers, h.TracePropagator)
 			if err != nil {
 				cancel()
 				resultChan <- HTTPResponse{Error: fmt.Errorf("failed to build request: %w", err)}
@@ -74,14 +76,21 @@ func (h *HTTPClient) RequestSync(ctx context.Context, method HTTPMethod, urlOpti
 	return response.Data, response.Error
 }
 
-// buildRequest allocates an HTTP request with the given method, URL, body, and headers.
-func (h *HTTPClient) buildRequest(ctx context.Context, method HTTPMethod, fullURL string, body []byte, headers map[string]string) (*http.Request, error) {
+// buildRequest allocates an HTTP request with the given method, URL, body, and
+// headers. When propagator is set (ConnectionOptions.TracePropagator), it injects
+// ctx's active span into the request headers (e.g. W3C traceparent/tracestate) so
+// a downstream service continuing the same propagator sees this call as a child
+// span — the REST counterpart to the GraphQL client's trace injection.
+func (h *HTTPClient) buildRequest(ctx context.Context, method HTTPMethod, fullURL string, body []byte, headers map[string]string, propagator propagation.TextMapPropagator) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, string(method), fullURL, bytes.NewBuffer(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
 	for key, value := range headers {
 		req.Header.Set(key, value)
+	}
+	if propagator != nil {
+		propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
 	}
 	return req, nil
 }

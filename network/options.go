@@ -1,6 +1,10 @@
 package network
 
-import "time"
+import (
+	"time"
+
+	"go.opentelemetry.io/otel/propagation"
+)
 
 // ClientType identifies which kind of network client NewConnection creates.
 type ClientType string
@@ -58,6 +62,15 @@ type ConnectionOptions struct {
 	// GraphQLConnectivityQuery overrides the query used to verify a GraphQL server
 	// is reachable. If empty, DefaultGraphQLConnectivityQuery is used.
 	GraphQLConnectivityQuery string
+
+	// TracePropagator, when set, injects the calling context's active span into
+	// every outgoing GraphQL and HTTP request as headers (e.g.
+	// propagation.TraceContext{} for the W3C traceparent/tracestate headers),
+	// so a downstream service that continues the same propagator sees this
+	// request as a child span — distributed tracing across the wire with no
+	// per-request wiring beyond passing a context that already carries a span
+	// (e.g. one opened by your tracing SDK). Nil (the default) injects nothing.
+	TracePropagator propagation.TextMapPropagator
 }
 
 // defaultOpts holds the zero-value options applied to a freshly created Network.

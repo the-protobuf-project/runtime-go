@@ -12,6 +12,7 @@ import (
 	"net/http"
 
 	graphql "github.com/hasura/go-graphql-client"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // DefaultGraphQLConnectivityQuery is sent to verify the GraphQL server is reachable
@@ -39,15 +40,23 @@ type GraphQLClient struct {
 }
 
 // newGraphQLClient builds an underlying graphql.Client for fullURL and attaches a
-// request modifier that applies ConnectionOptions.Headers (e.g. auth tokens) to
-// every request. Without this, headers set in opts would be dropped for GraphQL.
+// request modifier that applies ConnectionOptions.Headers (e.g. auth tokens) and,
+// when set, injects ConnectionOptions.TracePropagator's headers from the request's
+// own context — go-graphql-client builds each request via
+// http.NewRequestWithContext(ctx, ...), so r.Context() is the live per-call
+// context (the one passed to Query/Mutate/List/Get), not a stale one captured at
+// connect time. Without a header modifier, both would be dropped for GraphQL.
 func newGraphQLClient(fullURL string, opts ConnectionOptions) *graphql.Client {
 	client := graphql.NewClient(fullURL, newPooledClient(opts.Timeout))
-	if len(opts.Headers) > 0 {
+	if len(opts.Headers) > 0 || opts.TracePropagator != nil {
 		headers := opts.Headers
+		propagator := opts.TracePropagator
 		client = client.WithRequestModifier(func(r *http.Request) {
 			for k, v := range headers {
 				r.Header.Set(k, v)
+			}
+			if propagator != nil {
+				propagator.Inject(r.Context(), propagation.HeaderCarrier(r.Header))
 			}
 		})
 	}
