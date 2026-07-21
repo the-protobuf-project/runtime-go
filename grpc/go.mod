@@ -12,6 +12,7 @@ require (
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/quic-go/quic-go v0.60.0
 	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.1
+	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260721081650-0c2a71dad403
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
