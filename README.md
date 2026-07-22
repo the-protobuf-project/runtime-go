@@ -27,6 +27,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
 | [`orm`](orm) | `github.com/the-protobuf-project/runtime-go/orm` | Package orm implements the backend-agnostic store.Driver over GORM. |
 | [`store`](store) | `github.com/the-protobuf-project/runtime-go/store` | Package store is the backend-agnostic core of the runtime data layer: a single CRUD Driver contract that operates on proto messages, a Resource descriptor that mirrors protorm's IR at runtime, and a reflection bridge every driver reuses to move values between a proto message and a backend column map. |
+| [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |
 | [`network/examples/graphql/server`](network/examples/graphql/server) | `server` | Command server is a minimal GraphQL server used by the GraphQL client example; it serves a generated schema so the example queries, mutations, and subscriptions have a live endpoint to run against. |
 <!-- END PACKAGES -->
 
