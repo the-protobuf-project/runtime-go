@@ -1,4 +1,4 @@
-package redis_test
+package streams_test
 
 // These tests need a live server and skip without one. Notification delivery
 // additionally needs `--notify-keyspace-events Ex`, which docker/compose.yaml
@@ -18,7 +18,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
-	streamsredis "github.com/the-protobuf-project/runtime-go/streams/redis"
 )
 
 const subject = "user.login"
@@ -36,7 +35,7 @@ func testAddr() string {
 
 // newTestProvider returns a provider over a freshly flushed database, skipping
 // when no server is listening. Each test gets its own prefix.
-func newTestProvider(t *testing.T, prefix string) *streamsredis.Provider {
+func newTestProvider(t *testing.T, prefix string) streams.RedisStreams {
 	t.Helper()
 
 	rdb := goredis.NewClient(&goredis.Options{Addr: testAddr(), DB: 7})
@@ -50,7 +49,7 @@ func newTestProvider(t *testing.T, prefix string) *streamsredis.Provider {
 		t.Fatalf("FlushDB: %v", err)
 	}
 
-	p, err := streamsredis.New(streamsredis.Config{Client: rdb, Prefix: prefix})
+	p, err := streams.Redis(streams.RedisConfig{Client: rdb, Prefix: prefix})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -73,7 +72,7 @@ func newBoundStream(t *testing.T, p streams.Streams, subjects ...string) (stream
 }
 
 func TestNewRequiresAClient(t *testing.T) {
-	if _, err := streamsredis.New(streamsredis.Config{}); err == nil {
+	if _, err := streams.Redis(streams.RedisConfig{}); err == nil {
 		t.Error("New with no Client returned no error")
 	}
 }
@@ -546,11 +545,11 @@ func TestPrefixIsolatesProviders(t *testing.T) {
 		t.Fatalf("FlushDB: %v", err)
 	}
 
-	a, err := streamsredis.New(streamsredis.Config{Client: rdb, Prefix: "a"})
+	a, err := streams.Redis(streams.RedisConfig{Client: rdb, Prefix: "a"})
 	if err != nil {
 		t.Fatalf("New(a): %v", err)
 	}
-	b, err := streamsredis.New(streamsredis.Config{Client: rdb, Prefix: "b"})
+	b, err := streams.Redis(streams.RedisConfig{Client: rdb, Prefix: "b"})
 	if err != nil {
 		t.Fatalf("New(b): %v", err)
 	}

@@ -1,4 +1,4 @@
-package redis_test
+package cache_test
 
 // These tests need a live server and skip without one. Override the target with
 // REDIS_TEST_HOST / REDIS_TEST_PORT (default 127.0.0.1:6379):
@@ -16,7 +16,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/cache"
-	cacheredis "github.com/the-protobuf-project/runtime-go/cache/redis"
 )
 
 func testAddr() string {
@@ -33,7 +32,7 @@ func testAddr() string {
 // newTestCache returns a cache over a freshly flushed database, skipping when
 // no server is listening. Each test gets its own key prefix so they cannot see
 // each other's entries.
-func newTestCache(t *testing.T, prefix string) *cacheredis.Cache {
+func newTestCache(t *testing.T, prefix string) cache.Cache {
 	t.Helper()
 	ctx := t.Context()
 
@@ -48,7 +47,7 @@ func newTestCache(t *testing.T, prefix string) *cacheredis.Cache {
 		t.Fatalf("FlushDB: %v", err)
 	}
 
-	c, err := cacheredis.New(cacheredis.Config{Client: rdb, Prefix: prefix})
+	c, err := cache.Redis(cache.RedisConfig{Client: rdb, Prefix: prefix})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -58,7 +57,7 @@ func newTestCache(t *testing.T, prefix string) *cacheredis.Cache {
 // New must reject a missing client rather than returning a value whose every
 // method nil-panics on first use.
 func TestNewRequiresAClient(t *testing.T) {
-	if _, err := cacheredis.New(cacheredis.Config{}); err == nil {
+	if _, err := cache.Redis(cache.RedisConfig{}); err == nil {
 		t.Error("New with no Client returned no error")
 	}
 }
@@ -267,11 +266,11 @@ func TestCachesFromDifferentClientsAreIndependent(t *testing.T) {
 		t.Fatalf("FlushDB(3): %v", err)
 	}
 
-	c1, err := cacheredis.New(cacheredis.Config{Client: rdb1})
+	c1, err := cache.Redis(cache.RedisConfig{Client: rdb1})
 	if err != nil {
 		t.Fatalf("New(1): %v", err)
 	}
-	c2, err := cacheredis.New(cacheredis.Config{Client: rdb2})
+	c2, err := cache.Redis(cache.RedisConfig{Client: rdb2})
 	if err != nil {
 		t.Fatalf("New(2): %v", err)
 	}
@@ -300,11 +299,11 @@ func TestPrefixIsolatesCaches(t *testing.T) {
 		t.Fatalf("FlushDB: %v", err)
 	}
 
-	orders, err := cacheredis.New(cacheredis.Config{Client: rdb, Prefix: "orders"})
+	orders, err := cache.Redis(cache.RedisConfig{Client: rdb, Prefix: "orders"})
 	if err != nil {
 		t.Fatalf("New(orders): %v", err)
 	}
-	users, err := cacheredis.New(cacheredis.Config{Client: rdb, Prefix: "users"})
+	users, err := cache.Redis(cache.RedisConfig{Client: rdb, Prefix: "users"})
 	if err != nil {
 		t.Fatalf("New(users): %v", err)
 	}

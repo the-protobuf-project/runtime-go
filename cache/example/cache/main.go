@@ -8,12 +8,13 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/resourcename"
 	"github.com/the-protobuf-project/runtime-go/cache"
-	cacheredis "github.com/the-protobuf-project/runtime-go/cache/redis"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -38,9 +39,21 @@ func main() {
 		log.Fatalf("Redis is not reachable: %v", err)
 	}
 
+	// A debug-level slog logger, bound with a component name so every record
+	// this cache writes carries it.
+	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.Level(telemetry.LevelDebug),
+	}))).With(telemetry.Fields{"component": "cache"})
+
 	// Prefix namespaces the keys, so several independent caches can share one
-	// Redis database without colliding.
-	c, err := cacheredis.New(cacheredis.Config{Client: rdb, Prefix: "example"})
+	// Redis database without colliding. The Logger here is for the driver's
+	// internals — which key an ID was masked to, which stale members were
+	// swept; WithLogging below adds a record per operation.
+	c, err := cache.Redis(cache.RedisConfig{
+		Client: rdb,
+		Prefix: "example",
+		Logger: logger,
+	})
 	if err != nil {
 		log.Fatalf("Failed to build cache: %v", err)
 	}
@@ -53,6 +66,7 @@ func main() {
 	// exported until one is wired in.
 	cached := cache.Chain(c,
 		cache.WithRetryMiddleware(3, 100*time.Millisecond),
+		cache.WithLoggingMiddleware(logger),
 		cache.WithTelemetryMiddleware(telemetry.NoopMeter),
 	)
 

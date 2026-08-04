@@ -1,19 +1,11 @@
-package redis
+package cache
 
 import (
 	"errors"
 	"fmt"
 
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/the-protobuf-project/runtime-go/cache"
 )
-
-// ErrNotFound is returned when a cache entry does not exist or has expired.
-//
-// It is the cache-wide [cache.ErrNotFound], not a separate value, so errors.Is
-// matches whether the caller holds this provider or the generic [cache.Cache]
-// interface it is reached through.
-var ErrNotFound = cache.ErrNotFound
 
 // notFound translates a redis.Nil reply (key absent) into [ErrNotFound],
 // wrapped with the ID for context. Every other error — a dropped connection, a

@@ -1,4 +1,4 @@
-package redis
+package cache
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
@@ -55,7 +55,7 @@ func RemoveCacheHostPrefix(resourceName string) string {
 
 // Create stores a document with its TTL, generating an ID when the document
 // does not carry one. A zero TTL stores an entry that does not expire.
-func (c *Cache) Create(ctx context.Context, doc cache.Document) (*cache.Document, error) {
+func (c *redisCache) Create(ctx context.Context, doc Document) (*Document, error) {
 	if doc.ID() == "" {
 		doc.SetID(ulid.Generate().GetRandomCode())
 	}
@@ -64,38 +64,43 @@ func (c *Cache) Create(ctx context.Context, doc cache.Document) (*cache.Document
 	// strings, numbers and slices included, not only maps and tagged structs.
 	body, err := json.Marshal(doc.Data)
 	if err != nil {
-		return nil, fmt.Errorf("cache/redis: failed to encode document %s: %w", doc.ID(), err)
+		return nil, fmt.Errorf("cache: failed to encode document %s: %w", doc.ID(), err)
 	}
 
 	// Write the entry and its index member atomically. The entry is keyed by the
 	// masked (//cache.<host>/...) form, while the index holds the caller-facing
 	// form Get returns and Delete removes — indexing the raw ID instead would
 	// leak the entry whenever the caller passes an already-masked resource name.
+	key := c.keys.entry(maskCacheID(doc.ID()))
+	c.log.Debug(ctx, "cache write", telemetry.Fields{
+		"id": doc.ID(), "key": key, "ttl": doc.TTL.String(), "bytes": len(body),
+	})
+
 	pipe := c.rdb.TxPipeline()
-	pipe.Set(ctx, c.keys.entry(maskCacheID(doc.ID())), body, doc.TTL)
+	pipe.Set(ctx, key, body, doc.TTL)
 	pipe.SAdd(ctx, c.keys.index(), RemoveCacheHostPrefix(doc.ID()))
 	if _, err := pipe.Exec(ctx); err != nil {
-		return nil, fmt.Errorf("cache/redis: failed to create %s: %w", doc.ID(), err)
+		return nil, fmt.Errorf("cache: failed to create %s: %w", doc.ID(), err)
 	}
 	return &doc, nil
 }
 
 // Get retrieves a document by ID, reporting an expired or absent entry as
 // [ErrNotFound].
-func (c *Cache) Get(ctx context.Context, id string) (cache.Document, error) {
+func (c *redisCache) Get(ctx context.Context, id string) (Document, error) {
 	key := c.keys.entry(maskCacheID(id))
 
 	body, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil {
-		return cache.Document{}, notFound(id, err)
+		return Document{}, notFound(id, err)
 	}
 
 	var data any
 	if err := json.Unmarshal(body, &data); err != nil {
-		return cache.Document{}, fmt.Errorf("cache/redis: stored entry %s is not valid JSON: %w", id, err)
+		return Document{}, fmt.Errorf("cache: stored entry %s is not valid JSON: %w", id, err)
 	}
 
-	return cache.NewDocument(RemoveCacheHostPrefix(id), data, c.remainingTTL(ctx, key)), nil
+	return NewDocument(RemoveCacheHostPrefix(id), data, c.remainingTTL(ctx, key)), nil
 }
 
 // remainingTTL reports how much longer an entry will live, as a duration the
@@ -107,7 +112,7 @@ func (c *Cache) Get(ctx context.Context, id string) (cache.Document, error) {
 // caller that round-tripped -1s into Update would otherwise silently clear the
 // expiry, and anything treating TTL as arithmetic would see a negative
 // duration.
-func (c *Cache) remainingTTL(ctx context.Context, key string) time.Duration {
+func (c *redisCache) remainingTTL(ctx context.Context, key string) time.Duration {
 	ttl, err := c.rdb.TTL(ctx, key).Result()
 	if err != nil || ttl < 0 {
 		return 0
@@ -117,12 +122,12 @@ func (c *Cache) remainingTTL(ctx context.Context, key string) time.Duration {
 
 // Update replaces the content and TTL of an existing document, reporting a
 // missing entry as [ErrNotFound].
-func (c *Cache) Update(ctx context.Context, id string, doc cache.Document) error {
+func (c *redisCache) Update(ctx context.Context, id string, doc Document) error {
 	key := c.keys.entry(maskCacheID(id))
 
 	body, err := json.Marshal(doc.Data)
 	if err != nil {
-		return fmt.Errorf("cache/redis: failed to encode document %s: %w", id, err)
+		return fmt.Errorf("cache: failed to encode document %s: %w", id, err)
 	}
 
 	// SET with XX writes only if the key is already there, so the existence
@@ -130,7 +135,7 @@ func (c *Cache) Update(ctx context.Context, id string, doc cache.Document) error
 	// the entry expire in between and recreate it here.
 	ok, err := c.rdb.SetXX(ctx, key, body, doc.TTL).Result()
 	if err != nil {
-		return fmt.Errorf("cache/redis: failed to update %s: %w", id, err)
+		return fmt.Errorf("cache: failed to update %s: %w", id, err)
 	}
 	if !ok {
 		return fmt.Errorf("%w: %s", ErrNotFound, id)
@@ -143,12 +148,12 @@ func (c *Cache) Update(ctx context.Context, id string, doc cache.Document) error
 // Deleting an entry that is not there is not an error: the caller wanted it
 // gone, and a cache entry may legitimately have expired on its own a moment
 // earlier.
-func (c *Cache) Delete(ctx context.Context, id string) error {
+func (c *redisCache) Delete(ctx context.Context, id string) error {
 	pipe := c.rdb.TxPipeline()
 	pipe.Del(ctx, c.keys.entry(maskCacheID(id)))
 	pipe.SRem(ctx, c.keys.index(), RemoveCacheHostPrefix(id))
 	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("cache/redis: failed to delete %s: %w", id, err)
+		return fmt.Errorf("cache: failed to delete %s: %w", id, err)
 	}
 	return nil
 }
@@ -158,13 +163,14 @@ func (c *Cache) Delete(ctx context.Context, id string) error {
 //
 // Entries expire on their own but leave their index member behind, so without
 // this sweep the index grows without bound in a cache with short TTLs.
-func (c *Cache) List(ctx context.Context) ([]cache.Document, error) {
+func (c *redisCache) List(ctx context.Context) ([]Document, error) {
 	ids, err := c.rdb.SMembers(ctx, c.keys.index()).Result()
 	if err != nil {
-		return nil, fmt.Errorf("cache/redis: failed to read index: %w", err)
+		return nil, fmt.Errorf("cache: failed to read index: %w", err)
 	}
 
-	docs := make([]cache.Document, 0, len(ids))
+	docs := make([]Document, 0, len(ids))
+	swept := 0
 	for _, id := range ids {
 		doc, err := c.Get(ctx, id)
 		if err != nil {
@@ -172,7 +178,12 @@ func (c *Cache) List(ctx context.Context) ([]cache.Document, error) {
 				// Expired between the index read and now: drop the stale member.
 				// A failure to clean up is not worth failing the read over —
 				// the next List will try again.
-				_ = c.rdb.SRem(ctx, c.keys.index(), id).Err()
+				if remErr := c.rdb.SRem(ctx, c.keys.index(), id).Err(); remErr != nil {
+					c.log.Warn(ctx, "could not sweep stale index member",
+						telemetry.Fields{"id": id, "error": remErr.Error()})
+				} else {
+					swept++
+				}
 				continue
 			}
 			// A transport failure is not a stale entry; report it rather than
@@ -181,15 +192,9 @@ func (c *Cache) List(ctx context.Context) ([]cache.Document, error) {
 		}
 		docs = append(docs, doc)
 	}
-	return docs, nil
-}
-
-// Ping verifies the cache can reach its server. It is offered because New
-// deliberately does not dial, so a caller that wants a readiness check has
-// somewhere to make one.
-func (c *Cache) Ping(ctx context.Context) error {
-	if err := c.rdb.Ping(ctx).Err(); err != nil {
-		return fmt.Errorf("cache/redis: ping failed: %w", err)
+	if swept > 0 {
+		c.log.Debug(ctx, "swept expired index members",
+			telemetry.Fields{"swept": swept, "live": len(docs)})
 	}
-	return nil
+	return docs, nil
 }

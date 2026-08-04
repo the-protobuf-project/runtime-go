@@ -12,7 +12,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
-	streamsredis "github.com/the-protobuf-project/runtime-go/streams/redis"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -38,7 +37,7 @@ func main() {
 		log.Fatalf("Redis is not reachable: %v", err)
 	}
 
-	p, err := streamsredis.New(streamsredis.Config{Client: rdb, Prefix: "example"})
+	p, err := streams.Redis(streams.RedisConfig{Client: rdb, Prefix: "example"})
 	if err != nil {
 		log.Fatalf("Failed to build provider: %v", err)
 	}

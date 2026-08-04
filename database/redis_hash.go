@@ -1,4 +1,4 @@
-package redis
+package database
 
 import (
 	"bytes"
@@ -112,17 +112,17 @@ func encodeCanonical(buf *bytes.Buffer, v any) error {
 func canonicalize(data any) (hash string, canonical []byte, err error) {
 	raw, err := json.Marshal(data)
 	if err != nil {
-		return "", nil, fmt.Errorf("database/redis: failed to encode document: %w", err)
+		return "", nil, fmt.Errorf("database: failed to encode document: %w", err)
 	}
 
 	var generic any
 	if uerr := json.Unmarshal(raw, &generic); uerr != nil {
-		return "", nil, fmt.Errorf("database/redis: encoded document is not valid JSON: %w", uerr)
+		return "", nil, fmt.Errorf("database: encoded document is not valid JSON: %w", uerr)
 	}
 
 	canonical, err = canonicalJSON(generic)
 	if err != nil {
-		return "", nil, fmt.Errorf("database/redis: failed to canonicalize document: %w", err)
+		return "", nil, fmt.Errorf("database: failed to canonicalize document: %w", err)
 	}
 
 	sum := sha256.Sum256(canonical)

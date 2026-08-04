@@ -13,7 +13,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/database"
-	dbredis "github.com/the-protobuf-project/runtime-go/database/redis"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -31,7 +30,7 @@ func main() {
 		log.Fatalf("Redis is not reachable: %v", err)
 	}
 
-	s, err := dbredis.New(dbredis.Config{Client: rdb, Prefix: "example"})
+	s, err := database.Redis(database.RedisConfig{Client: rdb, Prefix: "example"})
 	if err != nil {
 		log.Fatalf("Failed to build store: %v", err)
 	}

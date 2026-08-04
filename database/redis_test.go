@@ -1,4 +1,4 @@
-package redis_test
+package database_test
 
 // These tests need a live server and skip without one. Override the target with
 // REDIS_TEST_HOST / REDIS_TEST_PORT (default 127.0.0.1:6379):
@@ -15,7 +15,6 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/database"
-	dbredis "github.com/the-protobuf-project/runtime-go/database/redis"
 )
 
 func testAddr() string {
@@ -49,10 +48,10 @@ func newTestClient(t *testing.T) *goredis.Client {
 
 // newTestStore returns a store with its own key prefix, so tests cannot see
 // each other's documents.
-func newTestStore(t *testing.T, prefix string) *dbredis.Store {
+func newTestStore(t *testing.T, prefix string) database.Store {
 	t.Helper()
 
-	s, err := dbredis.New(dbredis.Config{Client: newTestClient(t), Prefix: prefix})
+	s, err := database.Redis(database.RedisConfig{Client: newTestClient(t), Prefix: prefix})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -60,7 +59,7 @@ func newTestStore(t *testing.T, prefix string) *dbredis.Store {
 }
 
 func TestNewRequiresAClient(t *testing.T) {
-	if _, err := dbredis.New(dbredis.Config{}); err == nil {
+	if _, err := database.Redis(database.RedisConfig{}); err == nil {
 		t.Error("New with no Client returned no error")
 	}
 }
@@ -368,11 +367,11 @@ func TestPrefixIsolatesStores(t *testing.T) {
 	ctx := t.Context()
 	rdb := newTestClient(t)
 
-	orders, err := dbredis.New(dbredis.Config{Client: rdb, Prefix: "orders"})
+	orders, err := database.Redis(database.RedisConfig{Client: rdb, Prefix: "orders"})
 	if err != nil {
 		t.Fatalf("New(orders): %v", err)
 	}
-	users, err := dbredis.New(dbredis.Config{Client: rdb, Prefix: "users"})
+	users, err := database.Redis(database.RedisConfig{Client: rdb, Prefix: "users"})
 	if err != nil {
 		t.Fatalf("New(users): %v", err)
 	}

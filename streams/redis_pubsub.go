@@ -1,4 +1,4 @@
-package redis
+package streams
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
@@ -15,42 +14,42 @@ import (
 //
 // It holds the stream metadata read at Bind time, so publishing and subscribing
 // can validate subjects without a round trip on every call.
-type manager struct {
-	provider *Provider
-	stream   streams.Stream
+type redisManager struct {
+	provider *redisProvider
+	stream   Stream
 }
 
-var _ streams.Manager = (*manager)(nil)
+var _ Manager = (*redisManager)(nil)
 
 // Bind returns a publisher and subscriber for an existing stream.
 //
 // The stream is read here so that an unknown ID fails at Bind rather than at
 // the first publish, and so the subject list is available for validation.
-func (p *Provider) Bind(ctx context.Context, id string) (streams.Manager, error) {
+func (p *redisProvider) Bind(ctx context.Context, id string) (Manager, error) {
 	s, err := p.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	return &manager{provider: p, stream: s}, nil
+	return &redisManager{provider: p, stream: s}, nil
 }
 
 // checkSubject rejects a subject the stream does not declare.
 //
 // Publishing to an undeclared subject would otherwise create a channel nobody
 // subscribes to, and subscribing to one would wait forever — both silent.
-func (m *manager) checkSubject(subject string) error {
+func (m *redisManager) checkSubject(subject string) error {
 	if slices.Contains(m.stream.Subjects, subject) {
 		return nil
 	}
 	return fmt.Errorf("%w: %q (stream %s declares %v)",
-		streams.ErrUnknownSubject, subject, m.stream.ID(), m.stream.Subjects)
+		ErrUnknownSubject, subject, m.stream.ID(), m.stream.Subjects)
 }
 
 // Publish sends a message on a subject.
 //
 // For an ordinary stream the message goes out immediately over pub/sub. For a
 // notification stream it is held until its TTL expires — see [publishNotify].
-func (m *manager) Publish(ctx context.Context, subject string, msg streams.Message) error {
+func (m *redisManager) Publish(ctx context.Context, subject string, msg Message) error {
 	if err := m.checkSubject(subject); err != nil {
 		return err
 	}
@@ -58,9 +57,9 @@ func (m *manager) Publish(ctx context.Context, subject string, msg streams.Messa
 		msg.SetID(ulid.Generate().GetTimeCode())
 	}
 
-	body, err := json.Marshal(envelope{ID: msg.ID(), Data: msg.Data})
+	body, err := json.Marshal(redisEnvelope{ID: msg.ID(), Data: msg.Data})
 	if err != nil {
-		return fmt.Errorf("streams/redis: failed to encode message: %w", err)
+		return fmt.Errorf("streams: failed to encode message: %w", err)
 	}
 
 	if m.provider.isNotify() {
@@ -72,7 +71,7 @@ func (m *manager) Publish(ctx context.Context, subject string, msg streams.Messa
 	// message twice.
 	if err := m.provider.rdb.Publish(ctx,
 		m.provider.keys.channel(m.stream.ID(), subject), body).Err(); err != nil {
-		return fmt.Errorf("streams/redis: failed to publish on %q: %w", subject, err)
+		return fmt.Errorf("streams: failed to publish on %q: %w", subject, err)
 	}
 	return nil
 }
@@ -84,11 +83,11 @@ func (m *manager) Publish(ctx context.Context, subject string, msg streams.Messa
 // and message ID because the event carries only a key name. The payload key
 // holds the body and does not expire, because the pending key's value is
 // already gone by the time the event fires.
-func (m *manager) publishNotify(ctx context.Context, subject string, msg streams.Message, body []byte) error {
+func (m *redisManager) publishNotify(ctx context.Context, subject string, msg Message, body []byte) error {
 	// A zero TTL would never expire, so the notification could never fire.
 	// Accepting it silently would strand the subscriber waiting forever.
 	if msg.TTL <= 0 {
-		return fmt.Errorf("streams/redis: a notification needs a positive TTL, got %v", msg.TTL)
+		return fmt.Errorf("streams: a notification needs a positive TTL, got %v", msg.TTL)
 	}
 
 	pending := m.provider.keys.pending(m.stream.ID(), subject, msg.ID())
@@ -100,14 +99,14 @@ func (m *manager) publishNotify(ctx context.Context, subject string, msg streams
 	pipe.Set(ctx, payload, body, 0)
 	pipe.Set(ctx, pending, msg.ID(), msg.TTL)
 	if _, err := pipe.Exec(ctx); err != nil {
-		return fmt.Errorf("streams/redis: failed to schedule notification on %q: %w", subject, err)
+		return fmt.Errorf("streams: failed to schedule notification on %q: %w", subject, err)
 	}
 	return nil
 }
 
 // envelope is the wire form of a message: the ID travels with the payload so a
 // subscriber can report the same ID the publisher assigned.
-type envelope struct {
+type redisEnvelope struct {
 	ID   string `json:"id"`
 	Data any    `json:"data"`
 }
@@ -117,7 +116,7 @@ type envelope struct {
 // The channel is closed when ctx is done. That is the only way to stop the
 // subscription, and it is what keeps the delivery goroutine and the server-side
 // subscription from outliving the caller.
-func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *redisManager) Subscribe(ctx context.Context, subject string) (<-chan Message, error) {
 	if err := m.checkSubject(subject); err != nil {
 		return nil, err
 	}
@@ -131,10 +130,10 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 	// after Subscribe returns is delivered rather than raced.
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
-		return nil, fmt.Errorf("streams/redis: failed to subscribe to %q: %w", subject, err)
+		return nil, fmt.Errorf("streams: failed to subscribe to %q: %w", subject, err)
 	}
 
-	out := make(chan streams.Message)
+	out := make(chan Message)
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
@@ -147,7 +146,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 				if !ok {
 					return
 				}
-				msg, err := decode(raw.Payload)
+				msg, err := decodeRedis(raw.Payload)
 				if err != nil {
 					// A malformed payload is one bad message, not a reason to
 					// tear down a healthy subscription.
@@ -173,16 +172,16 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 // so this filters by key prefix to the stream and subject asked for. An earlier
 // version ignored the subject entirely and handed every subscriber every
 // expiry in the database, including unrelated keys.
-func (m *manager) subscribeNotify(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *redisManager) subscribeNotify(ctx context.Context, subject string) (<-chan Message, error) {
 	sub := m.provider.rdb.Subscribe(ctx, expiryChannel(m.provider.db))
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
-		return nil, fmt.Errorf("streams/redis: failed to subscribe to keyspace events: %w", err)
+		return nil, fmt.Errorf("streams: failed to subscribe to keyspace events: %w", err)
 	}
 
 	want := m.provider.keys.pendingPattern(m.stream.ID(), subject)
 
-	out := make(chan streams.Message)
+	out := make(chan Message)
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
@@ -220,19 +219,19 @@ func (m *manager) subscribeNotify(ctx context.Context, subject string) (<-chan s
 
 // claimPayload reads a notification body and removes it, so one expiry
 // delivers one message even with several subscribers racing for it.
-func (p *Provider) claimPayload(ctx context.Context, msgID string) (streams.Message, error) {
+func (p *redisProvider) claimPayload(ctx context.Context, msgID string) (Message, error) {
 	raw, err := p.rdb.GetDel(ctx, p.keys.payload(msgID)).Bytes()
 	if err != nil {
-		return streams.Message{}, err
+		return Message{}, err
 	}
-	return decode(string(raw))
+	return decodeRedis(string(raw))
 }
 
 // decode turns a wire payload back into a Message.
-func decode(payload string) (streams.Message, error) {
-	var e envelope
+func decodeRedis(payload string) (Message, error) {
+	var e redisEnvelope
 	if err := json.Unmarshal([]byte(payload), &e); err != nil {
-		return streams.Message{}, fmt.Errorf("streams/redis: malformed message: %w", err)
+		return Message{}, fmt.Errorf("streams: malformed message: %w", err)
 	}
-	return streams.NewMessage(e.ID, e.Data, 0), nil
+	return NewMessage(e.ID, e.Data, 0), nil
 }

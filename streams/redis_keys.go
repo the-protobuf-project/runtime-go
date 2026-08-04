@@ -1,4 +1,4 @@
-package redis
+package streams
 
 import "strings"
 
@@ -14,32 +14,32 @@ const (
 //
 // The kind segment ("stream" or "notify") keeps ordinary streams and expiry
 // notifications in separate namespaces, so listing one never turns up the other.
-type keys struct {
+type redisKeys struct {
 	prefix string
 	kind   string
 }
 
-func newKeys(prefix, kind string) keys {
+func newRedisKeys(prefix, kind string) redisKeys {
 	if prefix != "" {
 		prefix += ":"
 	}
-	return keys{prefix: prefix, kind: kind}
+	return redisKeys{prefix: prefix, kind: kind}
 }
 
 // stream returns the key holding a stream's metadata.
 // Data type: stream (one entry, carrying the metadata field).
-func (k keys) stream(id string) string { return k.prefix + k.kind + ":" + id }
+func (k redisKeys) stream(id string) string { return k.prefix + k.kind + ":" + id }
 
 // streamPattern matches every stream key in this namespace, for List.
-func (k keys) streamPattern() string { return k.prefix + k.kind + ":*" }
+func (k redisKeys) streamPattern() string { return k.prefix + k.kind + ":*" }
 
 // idFromStreamKey recovers the stream ID from a key produced by [keys.stream].
-func (k keys) idFromStreamKey(key string) string {
+func (k redisKeys) idFromStreamKey(key string) string {
 	return strings.TrimPrefix(key, k.prefix+k.kind+":")
 }
 
 // channel returns the pub/sub channel a subject's messages are published on.
-func (k keys) channel(streamID, subject string) string {
+func (k redisKeys) channel(streamID, subject string) string {
 	return k.prefix + k.kind + ":ch:" + streamID + ":" + subject
 }
 
@@ -50,13 +50,13 @@ func (k keys) channel(streamID, subject string) string {
 // route the event has to be recoverable from it. The message ID makes the key
 // unique per message, so two notifications on one subject do not overwrite each
 // other and reset one another's timer.
-func (k keys) pending(streamID, subject, msgID string) string {
+func (k redisKeys) pending(streamID, subject, msgID string) string {
 	return k.prefix + k.kind + ":pending:" + streamID + ":" + subject + ":" + msgID
 }
 
 // pendingPattern matches the pending keys for one stream and subject. It is
 // what a subscriber uses to decide whether an expiry event is addressed to it.
-func (k keys) pendingPattern(streamID, subject string) string {
+func (k redisKeys) pendingPattern(streamID, subject string) string {
 	return k.prefix + k.kind + ":pending:" + streamID + ":" + subject + ":"
 }
 
@@ -64,7 +64,7 @@ func (k keys) pendingPattern(streamID, subject string) string {
 //
 // The TTL key's value is gone by the time its expiry fires, so the body lives
 // under a second key that outlives it and is deleted once delivered.
-func (k keys) payload(msgID string) string {
+func (k redisKeys) payload(msgID string) string {
 	return k.prefix + k.kind + ":payload:" + msgID
 }
 
