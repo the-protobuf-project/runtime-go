@@ -21,11 +21,11 @@ import (
 func (s *HybridServer) startHTTPGateway() error {
 	httpAddr := fmt.Sprintf("%s:%d", s.opts.HTTP.Host, s.opts.HTTP.Port)
 	grpcEndpoint := fmt.Sprintf("%s:%d", s.opts.GRPC.Host, s.opts.GRPC.Port)
-	shared.Pulse.Logger.Debugf("HTTP/1.1: gateway will proxy to gRPC endpoint %s", grpcEndpoint)
+	shared.Telemetry().Logger.Debugf("HTTP/1.1: gateway will proxy to gRPC endpoint %s", grpcEndpoint)
 
 	var dialOpts []grpc.DialOption
 	if s.cert != nil {
-		shared.Pulse.Logger.Debugf("HTTP/1.1: dialing gRPC with TLS (InsecureSkipVerify for dev)")
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: dialing gRPC with TLS (InsecureSkipVerify for dev)")
 		tlsConf := &tls.Config{
 			InsecureSkipVerify: true, // dev only; swap for RootCAs in prod
 			ServerName:         "localhost",
@@ -34,20 +34,20 @@ func (s *HybridServer) startHTTPGateway() error {
 		}
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConf)))
 	} else {
-		shared.Pulse.Logger.Debugf("HTTP/1.1: dialing gRPC with plaintext (no TLS)")
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: dialing gRPC with plaintext (no TLS)")
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	shared.Pulse.Logger.Debugf("HTTP/1.1: registering %d HTTP gateway handler(s)", len(s.httpServiceFuncs))
+	shared.Telemetry().Logger.Debugf("HTTP/1.1: registering %d HTTP gateway handler(s)", len(s.httpServiceFuncs))
 	for i, svc := range s.httpServiceFuncs {
-		shared.Pulse.Logger.Debugf("HTTP/1.1: registering gateway handler [%d]", i)
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: registering gateway handler [%d]", i)
 		if err := svc(s.mux, grpcEndpoint, dialOpts); err != nil {
 			return fmt.Errorf("failed to register HTTP gateway: %w", err)
 		}
 	}
 
 	if s.cert != nil {
-		shared.Pulse.Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
 		s.httpServer = &http.Server{
 			Addr:              httpAddr,
 			Handler:           s.mux,
@@ -59,11 +59,11 @@ func (s *HybridServer) startHTTPGateway() error {
 		}
 		go func() {
 			if err := s.httpServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-				shared.Pulse.Logger.Fatalf("HTTPS server stopped: %v", err)
+				shared.Telemetry().Logger.Fatalf("HTTPS server stopped: %v", err)
 			}
 		}()
 	} else {
-		shared.Pulse.Logger.Debugf("HTTP/1.1: starting HTTP server on %s (plaintext)", httpAddr)
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTP server on %s (plaintext)", httpAddr)
 		s.httpServer = &http.Server{
 			Addr:              httpAddr,
 			Handler:           s.mux,
@@ -71,12 +71,12 @@ func (s *HybridServer) startHTTPGateway() error {
 		}
 		go func() {
 			if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				shared.Pulse.Logger.Fatalf("HTTP server stopped: %v", err)
+				shared.Telemetry().Logger.Fatalf("HTTP server stopped: %v", err)
 			}
 		}()
 	}
 
-	shared.Pulse.Logger.Debugf("HTTP/1.1: registering GET /health endpoint")
+	shared.Telemetry().Logger.Debugf("HTTP/1.1: registering GET /health endpoint")
 	if err := s.registerHealthzHandler(s.mux); err != nil {
 		return fmt.Errorf("failed to register /health endpoint: %w", err)
 	}
@@ -96,7 +96,7 @@ func (s *HybridServer) registerHealthzHandler(gw *runtime.ServeMux) error {
 
 	return gw.HandlePath("GET", "/health",
 		func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-			shared.Pulse.Logger.Debugf("HTTP/1.1: GET /health from %s", r.RemoteAddr)
+			shared.Telemetry().Logger.Debugf("HTTP/1.1: GET /health from %s", r.RemoteAddr)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = fmt.Fprintf(w, `{"status":"ok","message":"%s"}`, messages[rand.Intn(len(messages))])

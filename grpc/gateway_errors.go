@@ -70,7 +70,7 @@ func httpErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Mars
 		httpStatus = customStatus.HTTPStatus
 	}
 
-	shared.Pulse.Logger.Debugf("HTTP gateway error: %s %s -> %d (%s): %s",
+	shared.Telemetry().Logger.Debugf("HTTP gateway error: %s %s -> %d (%s): %s",
 		r.Method, r.URL.Path, httpStatus, s.Code(), s.Message())
 
 	// Marshal each status detail through the gateway's configured marshaler so
@@ -80,7 +80,7 @@ func httpErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Mars
 		if buf, derr := m.Marshal(d); derr == nil {
 			details = append(details, buf)
 		} else {
-			shared.Pulse.Logger.Debugf("HTTP gateway error: failed to marshal detail: %v", derr)
+			shared.Telemetry().Logger.Debugf("HTTP gateway error: failed to marshal detail: %v", derr)
 		}
 	}
 
@@ -100,7 +100,7 @@ func httpErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Mars
 
 	buf, merr := json.Marshal(body)
 	if merr != nil {
-		shared.Pulse.Logger.Debugf("HTTP gateway error: failed to marshal envelope: %v", merr)
+		shared.Telemetry().Logger.Debugf("HTTP gateway error: failed to marshal envelope: %v", merr)
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"code":500,"status":"INTERNAL","message":"failed to marshal error"}}`))
 		return
@@ -108,6 +108,6 @@ func httpErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Mars
 
 	w.WriteHeader(httpStatus)
 	if _, werr := w.Write(buf); werr != nil {
-		shared.Pulse.Logger.Debugf("HTTP gateway error: failed to write response: %v", werr)
+		shared.Telemetry().Logger.Debugf("HTTP gateway error: failed to write response: %v", werr)
 	}
 }

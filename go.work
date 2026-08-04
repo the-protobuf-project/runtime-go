@@ -1,12 +1,13 @@
-go 1.26.0
+go 1.26.4
 
 use (
-	./adapter
-	./evm
-	./fabric
+	./blockchain
+	./cache
+	./database
 	./grpc
+	./interfaces
 	./network
-	./orm
-	./store
+	./streams
 	./telemetry
+	./ulid
 )

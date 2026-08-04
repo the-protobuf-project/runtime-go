@@ -24,7 +24,7 @@ type mcpEndpointInfo struct {
 // to a shared cancellable context; the HTTP server itself is owned here and
 // drained in Stop.
 func (s *HybridServer) startMCPServer() {
-	shared.Pulse.Logger.Debugf("MCP: starting %d service(s) on port %d, transport %q",
+	shared.Telemetry().Logger.Debugf("MCP: starting %d service(s) on port %d, transport %q",
 		len(s.mcpServiceFuncs), s.opts.MCP.Port, s.opts.MCP.Transport)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,28 +37,28 @@ func (s *HybridServer) startMCPServer() {
 		cfg := s.buildMCPConfig(mux)
 		cfg.OnReady = func(resolved *runtime.MCPServerConfig) {
 			if ep, err := runtime.ServerEndpoint(resolved); err == nil {
-				shared.Pulse.Logger.Debugf("MCP: service ready — transport=%s url=%s", ep.Transport, ep.URL)
+				shared.Telemetry().Logger.Debugf("MCP: service ready — transport=%s url=%s", ep.Transport, ep.URL)
 				readyCh <- mcpEndpointInfo{transport: ep.Transport, url: ep.URL, port: s.opts.MCP.Port}
 			} else {
-				shared.Pulse.Logger.Debugf("MCP: ServerEndpoint error: %v", err)
+				shared.Telemetry().Logger.Debugf("MCP: ServerEndpoint error: %v", err)
 			}
 		}
-		shared.Pulse.Logger.Debugf("MCP: launching service goroutine [%d]", i)
+		shared.Telemetry().Logger.Debugf("MCP: launching service goroutine [%d]", i)
 		go func(f MCPServiceFunc, c *runtime.MCPServerConfig) {
 			if err := f(ctx, c); err != nil && ctx.Err() == nil {
-				shared.Pulse.Logger.Errorf("MCP server error: %v", err)
+				_ = shared.Telemetry().Logger.Errorf("MCP server error: %v", err)
 			}
 		}(fn, cfg)
 	}
 
-	shared.Pulse.Logger.Debugf("MCP: waiting for %d service(s) to mount (timeout 5s each)",
+	shared.Telemetry().Logger.Debugf("MCP: waiting for %d service(s) to mount (timeout 5s each)",
 		len(s.mcpServiceFuncs))
 	for range s.mcpServiceFuncs {
 		select {
 		case ep := <-readyCh:
 			s.mcpEndpoints = append(s.mcpEndpoints, ep)
 		case <-time.After(5 * time.Second):
-			shared.Pulse.Logger.Warn("MCP service did not become ready in time")
+			shared.Telemetry().Logger.Warn("MCP service did not become ready in time")
 		}
 	}
 
@@ -70,10 +70,10 @@ func (s *HybridServer) startMCPServer() {
 	}
 	go func() {
 		if err := s.mcpHTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			shared.Pulse.Logger.Errorf("MCP HTTP server stopped: %v", err)
+			_ = shared.Telemetry().Logger.Errorf("MCP HTTP server stopped: %v", err)
 		}
 	}()
-	shared.Pulse.Logger.Debugf("MCP: shared server listening on %s (%d endpoint(s))",
+	shared.Telemetry().Logger.Debugf("MCP: shared server listening on %s (%d endpoint(s))",
 		s.mcpHTTPServer.Addr, len(s.mcpEndpoints))
 }
 
@@ -83,7 +83,7 @@ func (s *HybridServer) startMCPServer() {
 func (s *HybridServer) buildMCPConfig(mux *http.ServeMux) *runtime.MCPServerConfig {
 	transport := runtime.Transport(s.opts.MCP.Transport)
 	if transport == "" {
-		shared.Pulse.Logger.Debugf("MCP: no transport specified, defaulting to streamable-http")
+		shared.Telemetry().Logger.Debugf("MCP: no transport specified, defaulting to streamable-http")
 		transport = runtime.TransportStreamableHTTP
 	}
 
