@@ -85,13 +85,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// ulid is versioned alongside this module in runtime-go and has no tagged
-// release yet. Drop this once it is published.
-replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid
-
-// observability and telemetry are versioned alongside this module in
-// runtime-go and have no tagged release carrying the Logger contract yet.
-// Drop these once they are published.
+// These are versioned alongside this module in runtime-go and have no tagged
+// release carrying the current contracts yet. Drop them once published.
 replace github.com/the-protobuf-project/runtime-go/observability => ../observability
 
 replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
+
+replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid

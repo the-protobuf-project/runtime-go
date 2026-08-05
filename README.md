@@ -16,12 +16,16 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`blockchain/evm`](blockchain/evm) | `github.com/the-protobuf-project/runtime-go/blockchain/evm` | Package evm implements the backend-agnostic store.Driver against an EVM chain, driving the Solidity storage contracts protorm generates. |
 | [`blockchain/fabric`](blockchain/fabric) | `github.com/the-protobuf-project/runtime-go/blockchain/fabric` | Package fabric is a placeholder store.Driver for Hyperledger Fabric chaincode. |
 | [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache defines the backend-agnostic contract for runtime-go's cache layer: ephemeral, TTL-bound storage. |
+| [`cache/example`](cache/example) | `github.com/the-protobuf-project/runtime-go/cache/example` | Command example demonstrates the cache contract against a live Redis. |
+| [`cache/redis`](cache/redis) | `github.com/the-protobuf-project/runtime-go/cache/redis` | Package redis implements cache.Cache over Redis. |
 | [`cache/shared`](cache/shared) | `github.com/the-protobuf-project/runtime-go/cache/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`database`](database) | `github.com/the-protobuf-project/runtime-go/database` | Package database defines the backend-agnostic contract for runtime-go's document-store layer: durable records that live until they are deleted. |
 | [`database/arangodb`](database/arangodb) | `github.com/the-protobuf-project/runtime-go/database/arangodb` | Package arangodb will implement the [database.Store] contract over arangodb. |
+| [`database/example`](database/example) | `github.com/the-protobuf-project/runtime-go/database/example` | Command example demonstrates the database contract against a live Redis. |
 | [`database/gorm`](database/gorm) | `github.com/the-protobuf-project/runtime-go/database/gorm` | Package gorm will implement the [database.Store] contract over gorm. |
 | [`database/mongodb`](database/mongodb) | `github.com/the-protobuf-project/runtime-go/database/mongodb` | Package mongodb will implement the [database.Store] contract over mongodb. |
 | [`database/neo4j`](database/neo4j) | `github.com/the-protobuf-project/runtime-go/database/neo4j` | Package neo4j will implement the [database.Store] contract over neo4j. |
+| [`database/redis`](database/redis) | `github.com/the-protobuf-project/runtime-go/database/redis` | Package redis implements database.Store over Redis, storing records as canonical JSON with content-addressed deduplication. |
 | [`database/shared`](database/shared) | `github.com/the-protobuf-project/runtime-go/database/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`grpc`](grpc) | `github.com/the-protobuf-project/runtime-go/grpc` | Package grpc provides HybridServer — a single server that simultaneously speaks gRPC, HTTP/1.1 JSON gateway (via grpc-gateway), optional HTTP/3 (QUIC), and an MCP (Model Context Protocol) endpoint, all sharing the same port and TLS configuration. |
 | [`grpc/options`](grpc/options) | `github.com/the-protobuf-project/runtime-go/grpc/options` | Package options holds the configuration for the grpc HybridServer: service identity (name, description, version), the gRPC/HTTP/MCP endpoints, the environment mode, the health/HTTP-3 toggles, and the OpenTelemetry metric selection. |
@@ -36,11 +40,9 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/graphql`](network/graphql) | `github.com/the-protobuf-project/runtime-go/network/graphql` | Package graphql provides small helpers and scalar types for generated GraphQL clients: pointer constructors for optional (nullable) arguments, and scalar types that tolerate engine-specific JSON encodings. |
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
 | [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
-| [`redis`](redis) | `github.com/the-protobuf-project/runtime-go/redis` | Package redis implements runtime-go's cache, database, and streams contracts over Redis. |
-| [`redis/example/chain`](redis/example/chain) | `github.com/the-protobuf-project/runtime-go/redis/example/chain` | Command chain demonstrates the whole runtime-go Redis provider against a live server: the client, a named database, and every handler that hangs off it. |
-| [`redis/internal/codec`](redis/internal/codec) | `github.com/the-protobuf-project/runtime-go/redis/internal/codec` | Package codec encodes values for storage and hashes them for deduplication. |
-| [`redis/internal/conn`](redis/internal/conn) | `github.com/the-protobuf-project/runtime-go/redis/internal/conn` | Package conn holds the Redis connection and the named-logical-database registry the provider is built on. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
+| [`streams/example`](streams/example) | `github.com/the-protobuf-project/runtime-go/streams/example` | Command example demonstrates the streams contract, in both delivery modes against a live Redis. |
+| [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |
 | [`ulid`](ulid) | `github.com/the-protobuf-project/runtime-go/ulid` | Package ulid generates sortable, collision-resistant identifiers for runtime-go modules. |

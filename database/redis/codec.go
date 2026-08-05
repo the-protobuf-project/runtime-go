@@ -1,4 +1,4 @@
-package codec
+package redis
 
 import (
 	"bytes"
@@ -13,21 +13,21 @@ import (
 //
 // Any JSON-serializable value works — a struct, a map, a slice, a scalar — so a
 // model gaining a field is not a change here.
-func Encode(value any) ([]byte, error) {
+func encode(value any) ([]byte, error) {
 	b, err := json.Marshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("redis: cannot encode value: %w", err)
+		return nil, fmt.Errorf("database/redis: cannot encode value: %w", err)
 	}
 	return b, nil
 }
 
 // Decode unmarshals stored bytes into dest, which must be a non-nil pointer.
-func Decode(data []byte, dest any) error {
+func decode(data []byte, dest any) error {
 	if dest == nil {
-		return fmt.Errorf("redis: decode destination is nil")
+		return fmt.Errorf("database/redis: decode destination is nil")
 	}
 	if err := json.Unmarshal(data, dest); err != nil {
-		return fmt.Errorf("redis: cannot decode stored value: %w", err)
+		return fmt.Errorf("database/redis: cannot decode stored value: %w", err)
 	}
 	return nil
 }
@@ -39,15 +39,15 @@ func Decode(data []byte, dest any) error {
 // orders produce identical bytes and therefore the same hash. The value is
 // round-tripped through a generic first, so the same record written once as a
 // struct and once as a map hashes the same.
-func Canonicalize(value any) (hash string, canonical []byte, err error) {
-	raw, err := Encode(value)
+func canonicalize(value any) (hash string, canonical []byte, err error) {
+	raw, err := encode(value)
 	if err != nil {
 		return "", nil, err
 	}
 
 	var generic any
 	if uerr := json.Unmarshal(raw, &generic); uerr != nil {
-		return "", nil, fmt.Errorf("redis: encoded value is not valid JSON: %w", uerr)
+		return "", nil, fmt.Errorf("database/redis: encoded value is not valid JSON: %w", uerr)
 	}
 
 	var buf bytes.Buffer
@@ -78,7 +78,7 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 		// standard encoder gets their formatting and escaping right.
 		b, err := json.Marshal(x)
 		if err != nil {
-			return fmt.Errorf("redis: cannot encode scalar: %w", err)
+			return fmt.Errorf("database/redis: cannot encode scalar: %w", err)
 		}
 		buf.Write(b)
 
@@ -108,7 +108,7 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 			}
 			kb, err := json.Marshal(k)
 			if err != nil {
-				return fmt.Errorf("redis: cannot encode object key: %w", err)
+				return fmt.Errorf("database/redis: cannot encode object key: %w", err)
 			}
 			buf.Write(kb)
 			buf.WriteByte(':')
@@ -119,7 +119,7 @@ func writeCanonical(buf *bytes.Buffer, v any) error {
 		buf.WriteByte('}')
 
 	default:
-		return fmt.Errorf("redis: unexpected type %T after JSON round-trip", x)
+		return fmt.Errorf("database/redis: unexpected type %T after JSON round-trip", x)
 	}
 	return nil
 }

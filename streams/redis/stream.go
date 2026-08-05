@@ -9,15 +9,10 @@ import (
 	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
-	"github.com/the-protobuf-project/runtime-go/redis/internal/conn"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/the-protobuf-project/runtime-go/ulid"
 )
-
-// metadataField is the field a stream's metadata is stored under, inside the
-// Redis stream key that represents it.
-const metadataField = "meta"
 
 // streamHandler manages stream lifecycle and hands out publishers and
 // subscribers.
@@ -27,17 +22,14 @@ const metadataField = "meta"
 // delivery. They share every other behavior — subject validation, metadata,
 // listing — so they share an implementation and differ only where it matters.
 type streamHandler struct {
-	conn *conn.Conn
+	rdb  goredis.UniversalClient
 	keys keys
 	kind kind
+	db   int
 	log  telemetry.Logger
 }
 
 var _ streams.Streams = (*streamHandler)(nil)
-
-func newStreams(c *conn.Conn, prefix string, k kind, log telemetry.Logger, _ telemetry.Meter) streams.Streams {
-	return &streamHandler{conn: c, keys: newKeys(prefix, k), kind: k, log: log}
-}
 
 // scheduled reports whether this handler delivers on expiry rather than on
 // publish.
@@ -75,7 +67,7 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 		"id": id, "name": in.Name, "subjects": out.Subjects, "scheduled": s.scheduled(),
 	})
 
-	if err := s.conn.Redis().XAdd(ctx, &goredis.XAddArgs{
+	if err := s.rdb.XAdd(ctx, &goredis.XAddArgs{
 		Stream: s.keys.stream(id),
 		Values: map[string]any{metadataField: body},
 	}).Err(); err != nil {
@@ -94,7 +86,7 @@ func (s *streamHandler) Get(ctx context.Context, id string) (streams.Stream, err
 
 // read loads and decodes a stream's metadata entry.
 func (s *streamHandler) read(ctx context.Context, key, id string) (streams.Stream, error) {
-	entries, err := s.conn.Redis().XRangeN(ctx, key, "-", "+", 1).Result()
+	entries, err := s.rdb.XRangeN(ctx, key, "-", "+", 1).Result()
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {
 			return streams.Stream{}, fmt.Errorf("%w: stream %s", streams.ErrNotFound, id)
@@ -163,7 +155,7 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 	s.log.Debug(ctx, "updating stream", telemetry.Fields{"id": id, "subjects": out.Subjects})
 
 	key := s.keys.stream(id)
-	pipe := s.conn.Redis().TxPipeline()
+	pipe := s.rdb.TxPipeline()
 	pipe.XAdd(ctx, &goredis.XAddArgs{Stream: key, Values: map[string]any{metadataField: body}})
 	pipe.XTrimMaxLen(ctx, key, 1)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -182,7 +174,7 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 func (s *streamHandler) Delete(ctx context.Context, id string) error {
 	s.log.Debug(ctx, "deleting stream", telemetry.Fields{"id": id})
 
-	removed, err := s.conn.Redis().Del(ctx, s.keys.stream(id)).Result()
+	removed, err := s.rdb.Del(ctx, s.keys.stream(id)).Result()
 	if err != nil {
 		s.log.Error(ctx, "could not delete the stream", err, telemetry.Fields{"id": id})
 		return fmt.Errorf("redis: cannot delete stream %s: %w", id, err)
@@ -208,14 +200,14 @@ func (s *streamHandler) List(ctx context.Context) ([]streams.Stream, error) {
 	)
 
 	for {
-		keys, next, err := s.conn.Redis().Scan(ctx, cursor, s.keys.streamPattern(), 100).Result()
+		keys, next, err := s.rdb.Scan(ctx, cursor, s.keys.streamPattern(), 100).Result()
 		if err != nil {
 			s.log.Error(ctx, "could not scan for streams", err, nil)
 			return nil, fmt.Errorf("redis: cannot list streams: %w", err)
 		}
 
 		for _, key := range keys {
-			kind, err := s.conn.Redis().Type(ctx, key).Result()
+			kind, err := s.rdb.Type(ctx, key).Result()
 			if err != nil {
 				return nil, fmt.Errorf("redis: cannot type %s: %w", key, err)
 			}

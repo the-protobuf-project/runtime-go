@@ -18,6 +18,15 @@ var (
 	// Subjects are fixed at creation so a typo fails loudly at the call that
 	// made it, instead of silently producing a topic nobody reads.
 	ErrUnknownSubject = errors.New("streams: subject not declared by this stream")
+
+	// ErrUnsupported is returned when a provider cannot do what was asked —
+	// scheduling a delivery on a stream that only publishes immediately, for
+	// one.
+	//
+	// It is a distinct sentinel because it is a settled answer: unlike a
+	// dropped connection, retrying cannot make the provider capable, so
+	// [WithPublisherRetry] gives up on it immediately.
+	ErrUnsupported = errors.New("streams: unsupported by this provider")
 )
 
 // Stream is the metadata describing a stream and the subjects it accepts.

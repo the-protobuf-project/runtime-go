@@ -9,24 +9,18 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/cache"
-	"github.com/the-protobuf-project/runtime-go/redis/internal/codec"
-	"github.com/the-protobuf-project/runtime-go/redis/internal/conn"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
 // cacheHandler is ephemeral, TTL-bound storage.
 type cacheHandler struct {
-	conn *conn.Conn
+	rdb  goredis.UniversalClient
 	keys keys
 	log  telemetry.Logger
 }
 
 var _ cache.Cache = (*cacheHandler)(nil)
-
-func newCache(c *conn.Conn, prefix string, log telemetry.Logger, _ telemetry.Meter) cache.Cache {
-	return &cacheHandler{conn: c, keys: newKeys(prefix, kindCache), log: log}
-}
 
 // notFound turns a missing key into the contract's sentinel, leaving every
 // other failure — a dropped connection, a timeout, a WRONGTYPE reply — alone so
@@ -50,7 +44,7 @@ func (c *cacheHandler) Create(ctx context.Context, id string, value any, opts ..
 		c.log.Debug(ctx, "generated an id", telemetry.Fields{"id": id})
 	}
 
-	body, err := codec.Encode(value)
+	body, err := encode(value)
 	if err != nil {
 		c.log.Error(ctx, "could not encode the value", err, telemetry.Fields{"id": id})
 		return "", err
@@ -63,7 +57,7 @@ func (c *cacheHandler) Create(ctx context.Context, id string, value any, opts ..
 
 	// The entry and its index member go together, so a listing never names an
 	// entry that was never written.
-	pipe := c.conn.Redis().TxPipeline()
+	pipe := c.rdb.TxPipeline()
 	pipe.Set(ctx, key, body, o.TTL)
 	pipe.SAdd(ctx, c.keys.index(), id)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -80,7 +74,7 @@ func (c *cacheHandler) Get(ctx context.Context, id string, dest any) error {
 	key := c.keys.entry(id)
 	c.log.Debug(ctx, "reading cache entry", telemetry.Fields{"id": id, "key": key})
 
-	body, err := c.conn.Redis().Get(ctx, key).Bytes()
+	body, err := c.rdb.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, goredis.Nil) {
 			c.log.Debug(ctx, "cache miss", telemetry.Fields{"id": id})
@@ -90,7 +84,7 @@ func (c *cacheHandler) Get(ctx context.Context, id string, dest any) error {
 		return cacheNotFound(id, err)
 	}
 
-	if err := codec.Decode(body, dest); err != nil {
+	if err := decode(body, dest); err != nil {
 		c.log.Error(ctx, "stored entry does not decode into the destination", err,
 			telemetry.Fields{"id": id, "dest": fmt.Sprintf("%T", dest)})
 		return err
@@ -102,7 +96,7 @@ func (c *cacheHandler) Get(ctx context.Context, id string, dest any) error {
 func (c *cacheHandler) Update(ctx context.Context, id string, value any, opts ...cache.Option) error {
 	o := cache.NewOptions(opts...)
 
-	body, err := codec.Encode(value)
+	body, err := encode(value)
 	if err != nil {
 		c.log.Error(ctx, "could not encode the value", err, telemetry.Fields{"id": id})
 		return err
@@ -116,7 +110,7 @@ func (c *cacheHandler) Update(ctx context.Context, id string, value any, opts ..
 	// SET with XX writes only when the key is already there, so the existence
 	// check and the write are one step — a separate GET first would let the
 	// entry expire in between and recreate it here.
-	ok, err := c.conn.Redis().SetXX(ctx, key, body, o.TTL).Result()
+	ok, err := c.rdb.SetXX(ctx, key, body, o.TTL).Result()
 	if err != nil {
 		c.log.Error(ctx, "could not update the cache entry", err, telemetry.Fields{"id": id})
 		return fmt.Errorf("redis: cannot update cache entry %s: %w", id, err)
@@ -137,7 +131,7 @@ func (c *cacheHandler) Update(ctx context.Context, id string, value any, opts ..
 func (c *cacheHandler) Delete(ctx context.Context, id string) error {
 	c.log.Debug(ctx, "deleting cache entry", telemetry.Fields{"id": id})
 
-	pipe := c.conn.Redis().TxPipeline()
+	pipe := c.rdb.TxPipeline()
 	pipe.Del(ctx, c.keys.entry(id))
 	pipe.SRem(ctx, c.keys.index(), id)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -154,7 +148,7 @@ func (c *cacheHandler) Delete(ctx context.Context, id string) error {
 // Entries expire on their own but leave their index member behind, so without
 // this the index grows without bound in a cache with short TTLs.
 func (c *cacheHandler) Keys(ctx context.Context) ([]string, error) {
-	ids, err := c.conn.Redis().SMembers(ctx, c.keys.index()).Result()
+	ids, err := c.rdb.SMembers(ctx, c.keys.index()).Result()
 	if err != nil {
 		c.log.Error(ctx, "could not read the cache index", err, nil)
 		return nil, fmt.Errorf("redis: cannot read the cache index: %w", err)
@@ -163,7 +157,7 @@ func (c *cacheHandler) Keys(ctx context.Context) ([]string, error) {
 	live := make([]string, 0, len(ids))
 	swept := 0
 	for _, id := range ids {
-		n, err := c.conn.Redis().Exists(ctx, c.keys.entry(id)).Result()
+		n, err := c.rdb.Exists(ctx, c.keys.entry(id)).Result()
 		if err != nil {
 			c.log.Error(ctx, "could not check a cache entry", err, telemetry.Fields{"id": id})
 			return nil, fmt.Errorf("redis: cannot check cache entry %s: %w", id, err)
@@ -171,7 +165,7 @@ func (c *cacheHandler) Keys(ctx context.Context) ([]string, error) {
 		if n == 0 {
 			// Expired between the index read and now. A cleanup failure is not
 			// worth failing the read over — the next call tries again.
-			if remErr := c.conn.Redis().SRem(ctx, c.keys.index(), id).Err(); remErr != nil {
+			if remErr := c.rdb.SRem(ctx, c.keys.index(), id).Err(); remErr != nil {
 				c.log.Warn(ctx, "could not sweep a stale index member",
 					telemetry.Fields{"id": id, "error": remErr.Error()})
 			} else {
@@ -228,7 +222,7 @@ func (c *cacheHandler) List(ctx context.Context, dest any) error {
 // with no expiry and -2 for one that is gone. The first is reported as zero, which
 // is what the contract means by "does not expire"; the second is a miss.
 func (c *cacheHandler) TTL(ctx context.Context, id string) (time.Duration, error) {
-	ttl, err := c.conn.Redis().TTL(ctx, c.keys.entry(id)).Result()
+	ttl, err := c.rdb.TTL(ctx, c.keys.entry(id)).Result()
 	if err != nil {
 		c.log.Error(ctx, "could not read the entry TTL", err, telemetry.Fields{"id": id})
 		return 0, fmt.Errorf("redis: cannot read the TTL of %s: %w", id, err)

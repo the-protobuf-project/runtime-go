@@ -4,7 +4,6 @@ go 1.26.4
 
 require (
 	github.com/redis/go-redis/v9 v9.18.0
-	github.com/the-protobuf-project/resourcename v0.0.0-20260616190751-3e187a5d3da5
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-00010101000000-000000000000
@@ -86,13 +85,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// ulid is versioned alongside this module in runtime-go and has no tagged
-// release yet. Drop this once it is published.
-replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid
-
-// observability and telemetry are versioned alongside this module in
-// runtime-go and have no tagged release carrying the Logger contract yet.
-// Drop these once they are published.
+// These are versioned alongside this module in runtime-go and have no tagged
+// release carrying the current contracts yet. Drop them once published.
 replace github.com/the-protobuf-project/runtime-go/observability => ../observability
 
 replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
+
+replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid

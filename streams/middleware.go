@@ -73,8 +73,8 @@ type retryPublisher struct {
 //
 // Retrying is safe here in a way it is not for a store write: a redelivered
 // message is a duplicate the consumer can dedupe, whereas a dropped one is
-// simply lost. An [ErrUnknownSubject] is never retried — the subject will not
-// become valid on a second attempt.
+// simply lost. [ErrUnknownSubject] and [ErrUnsupported] are never retried —
+// neither answer changes on a second attempt.
 //
 // Backoff respects the context: a canceled or expired ctx stops the retry loop
 // immediately rather than sleeping out the remaining attempts.
@@ -106,8 +106,10 @@ func (r *retryPublisher) Publish(ctx context.Context, subject string, value any,
 		if id, err = r.next.Publish(ctx, subject, value, opts...); err == nil {
 			return id, nil
 		}
-		// A settled answer; retrying only wastes the caller's deadline.
-		if errors.Is(err, ErrUnknownSubject) {
+		// Settled answers: the subject will not become valid, and the provider
+		// will not gain a capability, on a second attempt. Retrying either only
+		// wastes the caller's deadline.
+		if errors.Is(err, ErrUnknownSubject) || errors.Is(err, ErrUnsupported) {
 			return "", err
 		}
 		if i == r.attempts-1 {

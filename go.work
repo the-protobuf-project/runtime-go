@@ -8,7 +8,6 @@ use (
 	./interfaces
 	./network
 	./observability
-	./redis
 	./streams
 	./telemetry
 	./ulid

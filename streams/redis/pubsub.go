@@ -81,7 +81,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 		// now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "this stream delivers immediately and cannot schedule", nil,
 			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
-		return "", fmt.Errorf("redis: stream %s delivers immediately; use the Notify handler for a TTL", m.stream.ID)
+		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
@@ -92,7 +92,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 	// Exactly once. Subscribe confirms its subscription before returning, so
 	// there is no window a second send would cover — it would only deliver the
 	// message twice.
-	if err := m.handler.conn.Redis().Publish(ctx, channel, body).Err(); err != nil {
+	if err := m.handler.rdb.Publish(ctx, channel, body).Err(); err != nil {
 		m.handler.log.Error(ctx, "could not publish", err,
 			telemetry.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("redis: cannot publish on %q: %w", subject, err)
@@ -115,7 +115,7 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 		// Accepting it silently would strand the subscriber.
 		m.handler.log.Error(ctx, "a scheduled message needs a positive TTL", nil,
 			telemetry.Fields{"subject": subject, "id": id})
-		return fmt.Errorf("redis: a scheduled message needs a positive TTL, got %v", o.TTL)
+		return fmt.Errorf("%w: a scheduled message needs a positive TTL, got %v", streams.ErrUnsupported, o.TTL)
 	}
 
 	pending := m.handler.keys.pending(m.stream.ID, subject, id)
@@ -127,7 +127,7 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 
 	// The payload is written first: if the pending key expired before its body
 	// existed, the subscriber would be told about a message it cannot read.
-	pipe := m.handler.conn.Redis().TxPipeline()
+	pipe := m.handler.rdb.TxPipeline()
 	pipe.Set(ctx, payload, body, 0)
 	pipe.Set(ctx, pending, id, o.TTL)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -154,7 +154,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
-	sub := m.handler.conn.Redis().Subscribe(ctx, channel)
+	sub := m.handler.rdb.Subscribe(ctx, channel)
 
 	// Confirm the subscription is live before returning, so a value published
 	// after Subscribe returns is delivered rather than raced.
@@ -214,8 +214,8 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 // Redis publishes one keyspace event per expired key across the whole database,
 // so this filters by key prefix down to the stream and subject asked for.
 func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) (<-chan streams.Message, error) {
-	channel := "__keyevent@" + strconv.Itoa(m.handler.conn.DB()) + "__:expired"
-	sub := m.handler.conn.Redis().Subscribe(ctx, channel)
+	channel := "__keyevent@" + strconv.Itoa(m.handler.db) + "__:expired"
+	sub := m.handler.rdb.Subscribe(ctx, channel)
 
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
@@ -277,7 +277,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) 
 // claim reads a scheduled payload and removes it, so one expiry delivers one
 // message even with several subscribers racing for it.
 func (m *streamManager) claim(ctx context.Context, subject, id string) (streams.Message, error) {
-	raw, err := m.handler.conn.Redis().GetDel(ctx, m.handler.keys.payload(id)).Bytes()
+	raw, err := m.handler.rdb.GetDel(ctx, m.handler.keys.payload(id)).Bytes()
 	if err != nil {
 		return streams.Message{}, err
 	}
