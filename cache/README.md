@@ -1,11 +1,12 @@
 # Cache
 
-Ephemeral, TTL-bound storage. The root package defines the contract; providers
-live in subpackages.
+The backend-agnostic contract for ephemeral, TTL-bound storage. This module
+holds the interface and its decorators — no backend. Providers implement it in
+their own modules:
 
-| Provider | Package | Status |
+| Provider | Module | Status |
 | --- | --- | --- |
-| Redis | [`cache/redis`](redis) | implemented |
+| Redis | [`runtime-go/redis`](../redis) | implemented |
 | Memcached | `cache/memcached` | not yet implemented |
 | Cloudflare CDN | `cache/cdn` | not yet implemented |
 
@@ -20,99 +21,125 @@ go get github.com/the-protobuf-project/runtime-go/cache
 
 ## Usage
 
-The caller owns the connection. A provider never dials, never caches a
-connection in a package-level variable, and never closes the client it was
-handed — pooling, the database index, TLS, and shutdown all stay yours.
+You reach a cache through a provider's manager, not by constructing one here:
 
 ```go
 import (
-    goredis "github.com/redis/go-redis/v9"
     "github.com/the-protobuf-project/runtime-go/cache"
-    cacheredis "github.com/the-protobuf-project/runtime-go/cache/redis"
+    "github.com/the-protobuf-project/runtime-go/redis"
 )
 
-rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 1})
-defer rdb.Close()
+c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
+defer c.Close()
 
-c, err := cacheredis.New(cacheredis.Config{
-    Client: rdb,
-    Prefix: "orders", // optional; namespaces the keys
-})
+_ = c.CreateDatabase(ctx, "orders")
+mgr, _ := c.SetDatabase(ctx, "orders")
+defer mgr.Close()
+
+entries := mgr.Document.Cache   // a cache.Cache
 ```
 
-Two caches built from two different clients are genuinely independent, and two
-sharing one client under different prefixes cannot see each other's entries.
+### Your model, not ours
 
-### Operations
-
-Every method takes a context — these are network calls, and you decide how long
-to wait.
+There is no document or entry type. A value goes in as it is and comes back
+decoded into a destination you own, so adding a field to your model is not a
+change to this package.
 
 ```go
-created, err := c.Create(ctx, cache.Document{
-    Data: user,
-    TTL:  30 * time.Second, // zero means it does not expire
-})
+type User struct {
+    Name string `json:"name"`
+    Age  int    `json:"age"`
+}
 
-got, err := c.Get(ctx, created.ID())
-err = c.Update(ctx, created.ID(), cache.Document{Data: updated, TTL: time.Minute})
-err = c.Delete(ctx, created.ID())
-docs, err := c.List(ctx)
+// An empty id has the provider generate one and return it.
+id, err := entries.Create(ctx, "", User{Name: "Ada"}, cache.TTL(time.Minute))
+
+var got User
+err = entries.Get(ctx, id, &got)
+
+err = entries.Update(ctx, id, User{Name: "Ada", Age: 36}, cache.TTL(time.Hour))
+err = entries.Delete(ctx, id)
+
+ids, err := entries.Keys(ctx)      // live ids, sweeping expired ones
+ttl, err := entries.TTL(ctx, id)   // zero means it does not expire
+
+var all []User
+err = entries.List(ctx, &all)
 ```
 
-`Create` generates an ID unless you set one first, which lets a resource name
-act as the key:
+### Typed views
+
+`For` puts a typed view over any `Cache` when you want the compiler to check the
+shape. It is a wrapper, not a second client — one provider serves every model,
+so it is configured once no matter how many types run through it.
 
 ```go
-doc := cache.Document{Data: user, TTL: time.Minute}
-doc.SetID("//theprotobufproject.com/user/alice")
+users := cache.For[User](mgr.Document.Cache)
+
+id, _ := users.Create(ctx, u, cache.TTL(time.Minute))
+u2, _ := users.Get(ctx, id)        // returns a User
+all, _ := users.List(ctx)          // returns []User
 ```
+
+Views of different types over the same `Cache` see the same entries. Give each
+model its own database or prefix when they should not.
+
+### Options, not parameters
+
+TTL is an option so a provider can gain or lose a capability without changing a
+signature — which matters when several caches implement this contract. A
+provider ignores what it cannot honor.
 
 ### Misses
 
-A missing or expired entry reports `cache.ErrNotFound`, which matches through
-the generic interface as well as the provider:
+A missing or expired entry reports `cache.ErrNotFound`:
 
 ```go
-if _, err := c.Get(ctx, id); errors.Is(err, cache.ErrNotFound) {
+if err := entries.Get(ctx, id, &got); errors.Is(err, cache.ErrNotFound) {
     // not there
 }
 ```
 
 `Delete` on a missing entry is **not** an error — the intent is already
-satisfied, and a cache entry may legitimately have expired a moment earlier.
+satisfied, and an entry may legitimately have expired a moment earlier.
 
-### Middleware
+## Middleware
 
 Cross-cutting behavior wraps any provider instead of being reimplemented inside
 each one:
 
 ```go
-c = cache.Chain(c,
+c := cache.Chain(mgr.Document.Cache,
     cache.WithRetryMiddleware(3, 100*time.Millisecond),
+    cache.WithLoggingMiddleware(logger),
     cache.WithTelemetryMiddleware(meter),
 )
 ```
 
 The outermost wrapper runs first, so the order above times the whole retried
-operation; swap the two to measure individual attempts.
+operation; swap them to measure individual attempts.
 
-`WithRetry` retries reads and deletes but **not** writes — `Create` and
-`Update` are not idempotent, and replaying a half-applied write can duplicate an
-entry rather than repair one. `ErrNotFound` is never retried.
+- **`WithRetry`** retries reads and deletes but **not** writes — `Create` and
+  `Update` are not idempotent, and replaying a half-applied write can duplicate
+  an entry rather than repair one. `ErrNotFound` is never retried.
+- **`WithLogging`** records a debug line per success, warn per miss, error per
+  failure, each with a duration. Providers log their own internals separately;
+  the two compose.
+- **`WithTelemetry`** records `cache_operations_total`,
+  `cache_operation_duration_seconds`, and `cache_gets_total{result=hit|miss}`.
+  A miss counts as a hit/miss outcome rather than an error, so error rates stay
+  meaningful.
 
-`WithTelemetry` takes a [`telemetry.Meter`](../telemetry); pass
-`telemetry.NoopMeter` when nothing is wired up. It records
-`cache_operations_total`, `cache_operation_duration_seconds`, and
-`cache_gets_total{result=hit|miss}` — a miss counts as a hit/miss outcome, not
-an error, so error rates stay meaningful.
+Both take an injected [`telemetry`](../telemetry) `Logger`/`Meter`; pass the
+no-op values when nothing is wired up, or use
+[`observability`](../observability) for OpenTelemetry-backed ones.
 
 ## Tests
 
-The tests need a live server and skip without one. Override the target with
-`REDIS_TEST_HOST` / `REDIS_TEST_PORT` (default `127.0.0.1:6379`):
+This module's tests are pure unit tests over the contract and decorators and
+need no server. The provider's integration tests live in
+[`runtime-go/redis`](../redis).
 
 ```bash
-docker compose -f docker/compose.yaml up -d
 go test ./...
 ```

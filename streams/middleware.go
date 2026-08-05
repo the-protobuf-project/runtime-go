@@ -46,9 +46,9 @@ func WithPublisherTelemetry(next Publisher, m telemetry.Meter) Publisher {
 	}
 }
 
-func (t *telemetryPublisher) Publish(ctx context.Context, subject string, msg Message) error {
+func (t *telemetryPublisher) Publish(ctx context.Context, subject string, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	err := t.next.Publish(ctx, subject, msg)
+	id, err := t.next.Publish(ctx, subject, value, opts...)
 
 	outcome := "ok"
 	if err != nil {
@@ -57,7 +57,7 @@ func (t *telemetryPublisher) Publish(ctx context.Context, subject string, msg Me
 	labels := telemetry.Labels{"subject": subject, "outcome": outcome}
 	t.ops.Add(ctx, 1, labels)
 	t.dur.Record(ctx, time.Since(start).Seconds(), labels)
-	return err
+	return id, err
 }
 
 // retryPublisher retries publishes that failed for a reason a retry could fix.
@@ -95,27 +95,30 @@ func WithPublisherTelemetryMiddleware(m telemetry.Meter) PublisherMiddleware {
 	return func(p Publisher) Publisher { return WithPublisherTelemetry(p, m) }
 }
 
-func (r *retryPublisher) Publish(ctx context.Context, subject string, msg Message) error {
-	var err error
+func (r *retryPublisher) Publish(ctx context.Context, subject string, value any, opts ...Option) (string, error) {
+	var (
+		err error
+		id  string
+	)
 	wait := r.backoff
 
 	for i := range r.attempts {
-		if err = r.next.Publish(ctx, subject, msg); err == nil {
-			return nil
+		if id, err = r.next.Publish(ctx, subject, value, opts...); err == nil {
+			return id, nil
 		}
 		// A settled answer; retrying only wastes the caller's deadline.
 		if errors.Is(err, ErrUnknownSubject) {
-			return err
+			return "", err
 		}
 		if i == r.attempts-1 {
 			break
 		}
 		select {
 		case <-ctx.Done():
-			return errors.Join(err, ctx.Err())
+			return "", errors.Join(err, ctx.Err())
 		case <-time.After(wait):
 			wait *= 2
 		}
 	}
-	return err
+	return "", err
 }

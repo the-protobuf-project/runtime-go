@@ -22,24 +22,24 @@ func (f *fakeStore) next() error {
 	return nil
 }
 
-func (f *fakeStore) Create(context.Context, Document) (*Document, error) {
-	return &Document{}, f.next()
+func (f *fakeStore) Create(_ context.Context, id string, _ any, _ ...Option) (string, error) {
+	if id == "" {
+		id = "generated"
+	}
+	return id, f.next()
 }
-func (f *fakeStore) Get(context.Context, string) (Document, error) {
-	return Document{}, f.next()
-}
-func (f *fakeStore) Update(context.Context, string, Document) error { return f.next() }
-func (f *fakeStore) Delete(context.Context, string) error           { return f.next() }
-func (f *fakeStore) List(context.Context, Query) ([]Document, error) {
-	return nil, f.next()
-}
+func (f *fakeStore) Get(context.Context, string, any) error               { return f.next() }
+func (f *fakeStore) Update(context.Context, string, any, ...Option) error { return f.next() }
+func (f *fakeStore) Delete(context.Context, string) error                 { return f.next() }
+func (f *fakeStore) Keys(context.Context, ...Option) ([]string, error)    { return nil, f.next() }
+func (f *fakeStore) List(context.Context, any, ...Option) error           { return f.next() }
 
 func TestWithRetryRetriesUntilSuccess(t *testing.T) {
 	boom := errors.New("transient")
 	f := &fakeStore{errs: []error{boom, boom}} // third call succeeds
 	s := WithRetry(f, 3, time.Millisecond)
 
-	if _, err := s.Get(t.Context(), "k"); err != nil {
+	if err := s.Get(t.Context(), "k", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if got := f.calls.Load(); got != 3 {
@@ -57,7 +57,7 @@ func TestWithRetryDoesNotRetrySettledErrors(t *testing.T) {
 			f := &fakeStore{errs: []error{sentinel, sentinel, sentinel}}
 			s := WithRetry(f, 3, time.Millisecond)
 
-			if _, err := s.Get(t.Context(), "k"); !errors.Is(err, sentinel) {
+			if err := s.Get(t.Context(), "k", &struct{}{}); !errors.Is(err, sentinel) {
 				t.Fatalf("Get error = %v, want %v", err, sentinel)
 			}
 			if got := f.calls.Load(); got != 1 {
@@ -75,7 +75,7 @@ func TestWithRetryDoesNotRetryWrites(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		f := &fakeStore{errs: []error{boom, boom, boom}}
 		s := WithRetry(f, 3, time.Millisecond)
-		if _, err := s.Create(t.Context(), Document{}); !errors.Is(err, boom) {
+		if _, err := s.Create(t.Context(), "", nil); !errors.Is(err, boom) {
 			t.Fatalf("Create error = %v", err)
 		}
 		if got := f.calls.Load(); got != 1 {
@@ -86,7 +86,7 @@ func TestWithRetryDoesNotRetryWrites(t *testing.T) {
 	t.Run("update", func(t *testing.T) {
 		f := &fakeStore{errs: []error{boom, boom, boom}}
 		s := WithRetry(f, 3, time.Millisecond)
-		if err := s.Update(t.Context(), "k", Document{}); !errors.Is(err, boom) {
+		if err := s.Update(t.Context(), "k", nil); !errors.Is(err, boom) {
 			t.Fatalf("Update error = %v", err)
 		}
 		if got := f.calls.Load(); got != 1 {
@@ -105,8 +105,7 @@ func TestWithRetryStopsOnContextCancellation(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := s.Get(ctx, "k")
-		done <- err
+		done <- s.Get(ctx, "k", &struct{}{})
 	}()
 
 	select {
@@ -130,7 +129,7 @@ func TestWithTelemetryToleratesNilMeter(t *testing.T) {
 	f := &fakeStore{}
 	s := WithTelemetry(f, nil)
 
-	if _, err := s.Get(t.Context(), "k"); err != nil {
+	if err := s.Get(t.Context(), "k", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if got := f.calls.Load(); got != 1 {
@@ -144,7 +143,7 @@ func TestWithTelemetryPassesResultsThrough(t *testing.T) {
 	f := &fakeStore{errs: []error{boom}}
 	s := WithTelemetry(f, nil)
 
-	if _, err := s.Get(t.Context(), "k"); !errors.Is(err, boom) {
+	if err := s.Get(t.Context(), "k", &struct{}{}); !errors.Is(err, boom) {
 		t.Errorf("Get error = %v, want %v", err, boom)
 	}
 }
@@ -153,7 +152,7 @@ func TestChainAppliesMiddlewareInOrder(t *testing.T) {
 	f := &fakeStore{errs: []error{errors.New("transient")}}
 	s := Chain(f, WithRetryMiddleware(2, time.Millisecond), WithTelemetryMiddleware(nil))
 
-	if _, err := s.Get(t.Context(), "k"); err != nil {
+	if err := s.Get(t.Context(), "k", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 	if got := f.calls.Load(); got != 2 {

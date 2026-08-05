@@ -39,21 +39,21 @@ func WithPublisherLoggingMiddleware(log telemetry.Logger) PublisherMiddleware {
 // An undeclared subject is logged at error rather than warn: it is a
 // programming mistake — the stream's subjects are fixed at creation — and the
 // message was not delivered anywhere.
-func (l *loggingPublisher) Publish(ctx context.Context, subject string, msg Message) error {
+func (l *loggingPublisher) Publish(ctx context.Context, subject string, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	err := l.next.Publish(ctx, subject, msg)
+	id, err := l.next.Publish(ctx, subject, value, opts...)
 
 	fields := telemetry.Fields{
 		"subject":  subject,
 		"duration": time.Since(start).String(),
 	}
-	if msg.ID() != "" {
-		fields["id"] = msg.ID()
+	if id != "" {
+		fields["id"] = id
 	}
-	if msg.TTL > 0 {
-		// Present only on the notification path, where it is the whole point:
-		// the message fires when this elapses.
-		fields["ttl"] = msg.TTL.String()
+	if o := NewOptions(opts...); o.TTL > 0 {
+		// Present only on the scheduled path, where it is the whole point: the
+		// message fires when this elapses.
+		fields["ttl"] = o.TTL.String()
 	}
 
 	switch {
@@ -64,7 +64,7 @@ func (l *loggingPublisher) Publish(ctx context.Context, subject string, msg Mess
 	default:
 		l.log.Error(ctx, "publish failed", err, fields)
 	}
-	return err
+	return id, err
 }
 
 // loggingSubscriber records subscription lifecycle and delivery.
@@ -114,7 +114,7 @@ func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string) (<-ch
 			if l.log.Enabled(ctx, telemetry.LevelDebug) {
 				l.log.Debug(ctx, "delivered", telemetry.Fields{
 					"subject": subject,
-					"id":      msg.ID(),
+					"id":      msg.ID,
 				})
 			}
 			select {

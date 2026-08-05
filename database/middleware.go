@@ -54,7 +54,7 @@ func WithTelemetry(next Store, m telemetry.Meter) Store {
 		ops:  m.Counter("database_operations_total", telemetry.WithUnit("1")),
 		dur: m.Histogram("database_operation_duration_seconds",
 			telemetry.WithUnit("s")),
-		total: m.UpDownCounter("database_documents", telemetry.WithUnit("1")),
+		total: m.UpDownCounter("database_records", telemetry.WithUnit("1")),
 	}
 }
 
@@ -68,9 +68,9 @@ func (t *telemetryStore) record(ctx context.Context, op string, start time.Time,
 	t.dur.Record(ctx, time.Since(start).Seconds(), labels)
 }
 
-func (t *telemetryStore) Create(ctx context.Context, doc Document) (*Document, error) {
+func (t *telemetryStore) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	out, err := t.next.Create(ctx, doc)
+	out, err := t.next.Create(ctx, id, value, opts...)
 	t.record(ctx, "create", start, err)
 	if err == nil {
 		t.total.Add(ctx, 1, telemetry.Labels{})
@@ -78,16 +78,16 @@ func (t *telemetryStore) Create(ctx context.Context, doc Document) (*Document, e
 	return out, err
 }
 
-func (t *telemetryStore) Get(ctx context.Context, id string) (Document, error) {
+func (t *telemetryStore) Get(ctx context.Context, id string, dest any) error {
 	start := time.Now()
-	doc, err := t.next.Get(ctx, id)
+	err := t.next.Get(ctx, id, dest)
 	t.record(ctx, "get", start, err)
-	return doc, err
+	return err
 }
 
-func (t *telemetryStore) Update(ctx context.Context, id string, doc Document) error {
+func (t *telemetryStore) Update(ctx context.Context, id string, value any, opts ...Option) error {
 	start := time.Now()
-	err := t.next.Update(ctx, id, doc)
+	err := t.next.Update(ctx, id, value, opts...)
 	t.record(ctx, "update", start, err)
 	return err
 }
@@ -102,11 +102,18 @@ func (t *telemetryStore) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-func (t *telemetryStore) List(ctx context.Context, q Query) ([]Document, error) {
+func (t *telemetryStore) Keys(ctx context.Context, opts ...Option) ([]string, error) {
 	start := time.Now()
-	docs, err := t.next.List(ctx, q)
+	keys, err := t.next.Keys(ctx, opts...)
+	t.record(ctx, "keys", start, err)
+	return keys, err
+}
+
+func (t *telemetryStore) List(ctx context.Context, dest any, opts ...Option) error {
+	start := time.Now()
+	err := t.next.List(ctx, dest, opts...)
 	t.record(ctx, "list", start, err)
-	return docs, err
+	return err
 }
 
 // retryStore retries operations that failed for a reason a retry could fix.
@@ -172,35 +179,33 @@ func (r *retryStore) retry(ctx context.Context, op func() error) error {
 }
 
 // Create is not retried; see [WithRetry].
-func (r *retryStore) Create(ctx context.Context, doc Document) (*Document, error) {
-	return r.next.Create(ctx, doc)
+func (r *retryStore) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
+	return r.next.Create(ctx, id, value, opts...)
 }
 
 // Update is not retried; see [WithRetry].
-func (r *retryStore) Update(ctx context.Context, id string, doc Document) error {
-	return r.next.Update(ctx, id, doc)
+func (r *retryStore) Update(ctx context.Context, id string, value any, opts ...Option) error {
+	return r.next.Update(ctx, id, value, opts...)
 }
 
-func (r *retryStore) Get(ctx context.Context, id string) (Document, error) {
-	var doc Document
-	err := r.retry(ctx, func() error {
-		var err error
-		doc, err = r.next.Get(ctx, id)
-		return err
-	})
-	return doc, err
+func (r *retryStore) Get(ctx context.Context, id string, dest any) error {
+	return r.retry(ctx, func() error { return r.next.Get(ctx, id, dest) })
 }
 
 func (r *retryStore) Delete(ctx context.Context, id string) error {
 	return r.retry(ctx, func() error { return r.next.Delete(ctx, id) })
 }
 
-func (r *retryStore) List(ctx context.Context, q Query) ([]Document, error) {
-	var docs []Document
+func (r *retryStore) Keys(ctx context.Context, opts ...Option) ([]string, error) {
+	var keys []string
 	err := r.retry(ctx, func() error {
 		var err error
-		docs, err = r.next.List(ctx, q)
+		keys, err = r.next.Keys(ctx, opts...)
 		return err
 	})
-	return docs, err
+	return keys, err
+}
+
+func (r *retryStore) List(ctx context.Context, dest any, opts ...Option) error {
+	return r.retry(ctx, func() error { return r.next.List(ctx, dest, opts...) })
 }

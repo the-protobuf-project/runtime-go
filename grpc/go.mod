@@ -12,6 +12,8 @@ require (
 	github.com/quic-go/quic-go v0.61.0
 	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.1
 	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
+	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
@@ -75,7 +77,6 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -102,3 +103,10 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// observability and telemetry are versioned alongside this module in
+// runtime-go and have no tagged release carrying the Logger contract yet.
+// Drop these once they are published.
+replace github.com/the-protobuf-project/runtime-go/observability => ../observability
+
+replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry

@@ -1,66 +1,50 @@
-// Package shared holds the telemetry client the grpc package logs through.
+// Package shared holds the telemetry the grpc package logs and measures
+// through.
 //
-// It is initialized on first use rather than in an init function, and a
-// configuration failure degrades to a local-only logger instead of killing the
-// process. A library cannot decide that its host binary should not start
-// because an OTLP collector is unreachable.
+// It is a thin binding: [github.com/the-protobuf-project/runtime-go/observability]
+// does the work of standing up the backend, and this only names the service so
+// grpc records are distinguishable from a sibling module's.
 package shared
 
 import (
-	"fmt"
-	"os"
-	"sync"
-
 	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
+	"github.com/the-protobuf-project/runtime-go/observability"
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
-var (
-	once      sync.Once
-	telemetry *opentelementry.Opentelementry
-)
-
-// Telemetry returns the shared telemetry client, building it on first call.
+// obs is this module's telemetry client, built on first use.
 //
-// If the configured client cannot be built — no collector, a bad OTLP endpoint,
-// an unwritable MCAP path — it falls back to one with the exporters disabled so
-// logging still works locally. Only if that also fails does it return nil, and
-// the failure is reported on stderr.
+// Deferring the build matters here: a package-level init cannot report a
+// failure to anyone, and an unreachable collector must not stop a binary from
+// starting just because it imported the grpc package.
+var obs = observability.Lazy("runtime-go-grpc", "1.0.0")
+
+// Telemetry returns the underlying SDK client.
+//
+// grpc logs through the SDK's own logger — its call sites use the formatted
+// helpers (Debugf, Errorf) that the backend-agnostic [telemetry.Logger]
+// contract does not carry — so this exposes the client directly rather than
+// fronting it. New code should prefer [Log].
 func Telemetry() *opentelementry.Opentelementry {
-	once.Do(func() {
-		o, err := opentelementry.New().
-			WithService("runtime-go-grpc", "1.0.0").
-			WithLogLevel(opentelementry.ModuleLevel_2).WithTracing().
-			Build()
-		if err == nil {
-			telemetry = o
-			return
-		}
+	return obs().Otel()
+}
 
-		// The exporters are what usually fail, and they are also what a library
-		// can do without. Retry with the smallest configuration that still
-		// gives the caller a logger.
-		fmt.Fprintf(os.Stderr,
-			"runtime-go/grpc: telemetry setup failed (%v); falling back to local logging\n", err)
+// Log returns the backend-agnostic logger, tagged with the component.
+//
+// Prefer this over [Telemetry] for anything new: it keeps the caller off the
+// SDK type, so the same code works against a test logger or a different
+// backend.
+func Log() telemetry.Logger {
+	return obs().Log().With(telemetry.Fields{"component": "grpc"})
+}
 
-		fallback, ferr := opentelementry.New().
-			WithService("runtime-go-grpc", "1.0.0").
-			WithLogLevel(opentelementry.ModuleLevel_2).
-			Build()
-		if ferr != nil {
-			fmt.Fprintf(os.Stderr,
-				"runtime-go/grpc: fallback telemetry also failed (%v); logging is disabled\n", ferr)
-			return
-		}
-		telemetry = fallback
-	})
-	return telemetry
+// Meter returns this module's meter.
+func Meter() telemetry.Meter {
+	return obs().Meter()
 }
 
 // Close releases the telemetry client. The main application should call it on
-// shutdown. It is safe to call when telemetry was never initialized.
+// shutdown.
 func Close() error {
-	if telemetry != nil {
-		return telemetry.Close()
-	}
-	return nil
+	return obs().Close()
 }

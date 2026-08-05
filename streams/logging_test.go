@@ -74,9 +74,7 @@ func TestPublisherLoggingRecordsSuccessAtDebug(t *testing.T) {
 	log, recs := newCaptureLogger()
 	p := WithPublisherLogging(&fakePublisher{}, log)
 
-	msg := Message{TTL: time.Minute}
-	msg.SetID("m-1")
-	if err := p.Publish(t.Context(), "user.login", msg); err != nil {
+	if _, err := p.Publish(t.Context(), "user.login", nil, ID("m-1"), TTL(time.Minute)); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 
@@ -105,7 +103,7 @@ func TestPublisherLoggingRecordsUnknownSubjectAtError(t *testing.T) {
 	log, recs := newCaptureLogger()
 	p := WithPublisherLogging(&fakePublisher{errs: []error{ErrUnknownSubject}}, log)
 
-	if err := p.Publish(t.Context(), "typo", Message{}); !errors.Is(err, ErrUnknownSubject) {
+	if _, err := p.Publish(t.Context(), "typo", nil); !errors.Is(err, ErrUnknownSubject) {
 		t.Fatalf("Publish error = %v", err)
 	}
 
@@ -121,7 +119,7 @@ func TestPublisherLoggingRecordsUnknownSubjectAtError(t *testing.T) {
 func TestPublisherLoggingToleratesNilLogger(t *testing.T) {
 	p := WithPublisherLogging(&fakePublisher{}, nil)
 
-	if err := p.Publish(t.Context(), "s", Message{}); err != nil {
+	if _, err := p.Publish(t.Context(), "s", nil); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 }
@@ -141,8 +139,8 @@ func TestSubscriberLoggingRecordsOpenDeliverAndClose(t *testing.T) {
 		t.Fatalf("Subscribe: %v", err)
 	}
 
-	upstream <- NewMessage("m-1", "a", 0)
-	upstream <- NewMessage("m-2", "b", 0)
+	upstream <- Message{ID: "m-1", Subject: "user.login"}
+	upstream <- Message{ID: "m-2", Subject: "user.login"}
 	close(upstream)
 
 	for range out {

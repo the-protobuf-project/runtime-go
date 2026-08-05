@@ -12,18 +12,17 @@ import (
 // instrumentation, retries, rate limiting. Because it takes and returns the
 // same interface, middlewares compose:
 //
-//	c = cache.WithRetry(c, 3, 100*time.Millisecond)
-//	c = cache.WithTelemetry(c, meter)
+//	c = cache.Chain(c,
+//	    cache.WithRetryMiddleware(3, 100*time.Millisecond),
+//	    cache.WithLoggingMiddleware(log),
+//	    cache.WithTelemetryMiddleware(meter),
+//	)
 //
 // The outermost wrapper runs first, so the order above times the retries rather
-// than each individual attempt. Swap the two lines to measure attempts instead.
+// than each individual attempt.
 type Middleware func(Cache) Cache
 
-// Chain applies middlewares to a Cache, outermost last:
-//
-//	c = cache.Chain(c, cache.WithRetryMiddleware(3, time.Second), telemetryMW)
-//
-// is the same as wrapping by hand in that order.
+// Chain applies middlewares to a Cache, outermost last.
 func Chain(c Cache, mw ...Middleware) Cache {
 	for _, m := range mw {
 		c = m(c)
@@ -61,8 +60,14 @@ func WithTelemetry(next Cache, m telemetry.Meter) Cache {
 		dur: m.Histogram("cache_operation_duration_seconds",
 			telemetry.WithUnit("s")),
 		hits:  m.Counter("cache_gets_total", telemetry.WithUnit("1")),
-		total: m.UpDownCounter("cache_documents", telemetry.WithUnit("1")),
+		total: m.UpDownCounter("cache_entries", telemetry.WithUnit("1")),
 	}
+}
+
+// WithTelemetryMiddleware is [WithTelemetry] as a [Middleware], for use with
+// [Chain].
+func WithTelemetryMiddleware(m telemetry.Meter) Middleware {
+	return func(c Cache) Cache { return WithTelemetry(c, m) }
 }
 
 // record reports one completed operation. outcome is "ok" or "error" so a
@@ -77,9 +82,9 @@ func (t *telemetryCache) record(ctx context.Context, op string, start time.Time,
 	t.dur.Record(ctx, time.Since(start).Seconds(), labels)
 }
 
-func (t *telemetryCache) Create(ctx context.Context, doc Document) (*Document, error) {
+func (t *telemetryCache) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	out, err := t.next.Create(ctx, doc)
+	out, err := t.next.Create(ctx, id, value, opts...)
 	t.record(ctx, "create", start, err)
 	if err == nil {
 		t.total.Add(ctx, 1, telemetry.Labels{})
@@ -87,27 +92,27 @@ func (t *telemetryCache) Create(ctx context.Context, doc Document) (*Document, e
 	return out, err
 }
 
-func (t *telemetryCache) Get(ctx context.Context, id string) (Document, error) {
+func (t *telemetryCache) Get(ctx context.Context, id string, dest any) error {
 	start := time.Now()
-	doc, err := t.next.Get(ctx, id)
+	err := t.next.Get(ctx, id, dest)
 
 	// A miss is an expected outcome, not a failure — report it on the hit/miss
 	// series and keep it out of the error count.
 	if errors.Is(err, ErrNotFound) {
 		t.hits.Add(ctx, 1, telemetry.Labels{"result": "miss"})
 		t.record(ctx, "get", start, nil)
-		return doc, err
+		return err
 	}
 	if err == nil {
 		t.hits.Add(ctx, 1, telemetry.Labels{"result": "hit"})
 	}
 	t.record(ctx, "get", start, err)
-	return doc, err
+	return err
 }
 
-func (t *telemetryCache) Update(ctx context.Context, id string, doc Document) error {
+func (t *telemetryCache) Update(ctx context.Context, id string, value any, opts ...Option) error {
 	start := time.Now()
-	err := t.next.Update(ctx, id, doc)
+	err := t.next.Update(ctx, id, value, opts...)
 	t.record(ctx, "update", start, err)
 	return err
 }
@@ -122,11 +127,25 @@ func (t *telemetryCache) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-func (t *telemetryCache) List(ctx context.Context) ([]Document, error) {
+func (t *telemetryCache) Keys(ctx context.Context) ([]string, error) {
 	start := time.Now()
-	docs, err := t.next.List(ctx)
+	keys, err := t.next.Keys(ctx)
+	t.record(ctx, "keys", start, err)
+	return keys, err
+}
+
+func (t *telemetryCache) List(ctx context.Context, dest any) error {
+	start := time.Now()
+	err := t.next.List(ctx, dest)
 	t.record(ctx, "list", start, err)
-	return docs, err
+	return err
+}
+
+func (t *telemetryCache) TTL(ctx context.Context, id string) (time.Duration, error) {
+	start := time.Now()
+	ttl, err := t.next.TTL(ctx, id)
+	t.record(ctx, "ttl", start, err)
+	return ttl, err
 }
 
 // retryCache retries operations that failed for a reason a retry could fix.
@@ -141,7 +160,7 @@ type retryCache struct {
 // attempts count disables retrying and returns next unchanged.
 //
 // Reads and deletes are retried; writes are not — Create and Update are not
-// idempotent here (Create can mint an ID, Update overwrites), and replaying a
+// idempotent here (Create can mint an id, Update overwrites), and replaying a
 // half-applied write can duplicate an entry rather than repair one. Retrying a
 // [ErrNotFound] is likewise pointless: the answer will not change.
 //
@@ -157,12 +176,6 @@ func WithRetry(next Cache, attempts int, backoff time.Duration) Cache {
 // WithRetryMiddleware is [WithRetry] as a [Middleware], for use with [Chain].
 func WithRetryMiddleware(attempts int, backoff time.Duration) Middleware {
 	return func(c Cache) Cache { return WithRetry(c, attempts, backoff) }
-}
-
-// WithTelemetryMiddleware is [WithTelemetry] as a [Middleware], for use with
-// [Chain].
-func WithTelemetryMiddleware(m telemetry.Meter) Middleware {
-	return func(c Cache) Cache { return WithTelemetry(c, m) }
 }
 
 // retry runs op until it succeeds, the context ends, or the attempts run out.
@@ -194,35 +207,43 @@ func (r *retryCache) retry(ctx context.Context, op func() error) error {
 }
 
 // Create is not retried; see [WithRetry].
-func (r *retryCache) Create(ctx context.Context, doc Document) (*Document, error) {
-	return r.next.Create(ctx, doc)
+func (r *retryCache) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
+	return r.next.Create(ctx, id, value, opts...)
 }
 
 // Update is not retried; see [WithRetry].
-func (r *retryCache) Update(ctx context.Context, id string, doc Document) error {
-	return r.next.Update(ctx, id, doc)
+func (r *retryCache) Update(ctx context.Context, id string, value any, opts ...Option) error {
+	return r.next.Update(ctx, id, value, opts...)
 }
 
-func (r *retryCache) Get(ctx context.Context, id string) (Document, error) {
-	var doc Document
-	err := r.retry(ctx, func() error {
-		var err error
-		doc, err = r.next.Get(ctx, id)
-		return err
-	})
-	return doc, err
+func (r *retryCache) Get(ctx context.Context, id string, dest any) error {
+	return r.retry(ctx, func() error { return r.next.Get(ctx, id, dest) })
 }
 
 func (r *retryCache) Delete(ctx context.Context, id string) error {
 	return r.retry(ctx, func() error { return r.next.Delete(ctx, id) })
 }
 
-func (r *retryCache) List(ctx context.Context) ([]Document, error) {
-	var docs []Document
+func (r *retryCache) Keys(ctx context.Context) ([]string, error) {
+	var keys []string
 	err := r.retry(ctx, func() error {
 		var err error
-		docs, err = r.next.List(ctx)
+		keys, err = r.next.Keys(ctx)
 		return err
 	})
-	return docs, err
+	return keys, err
+}
+
+func (r *retryCache) List(ctx context.Context, dest any) error {
+	return r.retry(ctx, func() error { return r.next.List(ctx, dest) })
+}
+
+func (r *retryCache) TTL(ctx context.Context, id string) (time.Duration, error) {
+	var ttl time.Duration
+	err := r.retry(ctx, func() error {
+		var err error
+		ttl, err = r.next.TTL(ctx, id)
+		return err
+	})
+	return ttl, err
 }

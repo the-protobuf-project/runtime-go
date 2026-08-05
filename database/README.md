@@ -1,11 +1,12 @@
 # Database
 
-Durable document storage — records live until they are deleted. The root
-package defines the contract; providers live in subpackages.
+The backend-agnostic contract for durable document storage — records live until
+they are deleted. This module holds the interface and its decorators — no
+backend. Providers implement it in their own modules:
 
-| Provider | Package | Status |
+| Provider | Module | Status |
 | --- | --- | --- |
-| Redis | [`database/redis`](redis) | implemented |
+| Redis | [`runtime-go/redis`](../redis) | implemented |
 | MongoDB | `database/mongodb` | not yet implemented |
 | GORM (SQL) | `database/gorm` | not yet implemented |
 | Neo4j | `database/neo4j` | not yet implemented |
@@ -16,10 +17,10 @@ For ephemeral TTL-bound entries see [`cache`](../cache); for messaging see
 
 ## Not the proto Driver
 
-This is a store for **ad-hoc JSON documents**. The generated-proto CRUD seam —
+This stores **ad-hoc values**. The generated-proto CRUD seam —
 [`interfaces/store`](../interfaces/store) — operates on `proto.Message` values
 through `Resource` descriptors and serves a different job. Both exist on
-purpose. `gorm` appears in both lists wearing two different hats.
+purpose; `gorm` appears in both lists wearing two different hats.
 
 ## Installation
 
@@ -29,83 +30,113 @@ go get github.com/the-protobuf-project/runtime-go/database
 
 ## Usage
 
-The caller owns the connection.
+You reach a store through a provider's manager, not by constructing one here:
 
 ```go
 import (
-    goredis "github.com/redis/go-redis/v9"
     "github.com/the-protobuf-project/runtime-go/database"
-    dbredis "github.com/the-protobuf-project/runtime-go/database/redis"
+    "github.com/the-protobuf-project/runtime-go/redis"
 )
 
-rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 0})
-defer rdb.Close()
+c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
+defer c.Close()
 
-db, err := dbredis.New(dbredis.Config{Client: rdb, Prefix: "orders"})
+_ = c.CreateDatabase(ctx, "orders")
+mgr, _ := c.SetDatabase(ctx, "orders")
+defer mgr.Close()
+
+books := mgr.Document.KV   // a database.Store
 ```
 
-### Operations
+### Your model, not ours
+
+There is no document type. A value goes in as it is and comes back decoded into
+a destination you own.
 
 ```go
-created, err := db.Create(ctx, database.Document{Data: book})
-got, err := db.Get(ctx, created.ID())
-err = db.Update(ctx, created.ID(), database.Document{Data: revised})
-err = db.Delete(ctx, created.ID())
+type Book struct {
+    Title  string `json:"title"`
+    Author string `json:"author"`
+}
 
-docs, err := db.List(ctx, database.Query{Limit: 20, Offset: 40})
+id, err := books.Create(ctx, "", Book{Title: "Dune", Author: "Herbert"})
+
+var got Book
+err = books.Get(ctx, id, &got)
+
+err = books.Update(ctx, id, Book{Title: "Dune", Author: "Frank Herbert"})
+err = books.Delete(ctx, id)
+
+ids, err := books.Keys(ctx, database.Limit(20), database.Offset(40))
+
+var page []Book
+err = books.List(ctx, &page, database.Limit(20))
 ```
 
-`List` returns documents sorted by ID, so `Limit` and `Offset` page
-predictably — without a stable order, successive pages would overlap or skip
-records.
+`Keys` and `List` return records in a stable order, so `Limit` and `Offset` page
+predictably — without one, successive pages would overlap or skip records.
+
+### Typed views
+
+```go
+shelf := database.For[Book](mgr.Document.KV)
+
+id, _ := shelf.Create(ctx, b)
+b2, _ := shelf.Get(ctx, id)     // returns a Book
+all, _ := shelf.List(ctx)       // returns []Book
+```
 
 ### Deduplication
 
-The store is content-addressed. Every payload is canonicalized — map keys
-sorted — and hashed with SHA256, and the hash is reserved atomically before the
-body is written. Writing content that already exists returns the document that
-holds it rather than storing a second copy:
+Providers may be content-addressed. The Redis one canonicalizes each value —
+map keys sorted — hashes it with SHA256, and reserves the hash before writing,
+so identical content resolves to a single record:
 
 ```go
-a, _ := db.Create(ctx, database.Document{Data: map[string]any{"x": 1, "y": 2}})
-b, _ := db.Create(ctx, database.Document{Data: map[string]any{"y": 2, "x": 1}})
-// a.ID() == b.ID() — key order is not content
+a, _ := books.Create(ctx, "", map[string]any{"x": 1, "y": 2})
+b, _ := books.Create(ctx, "", map[string]any{"y": 2, "x": 1})
+// a == b — field order is not content
 ```
 
-Compare the returned ID against the one you supplied to tell a fresh write from
-a deduplicated one. `Update` to content another document already holds is
-rejected with `database.ErrDuplicate`; deleting a document releases its content
-for reuse.
+Compare the returned id against the one you supplied to tell a fresh write from
+a deduplicated one. `Update` to content another record already holds is refused
+with `database.ErrDuplicate`; deleting a record releases its content for reuse.
 
 ### Missing records
 
-Unlike a cache, a missing record is a genuine surprise — documents do not expire
+Unlike a cache, a missing record is a genuine surprise — records do not expire
 on their own — so both `Get` and `Delete` report it:
 
 ```go
-if err := db.Delete(ctx, id); errors.Is(err, database.ErrNotFound) {
+if err := books.Delete(ctx, id); errors.Is(err, database.ErrNotFound) {
     // it was not there
 }
 ```
 
-### Middleware
+## Middleware
 
 ```go
-db = database.Chain(db,
+db := database.Chain(mgr.Document.KV,
     database.WithRetryMiddleware(3, 100*time.Millisecond),
+    database.WithLoggingMiddleware(logger),
     database.WithTelemetryMiddleware(meter),
 )
 ```
 
-`WithRetry` retries reads but **not** writes, and never retries `ErrNotFound`
-or `ErrDuplicate` — both are settled answers. `WithTelemetry` records
-`database_operations_total`, `database_operation_duration_seconds`, and
-`database_documents`; here `ErrNotFound` **does** count as an error, unlike in
-the cache.
+- **`WithRetry`** retries reads but **not** writes, and never retries
+  `ErrNotFound` or `ErrDuplicate` — both are settled answers.
+- **`WithLogging`** records debug per success, warn per refused duplicate, error
+  per failure, and info when a write was deduplicated to an existing record.
+- **`WithTelemetry`** records `database_operations_total`,
+  `database_operation_duration_seconds`, and `database_records`. Here
+  `ErrNotFound` **does** count as an error, unlike in the cache.
 
 ## Tests
 
+This module's tests are pure unit tests over the contract and decorators and
+need no server. The provider's integration tests live in
+[`runtime-go/redis`](../redis).
+
 ```bash
-docker compose -f ../cache/docker/compose.yaml up -d
 go test ./...
 ```

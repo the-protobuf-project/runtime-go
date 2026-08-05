@@ -1,27 +1,3 @@
-// Package cache defines the backend-agnostic contract for runtime-go's cache
-// layer: ephemeral, TTL-bound storage.
-//
-// Providers live in subpackages — [github.com/the-protobuf-project/runtime-go/cache/redis]
-// and friends — and each exposes a typed Config plus a New constructor:
-//
-//	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: 2})
-//	c, err := cacheredis.New(cacheredis.Config{Client: rdb, Prefix: "orders"})
-//
-// A provider never opens its own connection. The caller builds the client,
-// which is what makes the client's lifetime, pooling, database index, and
-// shutdown the caller's to control — and what keeps this package free of any
-// process-wide connection state. Two caches built from two different clients
-// are genuinely independent.
-//
-// Cross-cutting behavior composes around any provider rather than being
-// reimplemented inside each one:
-//
-//	c = cache.WithRetry(c, 3, 100*time.Millisecond)
-//	c = cache.WithTelemetry(c, meter)
-//
-// For durable, non-expiring records see the sibling
-// [github.com/the-protobuf-project/runtime-go/database] module; for messaging,
-// [github.com/the-protobuf-project/runtime-go/streams].
 package cache
 
 import (
@@ -36,32 +12,34 @@ import (
 // comparing formatted error strings.
 var ErrNotFound = errors.New("cache: not found")
 
-// Document is an entry stored in a cache: a JSON-serializable payload plus a
-// TTL. A zero TTL means the entry does not expire.
-type Document struct {
-	id   string
-	Data any           `json:"data"`
-	TTL  time.Duration `json:"ttl,omitempty"`
+// Options are the per-operation settings a provider understands. A provider
+// ignores what it cannot honor, so a call written against one backend still
+// compiles and runs against another.
+type Options struct {
+	// TTL is how long the entry lives. Zero means it does not expire.
+	TTL time.Duration
 }
 
-// NewDocument builds a Document with its ID already set. Providers use it to
-// return stored entries: id is unexported, so it cannot be filled in from a
-// struct literal outside this package.
-func NewDocument(id string, data any, ttl time.Duration) Document {
-	return Document{id: id, Data: data, TTL: ttl}
+// Option configures one operation.
+//
+// Settings are options rather than parameters so a provider can gain or lose a
+// capability without changing any signature — which is the point when several
+// caches implement this contract.
+type Option func(*Options)
+
+// TTL sets how long an entry lives. Zero means it does not expire.
+func TTL(d time.Duration) Option {
+	return func(o *Options) { o.TTL = d }
 }
 
-// ID returns the ID of the document. It is empty for a document that has not
-// been stored yet and was not given an explicit ID.
-func (d *Document) ID() string {
-	return d.id
-}
-
-// SetID sets the ID of the document. Set one before Create to choose the key
-// yourself — a resource name, for instance — instead of having the provider
-// generate it.
-func (d *Document) SetID(id string) {
-	d.id = id
+// NewOptions folds opts into a single Options. Providers call this rather than
+// re-implementing the same loop.
+func NewOptions(opts ...Option) Options {
+	var o Options
+	for _, opt := range opts {
+		opt(&o)
+	}
+	return o
 }
 
 // Cache is the contract every provider satisfies.
@@ -69,26 +47,35 @@ func (d *Document) SetID(id string) {
 // Every method takes a context: these are network calls, and the caller decides
 // how long to wait for them and when to give up.
 type Cache interface {
-	// Create stores a document with its TTL, assigning an ID when it does not
-	// carry one, and returns what was stored.
-	Create(ctx context.Context, doc Document) (*Document, error)
+	// Create stores value under id, or under a generated id when id is empty,
+	// and returns the id it used.
+	Create(ctx context.Context, id string, value any, opts ...Option) (string, error)
 
-	// Get retrieves a document by ID. It returns an error wrapping
-	// [ErrNotFound] when no such document exists or it has expired.
-	Get(ctx context.Context, id string) (Document, error)
+	// Get decodes the entry into dest, which must be a non-nil pointer. It
+	// returns an error wrapping [ErrNotFound] when no such entry exists or it
+	// has expired.
+	Get(ctx context.Context, id string, dest any) error
 
-	// Update replaces the content and TTL of an existing document. It returns
-	// an error wrapping [ErrNotFound] when the document does not exist.
-	Update(ctx context.Context, id string, doc Document) error
+	// Update replaces the value stored under id. It returns an error wrapping
+	// [ErrNotFound] when the entry does not exist.
+	Update(ctx context.Context, id string, value any, opts ...Option) error
 
-	// Delete removes a document and its index entry. Deleting an entry that is
-	// not there is not an error — the caller's intent is already satisfied.
+	// Delete removes an entry. Deleting one that is not there is not an error —
+	// the caller's intent is already satisfied, and a cache entry may
+	// legitimately have expired a moment earlier.
 	Delete(ctx context.Context, id string) error
 
-	// List returns every stored document, sweeping stale index entries as it
-	// goes. Entries that expire between the index read and their fetch are
-	// skipped rather than reported as an error.
-	List(ctx context.Context) ([]Document, error)
+	// Keys returns the ids of every live entry, sweeping ones that have expired.
+	Keys(ctx context.Context) ([]string, error)
+
+	// List decodes every live entry into dest, which must be a non-nil pointer
+	// to a slice.
+	List(ctx context.Context, dest any) error
+
+	// TTL reports how much longer an entry will live. It returns zero for an
+	// entry with no expiry, and an error wrapping [ErrNotFound] when the entry
+	// does not exist.
+	TTL(ctx context.Context, id string) (time.Duration, error)
 }
 
 // Closer is implemented by providers holding a resource of their own that must

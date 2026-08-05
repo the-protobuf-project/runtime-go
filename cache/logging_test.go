@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
@@ -75,7 +76,7 @@ func TestLoggingRecordsSuccessAtDebug(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&fakeCache{}, log)
 
-	if _, err := c.Get(t.Context(), "abc"); err != nil {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 
@@ -97,7 +98,7 @@ func TestLoggingRecordsMissAtWarnNotError(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&fakeCache{errs: []error{ErrNotFound}}, log)
 
-	if _, err := c.Get(t.Context(), "abc"); !errors.Is(err, ErrNotFound) {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get error = %v", err)
 	}
 
@@ -117,7 +118,7 @@ func TestLoggingRecordsFailureAtError(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&fakeCache{errs: []error{boom}}, log)
 
-	if _, err := c.Get(t.Context(), "abc"); !errors.Is(err, boom) {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); !errors.Is(err, boom) {
 		t.Fatalf("Get error = %v", err)
 	}
 
@@ -133,7 +134,7 @@ func TestLoggingRecordsTheAssignedID(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&idAssigningCache{id: "generated"}, log)
 
-	if _, err := c.Create(t.Context(), Document{}); err != nil {
+	if _, err := c.Create(t.Context(), "", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -148,7 +149,7 @@ func TestLoggingPassesResultsThrough(t *testing.T) {
 	log, _ := newCaptureLogger()
 	c := WithLogging(&fakeCache{errs: []error{boom}}, log)
 
-	if _, err := c.Get(t.Context(), "abc"); !errors.Is(err, boom) {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); !errors.Is(err, boom) {
 		t.Errorf("Get error = %v, want %v", err, boom)
 	}
 }
@@ -157,7 +158,7 @@ func TestLoggingPassesResultsThrough(t *testing.T) {
 func TestWithLoggingToleratesNilLogger(t *testing.T) {
 	c := WithLogging(&fakeCache{}, nil)
 
-	if _, err := c.Get(t.Context(), "abc"); err != nil {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 }
@@ -167,7 +168,7 @@ func TestLoggingKeepsBoundFields(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&fakeCache{}, log.With(telemetry.Fields{"component": "cache"}))
 
-	if _, err := c.Get(t.Context(), "abc"); err != nil {
+	if err := c.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 
@@ -176,18 +177,17 @@ func TestLoggingKeepsBoundFields(t *testing.T) {
 	}
 }
 
-// idAssigningCache mimics a provider that generates an ID during Create.
+// idAssigningCache mimics a provider that generates an id during Create.
 type idAssigningCache struct {
 	id string
 }
 
-func (c *idAssigningCache) Create(context.Context, Document) (*Document, error) {
-	out := NewDocument(c.id, nil, 0)
-	return &out, nil
+func (c *idAssigningCache) Create(context.Context, string, any, ...Option) (string, error) {
+	return c.id, nil
 }
-func (c *idAssigningCache) Get(context.Context, string) (Document, error) {
-	return Document{}, nil
-}
-func (c *idAssigningCache) Update(context.Context, string, Document) error { return nil }
-func (c *idAssigningCache) Delete(context.Context, string) error           { return nil }
-func (c *idAssigningCache) List(context.Context) ([]Document, error)       { return nil, nil }
+func (c *idAssigningCache) Get(context.Context, string, any) error               { return nil }
+func (c *idAssigningCache) Update(context.Context, string, any, ...Option) error { return nil }
+func (c *idAssigningCache) Delete(context.Context, string) error                 { return nil }
+func (c *idAssigningCache) Keys(context.Context) ([]string, error)               { return nil, nil }
+func (c *idAssigningCache) List(context.Context, any) error                      { return nil }
+func (c *idAssigningCache) TTL(context.Context, string) (time.Duration, error)   { return 0, nil }

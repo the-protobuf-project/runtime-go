@@ -14,12 +14,17 @@ type fakePublisher struct {
 	errs  []error // consumed one per call; nil once exhausted
 }
 
-func (f *fakePublisher) Publish(context.Context, string, Message) error {
+func (f *fakePublisher) Publish(_ context.Context, _ string, _ any, opts ...Option) (string, error) {
 	n := f.calls.Add(1)
 	if int(n) <= len(f.errs) {
-		return f.errs[n-1]
+		return "", f.errs[n-1]
 	}
-	return nil
+	// Honor a caller-chosen id, as a real provider does, so decorators that
+	// report the id used are exercised against both paths.
+	if id := NewOptions(opts...).ID; id != "" {
+		return id, nil
+	}
+	return "generated", nil
 }
 
 func TestWithPublisherRetryRetriesUntilSuccess(t *testing.T) {
@@ -27,7 +32,7 @@ func TestWithPublisherRetryRetriesUntilSuccess(t *testing.T) {
 	f := &fakePublisher{errs: []error{boom, boom}} // third call succeeds
 	p := WithPublisherRetry(f, 3, time.Millisecond)
 
-	if err := p.Publish(t.Context(), "s", Message{}); err != nil {
+	if _, err := p.Publish(t.Context(), "s", nil); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	if got := f.calls.Load(); got != 3 {
@@ -40,7 +45,7 @@ func TestWithPublisherRetryGivesUpAfterAttempts(t *testing.T) {
 	f := &fakePublisher{errs: []error{boom, boom, boom, boom}}
 	p := WithPublisherRetry(f, 3, time.Millisecond)
 
-	if err := p.Publish(t.Context(), "s", Message{}); !errors.Is(err, boom) {
+	if _, err := p.Publish(t.Context(), "s", nil); !errors.Is(err, boom) {
 		t.Fatalf("Publish error = %v, want %v", err, boom)
 	}
 	if got := f.calls.Load(); got != 3 {
@@ -53,7 +58,7 @@ func TestWithPublisherRetryDoesNotRetryUnknownSubject(t *testing.T) {
 	f := &fakePublisher{errs: []error{ErrUnknownSubject, ErrUnknownSubject}}
 	p := WithPublisherRetry(f, 3, time.Millisecond)
 
-	if err := p.Publish(t.Context(), "s", Message{}); !errors.Is(err, ErrUnknownSubject) {
+	if _, err := p.Publish(t.Context(), "s", nil); !errors.Is(err, ErrUnknownSubject) {
 		t.Fatalf("Publish error = %v, want ErrUnknownSubject", err)
 	}
 	if got := f.calls.Load(); got != 1 {
@@ -70,7 +75,7 @@ func TestWithPublisherRetryStopsOnContextCancellation(t *testing.T) {
 	cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- p.Publish(ctx, "s", Message{}) }()
+	go func() { _, err := p.Publish(ctx, "s", nil); done <- err }()
 
 	select {
 	case err := <-done:
@@ -93,7 +98,7 @@ func TestWithPublisherTelemetryToleratesNilMeter(t *testing.T) {
 	f := &fakePublisher{}
 	p := WithPublisherTelemetry(f, nil)
 
-	if err := p.Publish(t.Context(), "s", Message{}); err != nil {
+	if _, err := p.Publish(t.Context(), "s", nil); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	if got := f.calls.Load(); got != 1 {
@@ -107,7 +112,7 @@ func TestWithPublisherTelemetryPassesResultsThrough(t *testing.T) {
 	f := &fakePublisher{errs: []error{boom}}
 	p := WithPublisherTelemetry(f, nil)
 
-	if err := p.Publish(t.Context(), "s", Message{}); !errors.Is(err, boom) {
+	if _, err := p.Publish(t.Context(), "s", nil); !errors.Is(err, boom) {
 		t.Errorf("Publish error = %v, want %v", err, boom)
 	}
 }
@@ -119,7 +124,7 @@ func TestChainPublisherAppliesMiddlewareInOrder(t *testing.T) {
 		WithPublisherTelemetryMiddleware(nil),
 	)
 
-	if err := p.Publish(t.Context(), "s", Message{}); err != nil {
+	if _, err := p.Publish(t.Context(), "s", nil); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	if got := f.calls.Load(); got != 2 {

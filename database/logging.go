@@ -60,38 +60,40 @@ func (l *loggingStore) record(ctx context.Context, op, id string, start time.Tim
 	}
 }
 
-func (l *loggingStore) Create(ctx context.Context, doc Document) (*Document, error) {
+func (l *loggingStore) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	out, err := l.next.Create(ctx, doc)
+	out, err := l.next.Create(ctx, id, value, opts...)
 
-	id := doc.ID()
-	if out != nil {
-		id = out.ID()
+	// Create mints an id when the caller supplies none; log the one that was
+	// actually used.
+	logged := id
+	if out != "" {
+		logged = out
 	}
-	l.record(ctx, "create", id, start, err)
+	l.record(ctx, "create", logged, start, err)
 
-	// A returned ID that differs from the requested one means the content was
+	// A returned id that differs from the requested one means the content was
 	// already stored — worth surfacing, since the caller's write did not
-	// produce a new document.
-	if err == nil && out != nil && doc.ID() != "" && out.ID() != doc.ID() {
+	// produce a new record.
+	if err == nil && id != "" && out != id {
 		l.log.Info(ctx, "database create deduplicated", telemetry.Fields{
-			"requested": doc.ID(),
-			"existing":  out.ID(),
+			"requested": id,
+			"existing":  out,
 		})
 	}
 	return out, err
 }
 
-func (l *loggingStore) Get(ctx context.Context, id string) (Document, error) {
+func (l *loggingStore) Get(ctx context.Context, id string, dest any) error {
 	start := time.Now()
-	doc, err := l.next.Get(ctx, id)
+	err := l.next.Get(ctx, id, dest)
 	l.record(ctx, "get", id, start, err)
-	return doc, err
+	return err
 }
 
-func (l *loggingStore) Update(ctx context.Context, id string, doc Document) error {
+func (l *loggingStore) Update(ctx context.Context, id string, value any, opts ...Option) error {
 	start := time.Now()
-	err := l.next.Update(ctx, id, doc)
+	err := l.next.Update(ctx, id, value, opts...)
 	l.record(ctx, "update", id, start, err)
 	return err
 }
@@ -103,17 +105,25 @@ func (l *loggingStore) Delete(ctx context.Context, id string) error {
 	return err
 }
 
-func (l *loggingStore) List(ctx context.Context, q Query) ([]Document, error) {
+func (l *loggingStore) Keys(ctx context.Context, opts ...Option) ([]string, error) {
 	start := time.Now()
-	docs, err := l.next.List(ctx, q)
-	l.record(ctx, "list", "", start, err)
+	keys, err := l.next.Keys(ctx, opts...)
+	l.record(ctx, "keys", "", start, err)
 
 	if err == nil && l.log.Enabled(ctx, telemetry.LevelDebug) {
-		l.log.Debug(ctx, "database list returned", telemetry.Fields{
-			"count":  len(docs),
-			"limit":  q.Limit,
-			"offset": q.Offset,
+		o := NewOptions(opts...)
+		l.log.Debug(ctx, "database keys returned", telemetry.Fields{
+			"count":  len(keys),
+			"limit":  o.Limit,
+			"offset": o.Offset,
 		})
 	}
-	return docs, err
+	return keys, err
+}
+
+func (l *loggingStore) List(ctx context.Context, dest any, opts ...Option) error {
+	start := time.Now()
+	err := l.next.List(ctx, dest, opts...)
+	l.record(ctx, "list", "", start, err)
+	return err
 }

@@ -68,7 +68,7 @@ func TestLoggingRecordsSuccessAtDebug(t *testing.T) {
 	log, recs := newCaptureLogger()
 	s := WithLogging(&fakeStore{}, log)
 
-	if _, err := s.Get(t.Context(), "abc"); err != nil {
+	if err := s.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 
@@ -87,7 +87,7 @@ func TestLoggingRecordsNotFoundAtError(t *testing.T) {
 	log, recs := newCaptureLogger()
 	s := WithLogging(&fakeStore{errs: []error{ErrNotFound}}, log)
 
-	if _, err := s.Get(t.Context(), "abc"); !errors.Is(err, ErrNotFound) {
+	if err := s.Get(t.Context(), "abc", &struct{}{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Get error = %v", err)
 	}
 
@@ -105,7 +105,7 @@ func TestLoggingRecordsDuplicateAtWarn(t *testing.T) {
 	log, recs := newCaptureLogger()
 	s := WithLogging(&fakeStore{errs: []error{ErrDuplicate}}, log)
 
-	if err := s.Update(t.Context(), "abc", Document{}); !errors.Is(err, ErrDuplicate) {
+	if err := s.Update(t.Context(), "abc", nil); !errors.Is(err, ErrDuplicate) {
 		t.Fatalf("Update error = %v", err)
 	}
 
@@ -123,9 +123,7 @@ func TestLoggingReportsDeduplication(t *testing.T) {
 	log, recs := newCaptureLogger()
 	s := WithLogging(&idAssigningStore{id: "existing"}, log)
 
-	requested := Document{}
-	requested.SetID("requested")
-	if _, err := s.Create(t.Context(), requested); err != nil {
+	if _, err := s.Create(t.Context(), "requested", nil); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -138,7 +136,7 @@ func TestLoggingReportsDeduplication(t *testing.T) {
 func TestWithLoggingToleratesNilLogger(t *testing.T) {
 	s := WithLogging(&fakeStore{}, nil)
 
-	if _, err := s.Get(t.Context(), "abc"); err != nil {
+	if err := s.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 }
@@ -148,15 +146,11 @@ type idAssigningStore struct {
 	id string
 }
 
-func (s *idAssigningStore) Create(context.Context, Document) (*Document, error) {
-	out := NewDocument(s.id, nil)
-	return &out, nil
+func (s *idAssigningStore) Create(context.Context, string, any, ...Option) (string, error) {
+	return s.id, nil
 }
-func (s *idAssigningStore) Get(context.Context, string) (Document, error) {
-	return Document{}, nil
-}
-func (s *idAssigningStore) Update(context.Context, string, Document) error { return nil }
-func (s *idAssigningStore) Delete(context.Context, string) error           { return nil }
-func (s *idAssigningStore) List(context.Context, Query) ([]Document, error) {
-	return nil, nil
-}
+func (s *idAssigningStore) Get(context.Context, string, any) error               { return nil }
+func (s *idAssigningStore) Update(context.Context, string, any, ...Option) error { return nil }
+func (s *idAssigningStore) Delete(context.Context, string) error                 { return nil }
+func (s *idAssigningStore) Keys(context.Context, ...Option) ([]string, error)    { return nil, nil }
+func (s *idAssigningStore) List(context.Context, any, ...Option) error           { return nil }
