@@ -1,4 +1,4 @@
-package redis
+package dragonfly
 
 import (
 	"context"
@@ -9,13 +9,17 @@ import (
 )
 
 // Backend is the name a cache built here reports.
-const Backend = "redis"
+const Backend = "dragonfly"
 
-// DefaultAddress is where a Redis server listens unless told otherwise.
+// DefaultAddress is where Dragonfly listens unless told otherwise. It takes
+// Redis' port deliberately, being a drop-in for it.
 const DefaultAddress = "localhost:6379"
 
-// Config describes a connection. It is [resp.Config] with the backend already
-// chosen, so the field is not yours to set.
+// DefaultDatabases is how many databases Dragonfly serves unless started with
+// another --dbnum. Selecting one at or past it is refused by the server.
+const DefaultDatabases = 16
+
+// Config describes a connection.
 type Config struct {
 	// Address is host:port. Empty means [DefaultAddress].
 	Address string
@@ -24,7 +28,8 @@ type Config struct {
 	Username string
 	Password string
 
-	// Database is the index this client is bound to.
+	// Database is the index this client is bound to. Dragonfly serves
+	// [DefaultDatabases] of them unless started with another --dbnum.
 	Database int
 
 	// PoolSize caps concurrent connections. Zero takes the driver's default.
@@ -35,11 +40,11 @@ type Config struct {
 	DialTimeout time.Duration
 }
 
-// Client is a connection to Redis. It is [resp.Client] under another name, so a
-// client built here can be handed to anything expecting one.
+// Client is a connection to Dragonfly. It is [resp.Client] under another name,
+// so a client built here can be handed to anything expecting one.
 type Client = resp.Client
 
-// NewClient dials Redis and verifies the connection before returning.
+// NewClient dials Dragonfly and verifies the connection before returning.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	address := cfg.Address
 	if address == "" {
@@ -55,10 +60,6 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		DialTimeout: cfg.DialTimeout,
 	})
 }
-
-// Adopt takes a driver client you built yourself — a cluster, a ring, a
-// configuration [Config] does not reach — and presents it as a Redis client.
-func Adopt(client *Client) *Client { return client }
 
 // New returns a cache backed by a client you own.
 func New(client *Client, cfg cache.Config) cache.Provider {

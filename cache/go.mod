@@ -3,6 +3,7 @@ module github.com/the-protobuf-project/runtime-go/cache
 go 1.26.4
 
 require (
+	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7

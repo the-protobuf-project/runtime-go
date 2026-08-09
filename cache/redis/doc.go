@@ -1,25 +1,17 @@
-// Package redis implements [cache.Cache] over Redis.
+// Package redis is the Redis preset.
 //
-// You bring the connection:
+// It is a thin layer over [resp], which drives every RESP server this module
+// supports. Redis contributes no primitives of its own — there is nothing here
+// but a name and the defaults that go with it, which is the point: Dragonfly
+// next door is the same file with different constants.
 //
-//	rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379", DB: 2})
-//	defer rdb.Close()
+//	client, err := redis.NewClient(ctx, redis.Config{Address: "localhost:6379"})
+//	defer client.Close()
 //
-//	c := redis.Connect(rdb)
+//	c := redis.New(client, cache.Config{Prefix: "orders"})
+//	db, err := c.SetDatabase(ctx, 1)
+//	defer db.Close()
 //
-// This package never dials, never holds a connection in a package-level
-// variable, and never closes the client it was handed. Pooling, TLS, the
-// database index, and shutdown all stay with you.
-//
-// # Swapping providers
-//
-// Connect returns the [cache.Cache] interface, so the connection object is the
-// only thing that changes when you move to another backend:
-//
-//	c := redis.Connect(rdb)          // Redis
-//	c := memcached.Connect(mc)       // Memcached — same interface, same calls
-//
-// Nothing downstream of Connect knows which one it got. That is also why
-// Redis's numbered databases are not part of this API: Memcached has none, so
-// selecting one belongs on the client you build, not on a method here.
+// The client is yours: this package will not close it. Hand the same one to the
+// database and streams layers and all three share a pool.
 package redis

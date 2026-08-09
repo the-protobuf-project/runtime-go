@@ -130,10 +130,10 @@ func TestWithRetryStopsOnContextCancellation(t *testing.T) {
 // anyway would add an allocation and an indirection for nothing.
 func TestWithRetryDisabledReturnsInner(t *testing.T) {
 	f := &fakeCache{}
-	if got := WithRetry(f, 1, time.Second); got != Cache(f) {
+	if got := WithRetry(f, 1, time.Second); got != Document(f) {
 		t.Error("WithRetry(attempts=1) wrapped the cache; want the original back")
 	}
-	if got := WithRetry(f, 0, time.Second); got != Cache(f) {
+	if got := WithRetry(f, 0, time.Second); got != Document(f) {
 		t.Error("WithRetry(attempts=0) wrapped the cache; want the original back")
 	}
 }

@@ -1,30 +1,55 @@
-// Package cache defines the backend-agnostic contract for runtime-go's cache
-// layer: ephemeral, TTL-bound storage.
+// Package cache is the design spec for runtime-go's cache layer: the contracts,
+// and nothing that implements them.
 //
-// Providers live in their own modules — [github.com/the-protobuf-project/runtime-go/redis]
-// today, NATS and others alongside it — and reach this contract through a
-// manager they hand back:
+// It lives under arch/ but is named cache, so the example reads exactly as the
+// shipping API will once these files move into cache/.
 //
-//	c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
-//	mgr, _ := c.SetDatabase(ctx, "orders")
+// # The flow
 //
-//	mgr.Document.Cache.Create(ctx, "", user, cache.TTL(time.Minute))
+// Three steps, in this order:
 //
-// # Your model, not ours
+//	client, err := redis.NewClient(redis.Config{Address: "localhost:6379"})
+//	c := redis.New(client, cache.Config{Prefix: "orders"})
+//	db, err := c.SetDatabase(ctx, 1)
 //
-// There is no document or entry type here. A value goes in as it is and comes
-// back decoded into a destination you own, so adding a field to your model is
-// not a change to this package. [For] puts a typed view over any Cache when you
-// want the compiler to check that:
+// The client comes from the provider package rather than from a driver, so a
+// program that caches never imports go-redis at all — which is what kept every
+// import in it from needing an alias. It is also yours to keep: hand the same
+// client to the database and streams layers and they share one pool.
 //
-//	users := cache.For[User](mgr.Document.Cache)
-//	id, _ := users.Create(ctx, u, cache.TTL(time.Minute))
-//	u2, _ := users.Get(ctx, id)
+// [Provider.SetDatabase] selects the database and hands back a [DB], and a DB is
+// not one more cache interface but a set of named strategies over that database.
 //
-// The view is a wrapper, not a different client — one Cache serves every model,
-// so a provider is configured once no matter how many types run through it.
+// # The strategies
 //
-// For durable records that never expire see the sibling
-// [github.com/the-protobuf-project/runtime-go/database] module; for messaging,
-// [github.com/the-protobuf-project/runtime-go/streams].
+// A cache is not one behavior. Storing a value you will later enumerate, a value
+// you will only read back by key, and a value you want found by e-mail address
+// are three jobs with three different costs, and one interface covering all of
+// them either does the most expensive thing every time or grows options nobody
+// can keep straight. So they are separate:
+//
+//   - [Document] — whole encoded values, enumerable, at the cost of an index.
+//   - [Volatile] — TTL-first, no index, nothing to sweep, no enumeration.
+//   - [Indexed] — Document plus lookups by a field other than the id.
+//   - [Aside] — read-through over a loader, collapsing concurrent misses.
+//
+// # Written once
+//
+// None of the four is implemented per backend. The algorithms — sweeping a stale
+// index, refiling an entry whose indexed field changed, collapsing a stampede
+// into one load — are the same wherever the bytes land, so they live once in
+// core and run on a driver: eight primitives a backend implements, plus a few
+// capabilities it may not have.
+//
+// A new backend is that driver and a client. It writes no strategy code, and it
+// cannot get the sweep subtly wrong in its own particular way, because it never
+// sees the sweep.
+//
+// # What a backend cannot do
+//
+// Backends differ, and the differences are load-bearing. Memcache has no
+// keyspace walk and no sets, so it cannot enumerate and cannot index. Where a
+// capability is missing the strategy is still there and reports [ErrUnsupported]
+// — a nil field would panic far from the wiring mistake that caused it, on a
+// line that looks innocent.
 package cache

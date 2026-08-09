@@ -15,9 +15,13 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | --- | --- | --- |
 | [`blockchain/evm`](blockchain/evm) | `github.com/the-protobuf-project/runtime-go/blockchain/evm` | Package evm implements the backend-agnostic store.Driver against an EVM chain, driving the Solidity storage contracts protorm generates. |
 | [`blockchain/fabric`](blockchain/fabric) | `github.com/the-protobuf-project/runtime-go/blockchain/fabric` | Package fabric is a placeholder store.Driver for Hyperledger Fabric chaincode. |
-| [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache defines the backend-agnostic contract for runtime-go's cache layer: ephemeral, TTL-bound storage. |
-| [`cache/example`](cache/example) | `github.com/the-protobuf-project/runtime-go/cache/example` | Command example demonstrates the cache contract against a live Redis. |
-| [`cache/redis`](cache/redis) | `github.com/the-protobuf-project/runtime-go/cache/redis` | Package redis implements cache.Cache over Redis. |
+| [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache is the design spec for runtime-go's cache layer: the contracts, and nothing that implements them. |
+| [`cache/core`](cache/core) | `github.com/the-protobuf-project/runtime-go/cache/core` | Package core implements every cache strategy once, over a Driver. |
+| [`cache/dragonfly`](cache/dragonfly) | `github.com/the-protobuf-project/runtime-go/cache/dragonfly` | Package dragonfly is the Dragonfly preset. |
+| [`cache/example`](cache/example) | `github.com/the-protobuf-project/runtime-go/cache/example` | Command example runs the cache's three steps — build a client, declare the cache, select a database — against every backend this module supports, and exercises all four strategies over each. |
+| [`cache/memcached`](cache/memcached) | `github.com/the-protobuf-project/runtime-go/cache/memcached` | Package memcached is the memcached backend, and the argument for the driver split. |
+| [`cache/redis`](cache/redis) | `github.com/the-protobuf-project/runtime-go/cache/redis` | Package redis is the Redis preset. |
+| [`cache/resp`](cache/resp) | `github.com/the-protobuf-project/runtime-go/cache/resp` | Package resp is the driver for anything speaking the Redis serialization protocol: Redis itself, Dragonfly, Valkey, KeyDB. |
 | [`cache/shared`](cache/shared) | `github.com/the-protobuf-project/runtime-go/cache/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`database`](database) | `github.com/the-protobuf-project/runtime-go/database` | Package database defines the backend-agnostic contract for runtime-go's document-store layer: durable records that live until they are deleted. |
 | [`database/arangodb`](database/arangodb) | `github.com/the-protobuf-project/runtime-go/database/arangodb` | Package arangodb will implement the [database.Store] contract over arangodb. |

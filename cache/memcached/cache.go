@@ -1,0 +1,60 @@
+package memcached
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/the-protobuf-project/runtime-go/cache"
+	"github.com/the-protobuf-project/runtime-go/cache/core"
+)
+
+// New returns a cache backed by a client you own.
+func New(client *Client, cfg cache.Config) cache.Provider {
+	return &provider{client: client, cfg: cfg}
+}
+
+type provider struct {
+	client *Client
+	cfg    cache.Config
+}
+
+var _ cache.Provider = (*provider)(nil)
+
+func (p *provider) Backend() string { return "memcached" }
+
+// SetDatabase selects a logical database.
+//
+// memcached has no numbered databases, so the index cannot be a property of the
+// connection the way it is on a RESP server — it becomes a segment of the key
+// instead: orders:db3:cache:vol:session-abc. That is a weaker guarantee and
+// worth saying plainly. Two Redis databases are isolated by the server; two of
+// these are isolated only by everyone agreeing to use the prefix. A flush_all
+// still takes out every one of them, and a key built by hand elsewhere can still
+// collide.
+//
+// The alternative was to reject any index but 0 here. That would make the
+// contract honest at the cost of making it useless: a program that reads its
+// database from configuration would simply fail to start against memcached,
+// which is not a better outcome than a namespace that holds as long as nobody
+// reaches around it.
+func (p *provider) SetDatabase(_ context.Context, index int) (*cache.DB, error) {
+	if p.client == nil || p.client.inner == nil {
+		return nil, fmt.Errorf("memcached: no client; build one with memcached.NewClient")
+	}
+	if index < 0 {
+		return nil, fmt.Errorf("memcached: database index cannot be negative, got %d", index)
+	}
+
+	return core.Build(primitives{client: p.client.inner}, core.Spec{
+		Prefix:       p.cfg.Prefix,
+		Database:     index,
+		EmbedDB:      true, // no databases of its own; the index lives in the key
+		DefaultTTL:   p.cfg.DefaultTTL,
+		DefaultStale: p.cfg.DefaultStale,
+		Concurrency:  p.cfg.Concurrency,
+		// Nothing was derived to reach this database — the namespace is a
+		// string — so there is nothing here to release. Close still drains the
+		// background refreshes core started, which is why it is not a no-op.
+		Release: nil,
+	}), nil
+}

@@ -5,31 +5,31 @@ import (
 	"time"
 )
 
-// Typed is a view over a [Cache] bound to one model.
+// Typed is a view over a [Document] bound to one model.
 //
-// It is a wrapper, not a separate client: the underlying Cache is untyped and
+// It is a wrapper, not a separate client: the underlying Document is untyped and
 // shared, so one provider — one connection, one configuration — serves every
 // model in a program. Build as many views over it as you have types.
 type Typed[T any] struct {
-	c Cache
+	c Document
 }
 
 // For returns a view of c that reads and writes T.
 //
-//	users := cache.For[User](mgr.Document.Cache)
+//	users := cache.For[User](db.Document)
 //	id, _ := users.Create(ctx, u, cache.TTL(time.Minute))
 //	u2, _ := users.Get(ctx, id)
 //
-// Nothing about the underlying Cache changes, so views of different types over
-// the same Cache see the same entries. Give each model its own provider —
+// Nothing about the underlying Document changes, so views of different types over
+// the same Document see the same entries. Give each model its own provider —
 // separate prefixes or databases — when they should not.
-func For[T any](c Cache) Typed[T] {
+func For[T any](c Document) Typed[T] {
 	return Typed[T]{c: c}
 }
 
-// Unwrap returns the underlying Cache, for the operations the view does not
+// Unwrap returns the underlying Document, for the operations the view does not
 // cover or to hand to something expecting the untyped contract.
-func (t Typed[T]) Unwrap() Cache { return t.c }
+func (t Typed[T]) Unwrap() Document { return t.c }
 
 // Create stores value under a generated id and returns it. Use [Typed.Put] to
 // choose the id yourself.

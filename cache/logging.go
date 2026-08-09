@@ -10,7 +10,7 @@ import (
 
 // loggingCache records every operation.
 type loggingCache struct {
-	next Cache
+	next Document
 	log  telemetry.Logger
 }
 
@@ -25,7 +25,7 @@ type loggingCache struct {
 // binary that never wires logging pays nothing and no import can start writing
 // to stderr behind the caller's back. Pass [telemetry.NoopLogger] to disable
 // logging without unwrapping.
-func WithLogging(next Cache, log telemetry.Logger) Cache {
+func WithLogging(next Document, log telemetry.Logger) Document {
 	if log == nil {
 		log = telemetry.NoopLogger
 	}
@@ -35,7 +35,7 @@ func WithLogging(next Cache, log telemetry.Logger) Cache {
 // WithLoggingMiddleware is [WithLogging] as a [Middleware], for use with
 // [Chain].
 func WithLoggingMiddleware(log telemetry.Logger) Middleware {
-	return func(c Cache) Cache { return WithLogging(c, log) }
+	return func(c Document) Document { return WithLogging(c, log) }
 }
 
 // record writes the outcome of one operation.
