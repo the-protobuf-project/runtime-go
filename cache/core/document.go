@@ -20,6 +20,9 @@ type document struct {
 	def    cache.Options
 	limit  int
 	newID  func() string
+
+	// require refuses a write that resolved to no expiry.
+	require bool
 }
 
 var _ cache.Document = (*document)(nil)
@@ -30,10 +33,14 @@ var _ cache.Document = (*document)(nil)
 // index naming an entry that is not there, which every read already sweeps —
 // where the other order would leave an entry no listing can see and no group
 // delete can reach.
-func (s *document) Create(ctx context.Context, id string, value any, opts ...cache.Option) (string, error) {
+func (s *document) Create(ctx context.Context, value any, opts ...cache.Option) (string, error) {
 	o := cache.NewOptions(s.def, opts...)
+	id := o.ID
 	if id == "" {
 		id = s.newID()
+	}
+	if err := checkTTL(s.require, o, "Document.Create", id); err != nil {
+		return "", err
 	}
 	body, err := encode(value)
 	if err != nil {
@@ -62,6 +69,9 @@ func (s *document) Get(ctx context.Context, id string, dest any) error {
 // Update replaces an entry, reporting a missing one rather than creating it.
 func (s *document) Update(ctx context.Context, id string, value any, opts ...cache.Option) error {
 	o := cache.NewOptions(s.def, opts...)
+	if err := checkTTL(s.require, o, "Document.Update", id); err != nil {
+		return err
+	}
 	body, err := encode(value)
 	if err != nil {
 		return err

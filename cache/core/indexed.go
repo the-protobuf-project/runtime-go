@@ -28,18 +28,27 @@ func pair(field, value string) string { return field + "=" + value }
 // The index members go first, for the reason in the package documentation: a
 // member naming an entry that is not there is swept on the next lookup, while an
 // entry no index names is invisible to every lookup and every group delete.
-func (s *indexed) Create(ctx context.Context, id string, value any, opts ...cache.Option) (string, error) {
+func (s *indexed) Create(ctx context.Context, value any, opts ...cache.Option) (string, error) {
 	o := cache.NewOptions(s.def, opts...)
 	if len(o.Indexes) > 0 && s.sets == nil {
 		return "", unsupported(s.driver.Name(), "index an entry", "no sets to index with")
 	}
+	id := o.ID
 	if id == "" {
 		id = s.newID()
 	}
 	if err := s.file(ctx, id, o.Indexes); err != nil {
 		return "", err
 	}
-	return s.document.Create(ctx, id, value, opts...)
+
+	// The id is resolved here because the index members are written before the
+	// value, so it has to be settled before the entry is. Pass it down rather
+	// than letting the document generate a second one — a fresh slice, so
+	// appending cannot write into a caller's own options array.
+	settled := make([]cache.Option, 0, len(opts)+1)
+	settled = append(settled, opts...)
+	settled = append(settled, cache.ID(id))
+	return s.document.Create(ctx, value, settled...)
 }
 
 // Update replaces an entry and refiles it.

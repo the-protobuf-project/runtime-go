@@ -82,9 +82,9 @@ func (t *telemetryCache) record(ctx context.Context, op string, start time.Time,
 	t.dur.Record(ctx, time.Since(start).Seconds(), labels)
 }
 
-func (t *telemetryCache) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
+func (t *telemetryCache) Create(ctx context.Context, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	out, err := t.next.Create(ctx, id, value, opts...)
+	out, err := t.next.Create(ctx, value, opts...)
 	t.record(ctx, "create", start, err)
 	if err == nil {
 		t.total.Add(ctx, 1, telemetry.Labels{})

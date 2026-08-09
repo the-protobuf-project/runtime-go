@@ -18,7 +18,7 @@ func TestEnumerationIsBatched(t *testing.T) {
 
 	db, driver := build(t, Spec{Prefix: "t"})
 	for i := range entries {
-		if _, err := db.Document.Create(t.Context(), fmt.Sprintf("id%d", i), record{Name: "x"}); err != nil {
+		if _, err := db.Document.Create(t.Context(), record{Name: "x"}, cache.ID(fmt.Sprintf("id%d", i))); err != nil {
 			t.Fatal(err)
 		}
 	}

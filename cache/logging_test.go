@@ -182,7 +182,7 @@ type idAssigningCache struct {
 	id string
 }
 
-func (c *idAssigningCache) Create(context.Context, string, any, ...Option) (string, error) {
+func (c *idAssigningCache) Create(context.Context, any, ...Option) (string, error) {
 	return c.id, nil
 }
 func (c *idAssigningCache) Get(context.Context, string, any) error               { return nil }

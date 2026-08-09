@@ -75,6 +75,25 @@ func unsupported(driver, op, why string) error {
 	return fmt.Errorf("%w: %s cannot %s (%s)", cache.ErrUnsupported, driver, op, why)
 }
 
+// checkTTL rejects a write that resolved to no expiry where the cache was
+// configured to insist on one.
+//
+// It runs before the write rather than after, and before a read-through loader
+// rather than after: a call that is going to be refused should not first spend a
+// round trip or run somebody's loader to find that out.
+func checkTTL(require bool, o cache.Options, op, id string) error {
+	if !require || o.TTL > 0 || o.Permanent {
+		return nil
+	}
+	where := op
+	if id != "" {
+		where = fmt.Sprintf("%s for %q", op, id)
+	}
+	return fmt.Errorf(
+		"%w: %s; pass cache.TTL(d), set Config.DefaultTTL, or state it deliberately with cache.NoExpiry()",
+		cache.ErrNoTTL, where)
+}
+
 // notFound turns a driver [ErrMiss] into the contract's sentinel and leaves every
 // other failure alone.
 func notFound(id string, err error) error {

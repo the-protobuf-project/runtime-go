@@ -37,6 +37,9 @@ type aside struct {
 	fresh  *refresher
 	empty  time.Duration // how long an absence is remembered
 	lease  time.Duration // how long the cross-process lock lives
+
+	// require refuses a load whose write would have no expiry.
+	require bool
 }
 
 var _ cache.Aside = (*aside)(nil)

@@ -26,9 +26,9 @@ import (
 client, err := redis.NewClient(ctx, redis.Config{Address: "localhost:6379"})
 defer client.Close()
 
-c := redis.New(client, cache.Config{Prefix: "orders", DefaultTTL: time.Minute})
+c := redis.New(client, cache.Config{Prefix: "example", DefaultTTL: time.Minute})
 
-db, err := c.SetDatabase(ctx, 1)
+db, err := c.SetDatabase(ctx, "orders")
 defer db.Close()
 ```
 
@@ -40,8 +40,60 @@ Swapping backends is the import line and the constructor:
 
 ```go
 client, _ := dragonfly.NewClient(ctx, dragonfly.Config{Address: "localhost:6380"})
-c := dragonfly.New(client, cache.Config{Prefix: "orders"})
+c := dragonfly.New(client, cache.Config{Prefix: "example"})
 ```
+
+### Choosing a database
+
+`SetDatabase` takes a name, and the name is a namespace: it qualifies every key
+the database touches and leaves the connection alone. That is the one selection
+form whose meaning does not change underneath you — `orders` means the same
+thing on Redis, Dragonfly and memcached, there is no registry to keep, no
+allocation to race over, no ceiling, and it works on Redis Cluster, which has
+only database 0.
+
+What a name does not do is make the server enforce the boundary. Two names are
+kept apart by everyone agreeing to use them; a `FLUSHDB` reaches both.
+`SelectIndex` is the other trade:
+
+```go
+db, _ := c.SetDatabase(ctx, "orders")  // portable; no server support needed
+db, _ := c.SelectIndex(ctx, 3)         // real SELECT, where the backend has it
+```
+
+`SelectIndex` buys server-enforced isolation and per-database `FLUSHDB`, and pays
+the server's limits: Redis ships with sixteen databases, a cluster has only
+database 0, and an index other than the client's means a derived client that the
+returned `DB` owns and closes.
+
+### Expiry
+
+`DefaultTTL` is the lease for everything; any single call overrides it:
+
+```go
+c := redis.New(client, cache.Config{DefaultTTL: time.Minute})
+db, _ := c.SetDatabase(ctx, "orders")
+
+db.Document.Create(ctx, alice)                         // 1 minute
+db.Document.Create(ctx, bob, cache.TTL(24*time.Hour))  // this one, longer
+```
+
+A zero TTL means *no expiry*, which for a cache is rarely what silence was meant
+to say — and for `Aside` it is a leak, since a read-through cache with no lease
+keeps every id it was ever asked for. `RequireTTL` turns that silence into an
+error at the first write:
+
+```go
+c := redis.New(client, cache.Config{DefaultTTL: time.Minute, RequireTTL: true})
+
+db.Document.Create(ctx, bob, cache.TTL(0))
+// cache: no expiry, and this cache requires one: Document.Create for "..."
+//   pass cache.TTL(d), set Config.DefaultTTL, or state it deliberately
+//   with cache.NoExpiry()
+```
+
+It targets the forgotten lease, not the deliberate one — `cache.NoExpiry()` says
+an entry is meant to be permanent and is always allowed. Off by default.
 
 ## The four strategies
 
@@ -68,7 +120,8 @@ type User struct {
     Age  int    `json:"age"`
 }
 
-id, err := db.Document.Create(ctx, "", User{Name: "Ada"}, cache.TTL(time.Minute))
+id, err := db.Document.Create(ctx, User{Name: "Ada"}, cache.TTL(time.Minute))
+// the cache names the entry; cache.ID("ada") names it yourself
 
 var got User
 err = db.Document.Get(ctx, id, &got)
@@ -83,7 +136,7 @@ err = db.Document.List(ctx, &all)
 ### Lookups by something other than the id
 
 ```go
-id, _ := db.Indexed.Create(ctx, "", user,
+id, _ := db.Indexed.Create(ctx, user,
     cache.TTL(time.Hour),
     cache.Index("email", user.Email),
     cache.Index("tenant", "acme"),
@@ -155,7 +208,8 @@ wiring mistake that caused it.
 | `Volatile` | full | full (`Touch` is native, and cleaner than `EXPIRE XX`) |
 | `Indexed` | full | none — no sets to index with |
 | `Aside` | full, with a cross-process lock | full, collapsing loads per process |
-| `SetDatabase(n)` | a real database | a key namespace, `db3:` |
+| `SetDatabase(name)` | a key namespace | a key namespace — identical |
+| `SelectIndex(n)` | a real database, via `SELECT` | a key namespace, `db3:` |
 | Enumeration cost | one pipelined round trip per 256 ids | same, via multi-get |
 
 ## Adding a backend

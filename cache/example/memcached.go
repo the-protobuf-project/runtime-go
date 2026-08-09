@@ -24,14 +24,16 @@ func withMemcached(ctx context.Context) error {
 
 	c := memcached.New(client, cache.Config{Prefix: "example", DefaultTTL: time.Minute})
 
-	// memcached has no numbered databases, so this index becomes a key segment:
-	// example:db3:cache:vol:session-abc. Isolation by agreement, not by server.
-	db, err := c.SetDatabase(ctx, 3)
+	// A name costs memcached nothing to honor: it is a key segment here exactly
+	// as it is on Redis — example:orders:cache:vol:session-abc — which makes
+	// this the one selection form that means the same thing on both. Isolation
+	// is still by agreement rather than by the server.
+	db, err := c.SetDatabase(ctx, "orders")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	log.Printf("on %s database %d", db.Backend, db.Index)
+	log.Printf("on %s database %q", db.Backend, db.Name)
 
 	// --- VOLATILE: what this backend is for, and fully supported ---
 	if serr := db.Volatile.Set(ctx, "session:abc", user{Name: "Alice"}, cache.TTL(time.Hour)); serr != nil {
@@ -47,7 +49,7 @@ func withMemcached(ctx context.Context) error {
 	log.Printf("volatile: read back %+v", session)
 
 	// --- DOCUMENT: stores and fetches by id, and stops there ---
-	id, err := db.Document.Create(ctx, "", user{Name: "Bob", Age: 25}, cache.TTL(time.Minute))
+	id, err := db.Document.Create(ctx, user{Name: "Bob", Age: 25}, cache.TTL(time.Minute))
 	if err != nil {
 		return err
 	}

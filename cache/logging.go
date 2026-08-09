@@ -63,17 +63,13 @@ func (l *loggingCache) record(ctx context.Context, op, id string, start time.Tim
 	}
 }
 
-func (l *loggingCache) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
+func (l *loggingCache) Create(ctx context.Context, value any, opts ...Option) (string, error) {
 	start := time.Now()
-	out, err := l.next.Create(ctx, id, value, opts...)
+	out, err := l.next.Create(ctx, value, opts...)
 
-	// Create mints an id when the caller supplies none; log the one that was
-	// actually used.
-	logged := id
-	if out != "" {
-		logged = out
-	}
-	l.record(ctx, "create", logged, start, err)
+	// The id is whatever Create settled on — generated, or the one an ID option
+	// named. Either way it is only knowable from the return.
+	l.record(ctx, "create", out, start, err)
 	return out, err
 }
 

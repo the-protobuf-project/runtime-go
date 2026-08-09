@@ -32,18 +32,18 @@ func withDragonfly(ctx context.Context) error {
 		DefaultStale: 30 * time.Second,
 	})
 
-	db, err := c.SetDatabase(ctx, 2)
+	db, err := c.SetDatabase(ctx, "orders")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	log.Printf("on %s database %d", db.Backend, db.Index)
+	log.Printf("on %s database %q, index %d", db.Backend, db.Name, db.Index)
 
 	alice := user{Name: "Alice", Email: "alice@example.com", Age: 30}
 
 	// Indexed: the capability memcached cannot offer, working here because
 	// Dragonfly has sets like any RESP server.
-	id, err := db.Indexed.Create(ctx, "", alice,
+	id, err := db.Indexed.Create(ctx, alice,
 		cache.TTL(time.Hour),
 		cache.Index("email", alice.Email),
 		cache.Index("tenant", "acme"),

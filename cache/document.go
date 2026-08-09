@@ -15,9 +15,9 @@ import (
 // writes and makes reads sweep the members whose entries have since expired.
 // Reach for [Volatile] when you will never enumerate.
 type Document interface {
-	// Create stores value under id, or under a generated id when id is empty,
-	// and returns the id it used.
-	Create(ctx context.Context, id string, value any, opts ...Option) (string, error)
+	// Create stores value under a generated id and returns it. Pass [ID] to
+	// choose the id yourself.
+	Create(ctx context.Context, value any, opts ...Option) (string, error)
 
 	// Get decodes the entry into dest, which must be a non-nil pointer. It
 	// returns an error wrapping [ErrNotFound] when no such entry exists or it

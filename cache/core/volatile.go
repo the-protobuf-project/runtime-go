@@ -19,6 +19,9 @@ type volatile struct {
 	scanner Scanner // nil when the keyspace cannot be walked
 	keys    Keyspace
 	def     cache.Options
+
+	// require refuses a write that resolved to no expiry.
+	require bool
 }
 
 var _ cache.Volatile = (*volatile)(nil)
@@ -26,6 +29,9 @@ var _ cache.Volatile = (*volatile)(nil)
 // Set writes a value under a key the caller named.
 func (s *volatile) Set(ctx context.Context, key string, value any, opts ...cache.Option) error {
 	o := cache.NewOptions(s.def, opts...)
+	if err := checkTTL(s.require, o, "Volatile.Set", key); err != nil {
+		return err
+	}
 	body, err := encode(value)
 	if err != nil {
 		return err
@@ -56,7 +62,14 @@ func (s *volatile) Delete(ctx context.Context, key string) error {
 // Touch extends a lease without resending the value, which is what a sliding
 // session window needs and what re-Setting the value to get it would make
 // needlessly expensive on every request.
+// A zero ttl here means the entry stops expiring at all, which is the one thing
+// [cache.Config.RequireTTL] exists to refuse — and Touch takes no options, so
+// there is no [cache.NoExpiry] to override it with. Under that setting, use
+// [volatile.Set] with NoExpiry when an entry really should become permanent.
 func (s *volatile) Touch(ctx context.Context, key string, ttl time.Duration) error {
+	if err := checkTTL(s.require, cache.Options{TTL: ttl}, "Volatile.Touch", key); err != nil {
+		return err
+	}
 	if err := s.driver.Touch(ctx, s.keys.raw(key), ttl); err != nil {
 		return notFound(key, err)
 	}

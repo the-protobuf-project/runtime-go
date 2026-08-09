@@ -25,6 +25,11 @@ type Spec struct {
 	// Prefix namespaces every key.
 	Prefix string
 
+	// Namespace is the name the database was selected under, and is empty when
+	// it was selected by index. It becomes a key segment on every backend, which
+	// is what makes a named database mean the same thing on all of them.
+	Namespace string
+
 	// Database is the index that was selected.
 	Database int
 
@@ -42,6 +47,10 @@ type Spec struct {
 	// Concurrency caps the fan-out when one operation covers many keys. Zero
 	// takes [defaultConcurrency].
 	Concurrency int
+
+	// RequireTTL makes a write that resolved to no expiry an error. See
+	// [cache.Config.RequireTTL].
+	RequireTTL bool
 
 	// NewID generates an id when a caller does not supply one. Defaults to
 	// [ulid.Generate], which is sortable by creation time and unique across
@@ -76,7 +85,7 @@ func Build(driver Driver, spec Spec) *cache.DB {
 		limit = defaultConcurrency
 	}
 
-	keys := NewKeyspace(spec.Prefix, spec.Database, spec.EmbedDB)
+	keys := NewKeyspace(spec.Prefix, spec.Namespace, spec.Database, spec.EmbedDB)
 	def := cache.Options{TTL: spec.DefaultTTL, Stale: spec.DefaultStale}
 
 	// One flight and one refresh budget per database, shared by every read-through
@@ -90,6 +99,7 @@ func Build(driver Driver, spec Spec) *cache.DB {
 		return &document{
 			driver: driver, sets: sets, leases: leases, bulk: bulk,
 			keys: keys.Strategy(segment), def: def, limit: limit, newID: newID,
+			require: spec.RequireTTL,
 		}
 	}
 
@@ -97,23 +107,25 @@ func Build(driver Driver, spec Spec) *cache.DB {
 		Document: entries("doc"),
 		Volatile: &volatile{
 			driver: driver, leases: leases, scanner: scanner,
-			keys: keys.Strategy("vol"), def: def,
+			keys: keys.Strategy("vol"), def: def, require: spec.RequireTTL,
 		},
 		Indexed: &indexed{document: entries("idx")},
 		Backend: driver.Name(),
+		Name:    spec.Namespace,
 		Index:   spec.Database,
 		Release: release(fresh, spec.Release),
 		Aside: func(load cache.Loader) cache.Aside {
 			return &aside{
-				driver: driver,
-				fenced: fenced,
-				keys:   keys.Strategy("aside"),
-				load:   load,
-				def:    def,
-				flight: flights,
-				fresh:  fresh,
-				empty:  voidFor,
-				lease:  lockLease,
+				driver:  driver,
+				fenced:  fenced,
+				keys:    keys.Strategy("aside"),
+				load:    load,
+				def:     def,
+				flight:  flights,
+				fresh:   fresh,
+				require: spec.RequireTTL,
+				empty:   voidFor,
+				lease:   lockLease,
 			}
 		},
 	}

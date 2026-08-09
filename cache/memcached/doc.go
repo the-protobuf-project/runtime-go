@@ -12,8 +12,14 @@
 //	client, err := memcached.NewClient(memcached.Config{Servers: []string{"localhost:11211"}})
 //	defer client.Close()
 //
-//	c := memcached.New(client, cache.Config{Prefix: "orders"})
-//	db, err := c.SetDatabase(ctx, 3)
+//	c := memcached.New(client, cache.Config{Prefix: "example"})
+//	db, err := c.SetDatabase(ctx, "orders")
+//
+// A name costs this backend nothing to honor — it is a key segment here exactly
+// as it is on Redis, which makes it the one selection form that means the same
+// thing on both. [cache.Provider.SelectIndex] is the one that cannot keep its
+// promise here: memcached has no numbered databases, so an index becomes a key
+// segment too, and the server enforces nothing.
 //
 // Volatile works fully, which is unsurprising — leased values fetched by a key
 // the caller already has is what memcached is. Aside works fully too, which is

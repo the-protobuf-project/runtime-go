@@ -15,7 +15,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | --- | --- | --- |
 | [`blockchain/evm`](blockchain/evm) | `github.com/the-protobuf-project/runtime-go/blockchain/evm` | Package evm implements the backend-agnostic store.Driver against an EVM chain, driving the Solidity storage contracts protorm generates. |
 | [`blockchain/fabric`](blockchain/fabric) | `github.com/the-protobuf-project/runtime-go/blockchain/fabric` | Package fabric is a placeholder store.Driver for Hyperledger Fabric chaincode. |
-| [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache is the design spec for runtime-go's cache layer: the contracts, and nothing that implements them. |
+| [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache is the contract for runtime-go's cache layer: the interfaces, and nothing that implements them. |
 | [`cache/core`](cache/core) | `github.com/the-protobuf-project/runtime-go/cache/core` | Package core implements every cache strategy once, over a Driver. |
 | [`cache/dragonfly`](cache/dragonfly) | `github.com/the-protobuf-project/runtime-go/cache/dragonfly` | Package dragonfly is the Dragonfly preset. |
 | [`cache/example`](cache/example) | `github.com/the-protobuf-project/runtime-go/cache/example` | Command example runs the cache's three steps — build a client, declare the cache, select a database — against every backend this module supports, and exercises all four strategies over each. |

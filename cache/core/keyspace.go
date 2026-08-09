@@ -1,6 +1,11 @@
 package core
 
-import "strconv"
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // Keyspace builds the key names a strategy uses.
 //
@@ -9,34 +14,65 @@ import "strconv"
 // about: an entry written through Volatile is invisible to Document, not by
 // convention but because the name it lives under is different.
 //
-//	{prefix}:cache:doc:entry:{id}          a Document value
-//	{prefix}:cache:doc:index               the set of Document ids
-//	{prefix}:cache:vol:{key}               a Volatile value, nothing tracking it
-//	{prefix}:cache:idx:entry:{id}          an Indexed value
-//	{prefix}:cache:idx:index               the set of Indexed ids
-//	{prefix}:cache:idx:by:{field}:{value}  the set of ids filed under a field
-//	{prefix}:cache:idx:fields:{id}         the field=value pairs an id was filed under
-//	{prefix}:cache:aside:entry:{id}        a read-through value
-//	{prefix}:cache:aside:lock:{id}         the single-flight lock for one load
-//	{prefix}:cache:aside:void:{id}         a remembered absence
+// Writing {head} for the prefix and namespace an operation was selected under:
+//
+//	{head}cache:doc:entry:{id}          a Document value
+//	{head}cache:doc:index               the set of Document ids
+//	{head}cache:vol:{key}               a Volatile value, nothing tracking it
+//	{head}cache:idx:entry:{id}          an Indexed value
+//	{head}cache:idx:index               the set of Indexed ids
+//	{head}cache:idx:by:{field}:{value}  the set of ids filed under a field
+//	{head}cache:idx:fields:{id}         the field=value pairs an id was filed under
+//	{head}cache:aside:entry:{id}        a read-through value
+//	{head}cache:aside:lock:{id}         the single-flight lock for one load
+//	{head}cache:aside:void:{id}         a remembered absence
 type Keyspace struct {
 	base string
 }
 
-// NewKeyspace builds the layout for one prefix and database.
+// NewKeyspace builds the layout for one prefix, namespace and database.
 //
-// The database index goes into the key on a backend that has no databases of its
-// own, and stays out where it is already a property of the connection —
-// repeating it there would only make keys longer and lookups no safer.
-func NewKeyspace(prefix string, db int, embedDB bool) Keyspace {
+// Three things can qualify a key and each answers a different question. The
+// prefix separates one program's caches from another's in a shared server. The
+// namespace is the named database, and is the only one of the three that means
+// the same thing on every backend. The index goes in only where the backend has
+// no databases of its own and has to fake them — where it is already a property
+// of the connection, repeating it would make keys longer and lookups no safer.
+func NewKeyspace(prefix, namespace string, db int, embedDB bool) Keyspace {
 	base := ""
 	if prefix != "" {
 		base = prefix + ":"
+	}
+	if namespace != "" {
+		base += namespace + ":"
 	}
 	if embedDB {
 		base += "db" + strconv.Itoa(db) + ":"
 	}
 	return Keyspace{base: base + "cache:"}
+}
+
+// CheckNamespace reports whether name can be used as a database name.
+//
+// The ban on a colon keeps the head of a key unambiguous. Prefix and name are
+// joined with the separator, so allowing one inside a name makes the join
+// lossy: prefix "app" with name "orders" and prefix "" with name "app:orders"
+// both address app:orders:cache:, and two configurations that were never meant
+// to meet share a keyspace. Rejecting the character is cheaper than every
+// caller reasoning about it.
+//
+// It does not stop a name from reaching another strategy's keys — the literal
+// cache: segment sits between the two, so that was never possible.
+func CheckNamespace(name string) error {
+	if name == "" {
+		return errors.New("database name cannot be empty")
+	}
+	if strings.Contains(name, ":") {
+		return fmt.Errorf(
+			"database name %q cannot contain ':': it joins the prefix to the name, so allowing one would let two different configurations address the same keys",
+			name)
+	}
+	return nil
 }
 
 // Strategy narrows a keyspace to one strategy's segment.

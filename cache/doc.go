@@ -1,16 +1,13 @@
-// Package cache is the design spec for runtime-go's cache layer: the contracts,
+// Package cache is the contract for runtime-go's cache layer: the interfaces,
 // and nothing that implements them.
-//
-// It lives under arch/ but is named cache, so the example reads exactly as the
-// shipping API will once these files move into cache/.
 //
 // # The flow
 //
 // Three steps, in this order:
 //
-//	client, err := redis.NewClient(redis.Config{Address: "localhost:6379"})
-//	c := redis.New(client, cache.Config{Prefix: "orders"})
-//	db, err := c.SetDatabase(ctx, 1)
+//	client, err := redis.NewClient(ctx, redis.Config{Address: "localhost:6379"})
+//	c := redis.New(client, cache.Config{Prefix: "example"})
+//	db, err := c.SetDatabase(ctx, "orders")
 //
 // The client comes from the provider package rather than from a driver, so a
 // program that caches never imports go-redis at all — which is what kept every
@@ -19,6 +16,38 @@
 //
 // [Provider.SetDatabase] selects the database and hands back a [DB], and a DB is
 // not one more cache interface but a set of named strategies over that database.
+//
+// # Choosing a database
+//
+// A name is a namespace: it qualifies every key the database touches and leaves
+// the connection alone. That makes it the one selection form whose meaning does
+// not change underneath a program — orders means the same thing on Redis,
+// Dragonfly and memcached, there is no registry to keep or allocation to race
+// over, no ceiling on how many you can have, and it works on Redis Cluster,
+// which has only database 0.
+//
+// What a name does not do is make the server enforce the boundary. Two names
+// are kept apart by everyone agreeing to use them: a FLUSHDB reaches both, and a
+// key built by hand elsewhere can still collide. [Provider.SelectIndex] is the
+// other trade — real SELECT on a RESP server, at the cost of the server's
+// limits (sixteen databases by default, database 0 only on a cluster) and of a
+// derived client when the index is not the one you built.
+//
+//	db, err := c.SetDatabase(ctx, "orders")  // portable, no server support needed
+//	db, err := c.SelectIndex(ctx, 3)         // real SELECT, where the backend has it
+//
+// # Expiry
+//
+// [Config.DefaultTTL] is the lease for every entry, and any one operation
+// overrides it with [TTL]. That is the whole of it for most callers: set it
+// once, name it again only where something should live longer or shorter.
+//
+// A zero TTL means no expiry. For a cache that is rarely what silence was meant
+// to say, and for [Aside] it is a leak — a read-through cache with no lease
+// keeps every id it was ever asked for, and the trigger is any client requesting
+// distinct ids. [Config.RequireTTL] turns that silence into an error at the
+// first write, while leaving a deliberate permanent entry alone: say [NoExpiry]
+// and it is allowed through.
 //
 // # The strategies
 //

@@ -65,8 +65,8 @@ func (r *retryCache) retry(ctx context.Context, op func() error) error {
 }
 
 // Create is not retried; see [WithRetry].
-func (r *retryCache) Create(ctx context.Context, id string, value any, opts ...Option) (string, error) {
-	return r.next.Create(ctx, id, value, opts...)
+func (r *retryCache) Create(ctx context.Context, value any, opts ...Option) (string, error) {
+	return r.next.Create(ctx, value, opts...)
 }
 
 // Update is not retried; see [WithRetry].

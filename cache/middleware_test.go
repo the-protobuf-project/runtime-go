@@ -22,11 +22,12 @@ func (f *fakeCache) next() error {
 	return nil
 }
 
-func (f *fakeCache) Create(_ context.Context, id string, _ any, _ ...Option) (string, error) {
-	if id == "" {
-		id = "generated"
+func (f *fakeCache) Create(_ context.Context, _ any, opts ...Option) (string, error) {
+	o := NewOptions(Options{}, opts...)
+	if o.ID == "" {
+		return "generated", f.next()
 	}
-	return id, f.next()
+	return o.ID, f.next()
 }
 func (f *fakeCache) Get(context.Context, string, any) error               { return f.next() }
 func (f *fakeCache) Update(context.Context, string, any, ...Option) error { return f.next() }
@@ -82,7 +83,7 @@ func TestWithRetryDoesNotRetryWrites(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		f := &fakeCache{errs: []error{boom, boom, boom}}
 		c := WithRetry(f, 3, time.Millisecond)
-		if _, err := c.Create(t.Context(), "", nil); !errors.Is(err, boom) {
+		if _, err := c.Create(t.Context(), nil); !errors.Is(err, boom) {
 			t.Fatalf("Create error = %v", err)
 		}
 		if got := f.calls.Load(); got != 1 {

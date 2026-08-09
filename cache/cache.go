@@ -21,6 +21,16 @@ var ErrNotFound = errors.New("cache: not found")
 // backend, that this one thing is not available here.
 var ErrUnsupported = errors.New("cache: unsupported by this backend")
 
+// ErrNoTTL is returned by a write that resolved to no expiry in a cache
+// configured with [Config.RequireTTL].
+//
+// It exists because the unsafe case is silence, not intent. An entry meant to
+// outlive every lease is fine — say so with [NoExpiry] and this never fires.
+// What it catches is the write that meant to have a lease and forgot, which
+// otherwise succeeds, looks correct, and turns a cache into a store that only
+// grows.
+var ErrNoTTL = errors.New("cache: no expiry, and this cache requires one")
+
 // Config is a cache's settings, separate from the client's. The zero value is
 // usable.
 type Config struct {
@@ -30,8 +40,19 @@ type Config struct {
 
 	// DefaultTTL is the lease applied when an operation names none. Zero means
 	// entries do not expire on their own — reasonable for [Document], rarely
-	// what you want for [Volatile].
+	// what you want for [Volatile], and close to never what you want for
+	// [Aside], which would then keep every id it ever loaded.
 	DefaultTTL time.Duration
+
+	// RequireTTL makes a write that resolved to no expiry an error rather than a
+	// permanent entry. Off by default.
+	//
+	// Turn it on and forgetting a lease fails at the first write, naming the
+	// operation, instead of surviving review and surfacing weeks later as memory
+	// that only grows. An entry that genuinely should outlive every lease is
+	// still allowed: state it with [NoExpiry], which this deliberately does not
+	// block. The target is silence, not intent.
+	RequireTTL bool
 
 	// DefaultStale is the [Stale] window applied when an operation names none.
 	// Zero keeps read-through blocking on expiry, which is the safe default:
@@ -57,10 +78,36 @@ type Config struct {
 // There is no Close either: the provider did not open the client and will not
 // close it. Only a [DB] can own something, and only when it had to derive it.
 type Provider interface {
-	// SetDatabase selects a database and returns the strategies over it. It
-	// reaches the server before returning, so a bad address surfaces here rather
-	// than at the first Get.
-	SetDatabase(ctx context.Context, index int) (*DB, error)
+	// SetDatabase selects a named database and returns the strategies over it.
+	// It reaches the server before returning, so a bad address surfaces here
+	// rather than at the first Get.
+	//
+	// The name is a namespace: every key this database reads and writes carries
+	// it as a segment. That is deliberately the same on every backend — a name
+	// isolates a cache from its neighbours identically on Redis, Dragonfly and
+	// memcached, there is no registry to keep, no allocation to race over, and
+	// no ceiling on how many you can have. It works on Redis Cluster, which has
+	// only database 0 and would refuse any numeric selection but that one.
+	//
+	// What it does not give you is server-side isolation. Two names are kept
+	// apart by everyone agreeing to use them, not by the server, so a FLUSHDB
+	// still takes out every one of them and a key built by hand elsewhere can
+	// still collide. Reach for [Provider.SelectIndex] when you want the server
+	// to enforce the boundary.
+	SetDatabase(ctx context.Context, name string) (*DB, error)
+
+	// SelectIndex selects a database by index, where the backend has real ones.
+	//
+	// On a RESP server this is SELECT: the boundary is enforced by the server,
+	// FLUSHDB reaches one database and not its neighbours. The costs are the
+	// ones the server imposes — Redis ships with sixteen databases, Cluster has
+	// only database 0, and an index other than the client's means a derived
+	// client with a pool of its own, which the returned [DB] owns and closes.
+	//
+	// On a backend with no databases of its own the index becomes a key segment
+	// instead, which is a weaker guarantee than the name suggests. Prefer
+	// [Provider.SetDatabase] unless you specifically want SELECT.
+	SelectIndex(ctx context.Context, index int) (*DB, error)
 
 	// Backend names the implementation — "redis", "memcache" — for messages.
 	Backend() string
@@ -94,7 +141,13 @@ type DB struct {
 	// Backend names the implementation behind these strategies.
 	Backend string
 
-	// Index reports which database this is.
+	// Name is the namespace this database was selected under, and is empty when
+	// it was selected by index instead.
+	Name string
+
+	// Index reports which database index these strategies run against. After
+	// [Provider.SetDatabase] that is whichever index the client was built on —
+	// the name did not change it, and saying so is the point.
 	Index int
 
 	// Release frees whatever selecting this database allocated, and is nil when

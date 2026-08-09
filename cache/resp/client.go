@@ -100,6 +100,19 @@ func name(backend string) string {
 	return backend
 }
 
+// currentIndex is the database this client is bound to.
+//
+// Only a plain client can answer: a cluster or a ring has database 0 and nothing
+// else, and a client this package has not met cannot be asked. Zero is the right
+// answer in all three cases, and it is reported rather than guessed at because
+// cache.DB.Index promises to say which index the strategies actually run on.
+func (c *Client) currentIndex() int {
+	if inner, ok := c.inner.(*redis.Client); ok {
+		return inner.Options().DB
+	}
+	return 0
+}
+
 // selectDB returns a client bound to index, and a release for it when one had to
 // be made.
 //

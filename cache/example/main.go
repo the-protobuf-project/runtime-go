@@ -54,18 +54,28 @@ func withRedis(ctx context.Context) error {
 	// been chosen, so there is nothing to read or write.
 	c := redis.New(client, cache.Config{Prefix: "example", DefaultTTL: time.Minute})
 
-	// Step three: choose the database. This one is the client's own, so nothing
-	// is derived and db.Close is a no-op.
-	db, err := c.SetDatabase(ctx, 1)
+	// Step three: choose the database, by name. The name qualifies the keys and
+	// leaves the connection where it is, so nothing is derived, db.Close is a
+	// no-op, and this same call would work against a cluster.
+	db, err := c.SetDatabase(ctx, "orders")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = db.Close() }()
-	log.Printf("on %s database %d", db.Backend, db.Index)
+	log.Printf("on %s database %q, index %d", db.Backend, db.Name, db.Index)
 
-	// Asking for another index means a second client, derived from yours and
-	// owned by this DB. Yours is untouched; this one must be closed.
-	other, err := c.SetDatabase(ctx, 4)
+	// A second name is a second keyspace over the same connection. Cheap enough
+	// that there is no reason to share one cache between two concerns.
+	carts, err := c.SetDatabase(ctx, "carts")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = carts.Close() }()
+
+	// Selecting by index instead asks the server to enforce the boundary. This
+	// index is not the client's, so it means a second client derived from yours
+	// and owned by this DB — yours is untouched; this one must be closed.
+	other, err := c.SelectIndex(ctx, 4)
 	if err != nil {
 		return err
 	}
@@ -75,7 +85,7 @@ func withRedis(ctx context.Context) error {
 	// --- DOCUMENT: whole values you will enumerate ---
 	alice := user{Name: "Alice", Email: "alice@example.com", Age: 30}
 
-	id, err := db.Document.Create(ctx, "", alice, cache.TTL(30*time.Second))
+	id, err := db.Document.Create(ctx, alice, cache.TTL(30*time.Second))
 	if err != nil {
 		return err
 	}
@@ -109,7 +119,7 @@ func withRedis(ctx context.Context) error {
 	}
 
 	// --- INDEXED: found by something other than its id ---
-	if _, cerr := db.Indexed.Create(ctx, "", alice,
+	if _, cerr := db.Indexed.Create(ctx, alice,
 		cache.TTL(time.Hour),
 		cache.Index("email", alice.Email),
 		cache.Index("tenant", "acme"),

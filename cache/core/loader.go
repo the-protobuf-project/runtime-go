@@ -18,6 +18,14 @@ const unlockTimeout = 2 * time.Second
 // It is always called inside a [flight], so within this process exactly one
 // goroutine per id is ever here.
 func (s *aside) loadAndStore(ctx context.Context, id string, o cache.Options) ([]byte, error) {
+	// Before the lock and before the loader: a write that is going to be refused
+	// should not first take a cross-process lock and run somebody's loader to
+	// find that out. This is also the strategy the setting matters most for — a
+	// read-through cache with no lease keeps every id it was ever asked for.
+	if err := checkTTL(s.require, o, "Aside load", id); err != nil {
+		return nil, err
+	}
+
 	if release, joined, body := s.claim(ctx, id); joined {
 		// Another process was already loading and has published. Nothing left to
 		// do — and notably, no waiting was involved to find that out.

@@ -20,6 +20,8 @@ type Typed[T any] struct {
 //	id, _ := users.Create(ctx, u, cache.TTL(time.Minute))
 //	u2, _ := users.Get(ctx, id)
 //
+// Create names the entry itself; [Typed.Put] takes an id you chose.
+//
 // Nothing about the underlying Document changes, so views of different types over
 // the same Document see the same entries. Give each model its own provider —
 // separate prefixes or databases — when they should not.
@@ -34,12 +36,21 @@ func (t Typed[T]) Unwrap() Document { return t.c }
 // Create stores value under a generated id and returns it. Use [Typed.Put] to
 // choose the id yourself.
 func (t Typed[T]) Create(ctx context.Context, value T, opts ...Option) (string, error) {
-	return t.c.Create(ctx, "", value, opts...)
+	return t.c.Create(ctx, value, opts...)
 }
 
-// Put stores value under id, returning the id used.
+// Put stores value under an id you choose, returning the id used. It is
+// [Typed.Create] with [ID] already applied, for when naming the entry is the
+// point of the call rather than an adjustment to it.
+//
+// The id argument wins over any [ID] option in opts: it is the more specific
+// statement, and a call that names an id twice should not depend on which one
+// the reader notices first.
 func (t Typed[T]) Put(ctx context.Context, id string, value T, opts ...Option) (string, error) {
-	return t.c.Create(ctx, id, value, opts...)
+	settled := make([]Option, 0, len(opts)+1)
+	settled = append(settled, opts...)
+	settled = append(settled, ID(id))
+	return t.c.Create(ctx, value, settled...)
 }
 
 // Get returns the entry stored under id, decoded as T. It returns an error
