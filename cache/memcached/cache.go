@@ -40,6 +40,9 @@ func (p *provider) SetDatabase(_ context.Context, name string) (*cache.DB, error
 	if err := core.CheckNamespace(name); err != nil {
 		return nil, fmt.Errorf("memcached: %w", err)
 	}
+	if err := core.CheckKnown(name, p.cfg.Databases); err != nil {
+		return nil, fmt.Errorf("memcached: %w", err)
+	}
 
 	return core.Build(primitives{client: p.client.inner}, core.Spec{
 		Prefix:       p.cfg.Prefix,
@@ -88,4 +91,17 @@ func (p *provider) SelectIndex(_ context.Context, index int) (*cache.DB, error) 
 		RequireTTL:   p.cfg.RequireTTL,
 		Release:      nil,
 	}), nil
+}
+
+// DropDatabase reports [cache.ErrUnsupported].
+//
+// memcached has no cursor, so there is no way to find the keys belonging to one
+// namespace short of knowing every key already. flush_all would empty the
+// server — every database, every prefix, and anything else sharing it — which is
+// not what was asked for and is the kind of help nobody wants.
+func (p *provider) DropDatabase(_ context.Context, name string) (int, error) {
+	if err := core.CheckNamespace(name); err != nil {
+		return 0, fmt.Errorf("memcached: %w", err)
+	}
+	return 0, fmt.Errorf("%w: memcached cannot drop a database (no cursor to find its keys, and flush_all would empty the server)", cache.ErrUnsupported)
 }

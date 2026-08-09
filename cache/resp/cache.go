@@ -50,6 +50,9 @@ func (p *provider) SetDatabase(ctx context.Context, name string) (*cache.DB, err
 	if err := core.CheckNamespace(name); err != nil {
 		return nil, fmt.Errorf("%s: %w", backend, err)
 	}
+	if err := core.CheckKnown(name, p.cfg.Databases); err != nil {
+		return nil, fmt.Errorf("%s: %w", backend, err)
+	}
 
 	// Reach the server before handing back strategies over it, for the same
 	// reason SelectIndex does: a refused AUTH should surface on this line rather
@@ -113,4 +116,26 @@ func (p *provider) SelectIndex(ctx context.Context, index int) (*cache.DB, error
 		RequireTTL:   p.cfg.RequireTTL,
 		Release:      release,
 	}), nil
+}
+
+// DropDatabase deletes every key belonging to a named database.
+//
+// A cursor walk and batched deletes, against the database the client is bound
+// to. It is not FLUSHDB and cannot be: a name is a key prefix, so the only way
+// to find its keys is to look at all of them.
+func (p *provider) DropDatabase(ctx context.Context, name string) (int, error) {
+	if p.client == nil || p.client.inner == nil {
+		return 0, fmt.Errorf("resp: no client; build one with NewClient")
+	}
+	backend := p.client.backend
+	if err := core.CheckNamespace(name); err != nil {
+		return 0, fmt.Errorf("%s: %w", backend, err)
+	}
+
+	head := core.NewKeyspace(p.cfg.Prefix, name, p.client.currentIndex(), false).Head()
+	n, err := core.Drop(ctx, primitives{client: p.client.inner, backend: backend}, head)
+	if err != nil {
+		return n, fmt.Errorf("%s: cannot drop %q: %w", backend, name, err)
+	}
+	return n, nil
 }

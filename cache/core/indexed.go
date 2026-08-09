@@ -94,31 +94,9 @@ func (s *indexed) IDsByIndex(ctx context.Context, field, value string) ([]string
 	if s.sets == nil {
 		return nil, unsupported(s.driver.Name(), "look up by "+field, "no sets to index with")
 	}
-	key := s.keys.by(field, value)
-	ids, err := s.sets.SetMembers(ctx, key)
+	live, err := liveMembers(ctx, s.driver, s.sets, s.scan, s.bulk, s.limit, s.keys.by(field, value), s.keys.entry)
 	if err != nil {
 		return nil, fmt.Errorf("cache: cannot read the %s index: %w", field, err)
-	}
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-	found, err := existsAll(ctx, s.driver, s.bulk, s.limit, s.entryKeys(ids))
-	if err != nil {
-		return nil, fmt.Errorf("cache: cannot check the %s index: %w", field, err)
-	}
-
-	live := make([]string, 0, len(ids))
-	var stale []string
-	for i, id := range ids {
-		if found[i] {
-			live = append(live, id)
-			continue
-		}
-		stale = append(stale, id)
-	}
-	if len(stale) > 0 {
-		_ = s.sets.SetRemove(ctx, key, stale...)
 	}
 	return live, nil
 }

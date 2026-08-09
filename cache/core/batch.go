@@ -115,3 +115,87 @@ func getAll(ctx context.Context, driver Driver, bulk Bulk, limit int, keys []str
 	}
 	return out, nil
 }
+
+// liveMembers walks a set and returns the ids whose entries are still there,
+// sweeping the ones whose entries are not.
+//
+// Three costs are bounded here and each used to be unbounded in a different
+// way. The set is read with a cursor where the driver has one, so a huge index
+// is many small replies rather than one enormous one. Liveness is one bulk round
+// trip per batch, not one per member. And the sweep runs per batch, so an index
+// with a million dead members does not first build a list of a million ids in
+// order to remove them.
+//
+// A cursor may hand back the same member twice, so results are deduplicated.
+func liveMembers(
+	ctx context.Context,
+	driver Driver,
+	sets Sets,
+	scan SetScanner,
+	bulk Bulk,
+	limit int,
+	key string,
+	entryKey func(string) string,
+) ([]string, error) {
+	var (
+		live []string
+		seen map[string]struct{}
+	)
+
+	sift := func(batch []string) error {
+		found, err := existsAll(ctx, driver, bulk, limit, mapKeys(batch, entryKey))
+		if err != nil {
+			return err
+		}
+		var stale []string
+		for i, id := range batch {
+			if !found[i] {
+				stale = append(stale, id)
+				continue
+			}
+			if seen != nil {
+				if _, dup := seen[id]; dup {
+					continue
+				}
+				seen[id] = struct{}{}
+			}
+			live = append(live, id)
+		}
+		if len(stale) > 0 {
+			// A cleanup failure is not worth failing a read over; the next call
+			// tries again.
+			_ = sets.SetRemove(ctx, key, stale...)
+		}
+		return nil
+	}
+
+	if scan != nil {
+		// Only a cursor can repeat a member, so only a cursor pays for the map.
+		seen = make(map[string]struct{})
+		if err := scan.SetScan(ctx, key, sift); err != nil {
+			return nil, err
+		}
+		return live, nil
+	}
+
+	all, err := sets.SetMembers(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(all) == 0 {
+		return nil, nil
+	}
+	if err := sift(all); err != nil {
+		return nil, err
+	}
+	return live, nil
+}
+
+// mapKeys turns ids into the keys their values live under.
+func mapKeys(ids []string, entryKey func(string) string) []string {
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = entryKey(id)
+	}
+	return out
+}

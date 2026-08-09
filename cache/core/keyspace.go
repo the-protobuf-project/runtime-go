@@ -3,6 +3,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -23,9 +24,8 @@ import (
 //	{head}cache:idx:index               the set of Indexed ids
 //	{head}cache:idx:by:{field}:{value}  the set of ids filed under a field
 //	{head}cache:idx:fields:{id}         the field=value pairs an id was filed under
-//	{head}cache:aside:entry:{id}        a read-through value
+//	{head}cache:aside:entry:{id}        a read-through value, or a remembered absence
 //	{head}cache:aside:lock:{id}         the single-flight lock for one load
-//	{head}cache:aside:void:{id}         a remembered absence
 type Keyspace struct {
 	base string
 }
@@ -75,6 +75,25 @@ func CheckNamespace(name string) error {
 	return nil
 }
 
+// CheckKnown reports whether name is in the allowlist a cache was configured
+// with. An empty allowlist accepts anything.
+//
+// The message lists what was allowed, because the whole point of the check is a
+// typo and the fix is almost always visible next to the mistake.
+func CheckKnown(name string, known []string) error {
+	if len(known) == 0 {
+		return nil
+	}
+	if slices.Contains(known, name) {
+		return nil
+	}
+	return fmt.Errorf("database %q is not one of the configured databases %v", name, known)
+}
+
+// Head is the key prefix every key of one database begins with, which is what
+// makes dropping one possible at all.
+func (k Keyspace) Head() string { return k.base }
+
 // Strategy narrows a keyspace to one strategy's segment.
 func (k Keyspace) Strategy(name string) Keyspace {
 	return Keyspace{base: k.base + name + ":"}
@@ -107,9 +126,6 @@ func (k Keyspace) raw(name string) string { return k.base + name }
 
 // lock is the single-flight lock for one id.
 func (k Keyspace) lock(id string) string { return k.base + "lock:" + id }
-
-// void remembers that an id does not exist.
-func (k Keyspace) void(id string) string { return k.base + "void:" + id }
 
 // pattern qualifies a caller's glob with this strategy's segment, so a scan
 // cannot wander into another strategy's keys or another cache's prefix.

@@ -31,6 +31,20 @@ var ErrUnsupported = errors.New("cache: unsupported by this backend")
 // grows.
 var ErrNoTTL = errors.New("cache: no expiry, and this cache requires one")
 
+// ErrOverloaded is returned by [Aside] when too many distinct loads are already
+// running and starting another would not be bounded by anything.
+//
+// It is a refusal rather than a wait because the alternative is worse. Loads
+// grow with distinct ids, not with callers — a cold start, or a client walking
+// ids nobody has asked for — and one goroutine per id with no ceiling is not a
+// slow cache but a dead process. Joining a load already running is never
+// refused, so a hot key is unaffected however many callers arrive.
+//
+// A caller seeing this can fall back to its own loader, shed the request, or
+// retry: the cache is saying it will not queue work it cannot bound, not that
+// the data is gone.
+var ErrOverloaded = errors.New("cache: too many concurrent loads")
+
 // Config is a cache's settings, separate from the client's. The zero value is
 // usable.
 type Config struct {
@@ -58,6 +72,19 @@ type Config struct {
 	// Zero keeps read-through blocking on expiry, which is the safe default:
 	// serving stale data is a policy, not an optimization to switch on quietly.
 	DefaultStale time.Duration
+
+	// Databases is the set of names [Provider.SetDatabase] will accept. Empty
+	// means any name is allowed.
+	//
+	// It exists because a namespace has no existence to check: SetDatabase with a
+	// typo succeeds and hands back a working, empty cache, and the mistake shows
+	// up as a cache that never hits rather than as an error. Listing the names a
+	// program uses turns that into a refusal at startup.
+	//
+	// Deliberately a slice here and not a registry in the server. The names a
+	// program uses are known when it is written, so checking them needs no state,
+	// no round trip, and nothing that can disagree with itself later.
+	Databases []string
 
 	// Concurrency caps how many driver calls one operation may have in flight
 	// when it fans out over many keys. Zero takes a sensible default.
@@ -108,6 +135,19 @@ type Provider interface {
 	// instead, which is a weaker guarantee than the name suggests. Prefer
 	// [Provider.SetDatabase] unless you specifically want SELECT.
 	SelectIndex(ctx context.Context, index int) (*DB, error)
+
+	// DropDatabase deletes every key belonging to a named database and reports
+	// how many went.
+	//
+	// A namespace has no server-side existence, so this is a keyspace walk and a
+	// delete rather than a FLUSHDB: it costs time proportional to the whole
+	// keyspace, not to the database being dropped, and it is not atomic. Writes
+	// arriving during the walk may survive it. That is the price of a database
+	// the server does not know about, and it is why this is worth calling in a
+	// teardown and worth thinking twice about anywhere else.
+	//
+	// Backends that cannot walk their keyspace report [ErrUnsupported].
+	DropDatabase(ctx context.Context, name string) (int, error)
 
 	// Backend names the implementation — "redis", "memcache" — for messages.
 	Backend() string

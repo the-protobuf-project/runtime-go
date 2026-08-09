@@ -36,6 +36,21 @@ type Leases interface {
 	TTL(ctx context.Context, key string) (time.Duration, error)
 }
 
+// SetScanner is implemented by a driver that can walk a set with a cursor,
+// handing back one batch at a time.
+//
+// Without it, reading an index means asking for the whole set in one reply.
+// That is fine for a thousand members and ruinous for a million: the server
+// builds the entire response before sending any of it, and single-threaded
+// Redis does nothing else while it does. A cursor turns one long stall into
+// many short ones.
+//
+// Implementations may return a member more than once — that is what a cursor
+// costs — so callers that build a set of results deduplicate.
+type SetScanner interface {
+	SetScan(ctx context.Context, key string, fn func(members []string) error) error
+}
+
 // Scanner is implemented by a driver that can walk its keyspace with a cursor.
 type Scanner interface {
 	Scan(ctx context.Context, pattern string) ([]string, error)

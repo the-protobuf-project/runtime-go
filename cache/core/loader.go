@@ -37,9 +37,13 @@ func (s *aside) loadAndStore(ctx context.Context, id string, o cache.Options) ([
 	value, err := s.load(ctx, id)
 	if err != nil {
 		if isNotFound(err) {
-			// Remember the absence briefly. Invalidate clears it, so something
-			// created a moment later does not stay invisible.
-			_ = s.driver.Set(ctx, s.keys.void(id), []byte{1}, s.empty)
+			// Remember the absence briefly, in the entry itself so the next
+			// caller learns it in the same round trip that looks for a value.
+			// Invalidate clears it, so something created a moment later does not
+			// stay invisible.
+			if void, perr := packVoid(); perr == nil {
+				_ = s.driver.Set(ctx, s.keys.entry(id), void, s.empty)
+			}
 			return nil, fmt.Errorf("%w: %s", cache.ErrNotFound, id)
 		}
 		return nil, fmt.Errorf("cache: loading %s: %w", id, err)
@@ -55,8 +59,8 @@ func (s *aside) loadAndStore(ctx context.Context, id string, o cache.Options) ([
 	}
 
 	// The value as the caller will decode it, unwrapped from its frame.
-	value2, _, err := unpack(body)
-	return value2, err
+	got, err := unpack(body)
+	return got.value, err
 }
 
 // claim tries to become the process that loads this id.
@@ -81,8 +85,11 @@ func (s *aside) claim(ctx context.Context, id string) (release func(), joined bo
 
 	won, err := s.driver.Add(ctx, s.keys.lock(id), token, s.lease)
 	if err != nil || !won {
-		if body, _, rerr := s.read(ctx, id); rerr == nil {
-			return nil, true, body
+		// Another process holds the lock. One extra read settles whether it has
+		// already published; a remembered absence counts as published, or this
+		// process would load something it was just told does not exist.
+		if got, rerr := s.read(ctx, id); rerr == nil && !got.void {
+			return nil, true, got.value
 		}
 		return nil, false, nil
 	}

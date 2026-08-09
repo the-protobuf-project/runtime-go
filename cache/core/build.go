@@ -17,6 +17,7 @@ const (
 	drainTimeout   = 5 * time.Second  // how long Close waits for background refreshes
 	refreshBudget  = 64               // concurrent background refreshes per database
 	flightCapacity = 30 * time.Second // how long a joined load may be waited on
+	flightBudget   = 2048             // concurrent distinct loads per database
 )
 
 // Spec is what a provider knows and core does not: which database was selected,
@@ -73,6 +74,7 @@ func Build(driver Driver, spec Spec) *cache.DB {
 	sets, _ := driver.(Sets)
 	leases, _ := driver.(Leases)
 	scanner, _ := driver.(Scanner)
+	setScan, _ := driver.(SetScanner)
 	bulk, _ := driver.(Bulk)
 	fenced, _ := driver.(Fenced)
 
@@ -92,12 +94,12 @@ func Build(driver Driver, spec Spec) *cache.DB {
 	// view over it: two callers loading the same id through different loaders are
 	// still loading the same id, and the budget is a property of the connection
 	// rather than of any one view.
-	flights := newFlight(flightCapacity)
+	flights := newFlight(flightCapacity, flightBudget)
 	fresh := newRefresher(refreshBudget, loadTimeout)
 
 	entries := func(segment string) *document {
 		return &document{
-			driver: driver, sets: sets, leases: leases, bulk: bulk,
+			driver: driver, sets: sets, scan: setScan, leases: leases, bulk: bulk,
 			keys: keys.Strategy(segment), def: def, limit: limit, newID: newID,
 			require: spec.RequireTTL,
 		}

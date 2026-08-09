@@ -1,14 +1,17 @@
 // Package database defines the backend-agnostic contract for runtime-go's
 // document-store layer: durable records that live until they are deleted.
 //
-// Providers live in their own modules — [github.com/the-protobuf-project/runtime-go/redis]
-// today, NATS and others alongside it — and reach this contract through a
-// manager they hand back:
+// Providers live in subpackages and take a client you own, so nothing here dials
+// or closes a connection:
 //
-//	c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
-//	mgr, _ := c.SetDatabase(ctx, "orders")
+//	rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+//	store := redis.Connect(rdb, redis.WithPrefix("orders"))
 //
-//	mgr.Document.KV.Create(ctx, "", book)
+//	id, _ := store.Create(ctx, "", book)
+//
+// The prefix is how several independent stores share one database, or share it
+// with a cache or a stream. Hand the same client to all three and they share a
+// pool.
 //
 // # Your model, not ours
 //
@@ -17,7 +20,7 @@
 // change to this package. [For] puts a typed view over any Store when you want
 // the compiler to check that:
 //
-//	books := database.For[Book](mgr.Document.KV)
+//	books := database.For[Book](store)
 //	id, _ := books.Create(ctx, b)
 //	b2, _ := books.Get(ctx, id)
 //

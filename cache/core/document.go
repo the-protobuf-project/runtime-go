@@ -13,9 +13,10 @@ import (
 // enumerated. It is the same code on every backend.
 type document struct {
 	driver Driver
-	sets   Sets   // nil when the backend has none
-	leases Leases // nil when the protocol reports no remaining TTL
-	bulk   Bulk   // nil when many keys cannot share a round trip
+	sets   Sets       // nil when the backend has none
+	scan   SetScanner // nil when a set cannot be walked with a cursor
+	leases Leases     // nil when the protocol reports no remaining TTL
+	bulk   Bulk       // nil when many keys cannot share a round trip
 	keys   Keyspace
 	def    cache.Options
 	limit  int
@@ -101,42 +102,17 @@ func (s *document) Delete(ctx context.Context, id string) error {
 
 // Keys returns live ids, sweeping the members whose entries have expired.
 //
-// The liveness check is one bulk round trip per batch where the driver can do
-// that, and a bounded parallel fan-out where it cannot — never one round trip
-// per member in a row, which is what made this the most expensive read in the
-// cache. The sweep is a single call with every stale member, for the same
-// reason: an index with a thousand dead members should cost one removal, not a
-// thousand.
+// This is the most expensive read in the cache and the one that scales worst:
+// it is O(entries) however it is written. See [liveMembers] for what is bounded
+// and what is not, and prefer [cache.Volatile] outright when enumeration is
+// never needed.
 func (s *document) Keys(ctx context.Context) ([]string, error) {
 	if s.sets == nil {
 		return nil, unsupported(s.driver.Name(), "enumerate keys", "no sets to index with")
 	}
-	ids, err := s.sets.SetMembers(ctx, s.keys.index())
+	live, err := liveMembers(ctx, s.driver, s.sets, s.scan, s.bulk, s.limit, s.keys.index(), s.keys.entry)
 	if err != nil {
 		return nil, fmt.Errorf("cache: cannot read the index: %w", err)
-	}
-	if len(ids) == 0 {
-		return nil, nil
-	}
-
-	found, err := existsAll(ctx, s.driver, s.bulk, s.limit, s.entryKeys(ids))
-	if err != nil {
-		return nil, fmt.Errorf("cache: cannot check the index: %w", err)
-	}
-
-	live := make([]string, 0, len(ids))
-	var stale []string
-	for i, id := range ids {
-		if found[i] {
-			live = append(live, id)
-			continue
-		}
-		stale = append(stale, id)
-	}
-	if len(stale) > 0 {
-		// A cleanup failure is not worth failing a read over; the next call
-		// tries again.
-		_ = s.sets.SetRemove(ctx, s.keys.index(), stale...)
 	}
 	return live, nil
 }

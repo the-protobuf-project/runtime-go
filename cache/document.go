@@ -14,6 +14,22 @@ import (
 // walking its whole keyspace has to maintain an index, which makes Create two
 // writes and makes reads sweep the members whose entries have since expired.
 // Reach for [Volatile] when you will never enumerate.
+//
+// # It does not shard
+//
+// The index is one key. On a Redis cluster that key lives on one node, so every
+// Create and Delete here touches that node no matter how many are in the ring —
+// adding shards buys this strategy nothing, and the write rate one node sustains
+// is the write rate of the whole cache.
+//
+// [Document.Keys] and [Document.List] are O(entries) besides: a cursor keeps the
+// server from stalling on one enormous reply, and batching keeps the round trips
+// proportional to entries over a few hundred, but nothing makes them cheap at a
+// million.
+//
+// So this is the strategy for thousands to low millions of entries at a modest
+// write rate. Past that the shape to reach for is [Volatile] or [Aside], which
+// have no index, no hot key, and nothing that has to be swept.
 type Document interface {
 	// Create stores value under a generated id and returns it. Pass [ID] to
 	// choose the id yourself.

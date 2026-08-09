@@ -66,6 +66,26 @@ the server's limits: Redis ships with sixteen databases, a cluster has only
 database 0, and an index other than the client's means a derived client that the
 returned `DB` owns and closes.
 
+A namespace has no existence to check, so a typo would otherwise succeed and hand
+back a working, empty cache. List the names a program uses and it fails at
+startup instead:
+
+```go
+c := redis.New(client, cache.Config{Databases: []string{"orders", "carts"}})
+
+db, _ := c.SetDatabase(ctx, "ordres")
+// redis: database "ordres" is not one of the configured databases [orders carts]
+```
+
+`DropDatabase` deletes everything under a name. It is a cursor walk and batched
+deletes, not a `FLUSHDB` — proportional to the whole keyspace, not to the
+database being dropped, and not atomic. Fine for a teardown; think twice
+elsewhere. memcached has no cursor and reports `ErrUnsupported`.
+
+```go
+n, err := c.DropDatabase(ctx, "orders")
+```
+
 ### Expiry
 
 `DefaultTTL` is the lease for everything; any single call overrides it:
@@ -171,6 +191,31 @@ err := users.GetOrLoad(ctx, id, &u, cache.TTL(time.Minute), cache.Stale(time.Min
 Use `Refresh` rather than `Invalidate` for a value you know just changed —
 dropping the entry leaves a window where every reader misses at once.
 
+## What this costs under load
+
+The numbers that decide whether a hot key is survivable, each asserted in
+[`core/contention_test.go`](./core/contention_test.go) so a regression fails the
+build rather than a pager:
+
+| | cost |
+| --- | --- |
+| A hit | one round trip, whatever the concurrency |
+| A miss | one round trip per caller, and one load for all of them |
+| A hot key going stale | served immediately, one background refresh |
+| Enumeration | one bulk round trip per 256 entries, over a cursor |
+| Concurrent distinct loads | capped at 2048 per database; joining one is never capped |
+
+Past that cap `Aside` reports `cache.ErrOverloaded` rather than queueing. Loads
+grow with distinct ids — a cold start, a client walking ids nobody asked for —
+and one goroutine per id with no ceiling is not a slow cache but a dead process.
+A caller seeing it can fall back to its own loader, shed the request, or retry.
+
+**`Document` and `Indexed` do not shard.** Their index is a single key, so on a
+cluster every write touches one node however many are in the ring, and `Keys`
+and `List` are `O(entries)` whatever they do. They are built for thousands to low
+millions of entries at a modest write rate. `Volatile` and `Aside` have no index,
+no hot key and nothing to sweep — those are the ones that scale out.
+
 ### Typed views
 
 ```go
@@ -210,6 +255,7 @@ wiring mistake that caused it.
 | `Aside` | full, with a cross-process lock | full, collapsing loads per process |
 | `SetDatabase(name)` | a key namespace | a key namespace — identical |
 | `SelectIndex(n)` | a real database, via `SELECT` | a key namespace, `db3:` |
+| `DropDatabase(name)` | cursor walk and batched deletes | none — no cursor to find its keys |
 | Enumeration cost | one pipelined round trip per 256 ids | same, via multi-get |
 
 ## Adding a backend

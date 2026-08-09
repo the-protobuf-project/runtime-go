@@ -14,6 +14,12 @@ import "context"
 // verify liveness and sweep as they go, exactly as [Document.Keys] does.
 //
 // A backend with no sets cannot offer any of this and reports [ErrUnsupported].
+//
+// It inherits [Document]'s scaling limit and adds to it: every indexed field is
+// another set, another single key, and another node that every write to that
+// field must reach. An index on something low-cardinality — a tenant, a status,
+// a version — puts every entry sharing that value into one key, which is the
+// case where this stops scaling first and does it quietly.
 type Indexed interface {
 	Document
 

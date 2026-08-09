@@ -14,6 +14,11 @@ import (
 //
 // Keys here are yours, not generated. A caller reaching for Volatile already
 // knows the key it wants: the session id, the user id, the request hash.
+//
+// It is also the strategy that scales furthest. With no index there is no key
+// every write has to touch, so entries spread across a cluster by their own
+// names and adding shards adds throughput — which is not true of [Document] or
+// [Indexed].
 type Volatile interface {
 	// Set writes value under key with a lease.
 	Set(ctx context.Context, key string, value any, opts ...Option) error

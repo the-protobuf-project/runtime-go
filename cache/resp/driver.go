@@ -21,10 +21,11 @@ type primitives struct {
 // bulk.go — pipelined bulk reads and a scripted compare-and-delete — are the ones
 // that make enumeration cheap and a cross-process lock safe.
 var (
-	_ core.Driver  = primitives{}
-	_ core.Sets    = primitives{}
-	_ core.Leases  = primitives{}
-	_ core.Scanner = primitives{}
+	_ core.Driver     = primitives{}
+	_ core.Sets       = primitives{}
+	_ core.Leases     = primitives{}
+	_ core.Scanner    = primitives{}
+	_ core.SetScanner = primitives{}
 )
 
 // Name is the server this driver is talking to, whichever RESP
@@ -117,6 +118,28 @@ func (p primitives) SetMembers(ctx context.Context, key string) ([]string, error
 	return p.client.SMembers(ctx, key).Result()
 }
 
+// SetScan walks a set with a cursor rather than asking for every member at once,
+// so an index with a million ids costs many small replies instead of one reply
+// the server must build in full while doing nothing else.
+func (p primitives) SetScan(ctx context.Context, key string, fn func([]string) error) error {
+	var cursor uint64
+	for {
+		members, next, err := p.client.SScan(ctx, key, cursor, "", scanBatch).Result()
+		if err != nil {
+			return err
+		}
+		if len(members) > 0 {
+			if ferr := fn(members); ferr != nil {
+				return ferr
+			}
+		}
+		if next == 0 {
+			return nil
+		}
+		cursor = next
+	}
+}
+
 // TTL reports the remaining lease.
 //
 // Redis answers with two negative sentinels rather than a duration: -1 for a key
@@ -136,6 +159,10 @@ func (p primitives) TTL(ctx context.Context, key string) (time.Duration, error) 
 	}
 }
 
+// scanBatch is the cursor hint for both keyspace and set walks. Large enough
+// that the round trips are not the cost, small enough that one reply is not.
+const scanBatch = 256
+
 // Scan walks the keyspace with a cursor, never KEYS, which blocks the server for
 // as long as the whole keyspace takes to read.
 func (p primitives) Scan(ctx context.Context, pattern string) ([]string, error) {
@@ -144,7 +171,7 @@ func (p primitives) Scan(ctx context.Context, pattern string) ([]string, error) 
 		cursor uint64
 	)
 	for {
-		keys, next, err := p.client.Scan(ctx, cursor, pattern, 256).Result()
+		keys, next, err := p.client.Scan(ctx, cursor, pattern, scanBatch).Result()
 		if err != nil {
 			return nil, err
 		}

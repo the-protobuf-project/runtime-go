@@ -1,18 +1,21 @@
 // Package streams defines the backend-agnostic contract for runtime-go's
 // messaging layer.
 //
-// Providers live in their own modules — [github.com/the-protobuf-project/runtime-go/redis]
-// today, NATS and others alongside it — and reach this contract through a
-// manager they hand back:
+// Providers live in subpackages and take a client you own, so nothing here dials
+// or closes a connection:
 //
-//	c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
-//	mgr, _ := c.SetDatabase(ctx, "events")
+//	rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+//	st := redis.Connect(rdb, redis.WithPrefix("events"))
 //
-//	s, _ := mgr.Channel.Stream.Create(ctx, streams.Stream{
+//	s, _ := st.Create(ctx, streams.Stream{
 //	    Name: "orders", Subjects: []string{"order.placed"},
 //	})
-//	pub, _ := mgr.Channel.Stream.Bind(ctx, s.ID)
-//	pub.Publish(ctx, "order.placed", order)
+//	mgr, _ := st.Bind(ctx, s.ID)
+//	mgr.Publish(ctx, "order.placed", order)
+//
+// The prefix is how several independent sets of streams share one database, or
+// share it with a store or a cache. Hand the same client to all three and they
+// share a pool.
 //
 // # Your model, not ours
 //
