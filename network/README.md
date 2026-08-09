@@ -16,7 +16,7 @@ A comprehensive Go networking package providing unified interfaces for HTTP, Gra
 ## Installation
 
 ```bash
-go get github.com/machanirobotics/loom/go/network
+go get github.com/the-protobuf-project/runtime-go/network
 ```
 
 ## Quick Start
@@ -31,7 +31,7 @@ import (
     "fmt"
     "time"
     
-    "github.com/machanirobotics/loom/go/network"
+    "github.com/the-protobuf-project/runtime-go/network"
 )
 
 func main() {

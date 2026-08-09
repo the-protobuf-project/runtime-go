@@ -19,17 +19,17 @@ func setupOtelExporter() []grpc.ServerOption {
 	serverOpts := make([]grpc.ServerOption, 0, 2)
 
 	endpoint := getFromEnvOrDefault("PULSE_TELEMETRY_OTLP_ENDPOINT", "localhost:12005")
-	shared.Pulse.Logger.Debugf("setupOtelExporter: creating OTLP metric exporter → %s (insecure)", endpoint)
+	shared.Telemetry().Logger.Debugf("setupOtelExporter: creating OTLP metric exporter → %s (insecure)", endpoint)
 
 	exporter, err := otlpmetricgrpc.New(ctx,
 		otlpmetricgrpc.WithEndpoint(endpoint),
 		otlpmetricgrpc.WithInsecure(),
 	)
 	if err != nil {
-		shared.Pulse.Logger.Errorf("failed to create OTLP metric exporter: %s", err.Error())
+		_ = shared.Telemetry().Logger.Errorf("failed to create OTLP metric exporter: %s", err.Error())
 		return serverOpts
 	}
-	shared.Pulse.Logger.Debugf("setupOtelExporter: exporter created, configuring MeterProvider (interval=10s)")
+	shared.Telemetry().Logger.Debugf("setupOtelExporter: exporter created, configuring MeterProvider (interval=10s)")
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(metric.NewPeriodicReader(exporter,
 			metric.WithInterval(10*time.Second),
@@ -78,6 +78,6 @@ func setupOtelExporter() []grpc.ServerOption {
 	})
 
 	serverOpts = append(serverOpts, so, grpc.StatsHandler(otelgrpc.NewServerHandler()))
-	shared.Pulse.Logger.Debugf("setupOtelExporter: OTel server options ready (%d option(s))", len(serverOpts))
+	shared.Telemetry().Logger.Debugf("setupOtelExporter: OTel server options ready (%d option(s))", len(serverOpts))
 	return serverOpts
 }

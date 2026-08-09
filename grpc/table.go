@@ -173,13 +173,13 @@ func (s *HybridServer) printStartupBanner(mcpEndpoints []mcpEndpointInfo) {
 	fmt.Println()
 
 	if s.cert == nil {
-		shared.Pulse.Logger.Warn("gRPC: running without TLS (plaintext)")
+		shared.Telemetry().Logger.Warn("gRPC: running without TLS (plaintext)")
 	}
 	if s.opts.EnableHealth {
-		shared.Pulse.Logger.Warn("Health check service enabled")
+		shared.Telemetry().Logger.Warn("Health check service enabled")
 	}
 	if isReflection {
-		shared.Pulse.Logger.Warn("Reflection service enabled (dev/debug only)")
+		shared.Telemetry().Logger.Warn("Reflection service enabled (dev/debug only)")
 	}
 }
 

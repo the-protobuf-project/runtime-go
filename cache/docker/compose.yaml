@@ -1,0 +1,49 @@
+## Backends for the cache module's examples and integration tests.
+##
+## Redis and Dragonfly speak the same protocol and would take the same port, so
+## Dragonfly is moved to 6380 — the examples expect exactly that. Bring up one,
+## or all three:
+##
+##   docker compose up -d
+##   go run ./example
+
+services:
+  redis:
+    image: redis:latest
+    container_name: cache-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+    restart: unless-stopped
+    command: ["redis-server", "--notify-keyspace-events", "Ex"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dragonfly:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly:latest
+    container_name: cache-dragonfly
+    ports:
+      - "6380:6379"
+    # Dragonfly serves 16 databases by default; SetDatabase past that is refused
+    # by the server, so raise it here if a program needs more.
+    command: ["--dbnum", "16", "--notify_keyspace_events", "Ex"]
+    ulimits:
+      memlock: -1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  memcached:
+    image: memcached:latest
+    container_name: cache-memcached
+    ports:
+      - "11211:11211"
+    restart: unless-stopped
+    command: ["-m", "64"]

@@ -1,6 +1,6 @@
 module github.com/the-protobuf-project/runtime-go/grpc
 
-go 1.26.0
+go 1.26.4
 
 require (
 	buf.build/go/protovalidate v1.2.0
@@ -8,15 +8,16 @@ require (
 	github.com/fatih/color v1.19.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/joho/godotenv v1.5.1
-	github.com/machanirobotics/pulse/pulse-go v0.0.0-20260524060824-a62605622128
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/quic-go/quic-go v0.61.0
 	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.1
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260721081650-0c2a71dad403
+	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
+	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.69.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
 	go.opentelemetry.io/otel/sdk/metric v1.44.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260720155508-bb71a54f79dc
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 )
@@ -99,6 +100,13 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260706201446-f0a921348800 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260720211330-0afa2a65878a // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+// observability and telemetry are versioned alongside this module in
+// runtime-go and have no tagged release carrying the Logger contract yet.
+// Drop these once they are published.
+replace github.com/the-protobuf-project/runtime-go/observability => ../observability
+
+replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
