@@ -111,7 +111,7 @@ type Provider interface {
 	//
 	// The name is a namespace: every key this database reads and writes carries
 	// it as a segment. That is deliberately the same on every backend — a name
-	// isolates a cache from its neighbours identically on Redis, Dragonfly and
+	// isolates a cache from its neighbors identically on Redis, Dragonfly and
 	// memcached, there is no registry to keep, no allocation to race over, and
 	// no ceiling on how many you can have. It works on Redis Cluster, which has
 	// only database 0 and would refuse any numeric selection but that one.
@@ -126,7 +126,7 @@ type Provider interface {
 	// SelectIndex selects a database by index, where the backend has real ones.
 	//
 	// On a RESP server this is SELECT: the boundary is enforced by the server,
-	// FLUSHDB reaches one database and not its neighbours. The costs are the
+	// FLUSHDB reaches one database and not its neighbors. The costs are the
 	// ones the server imposes — Redis ships with sixteen databases, Cluster has
 	// only database 0, and an index other than the client's means a derived
 	// client with a pool of its own, which the returned [DB] owns and closes.
