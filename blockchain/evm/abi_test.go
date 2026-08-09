@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database"
 )
 
 // bookABI is a complete-enough ABI: create (so inputTuple resolves) and get,
@@ -36,18 +36,18 @@ const bookABI = `[
     ]}]}
 ]`
 
-func bookResource() *store.Resource {
-	return &store.Resource{
+func bookResource() *database.Resource {
+	return &database.Resource{
 		Name:     "Book",
 		PKColumn: "id",
-		Columns: []store.Column{
-			{Name: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "name", Kind: store.KindString, NotNull: true},
-			{Name: "title", Kind: store.KindString, NotNull: true},
-			{Name: "author_id", Kind: store.KindString, NotNull: true},
-			{Name: "published_year", Kind: store.KindInt},
-			{Name: "genre", Kind: store.KindEnum, NotNull: true},
-			{Name: "create_time", Kind: store.KindTimestamp, NotNull: true},
+		Columns: []database.Column{
+			{Name: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "name", Kind: database.KindString, NotNull: true},
+			{Name: "title", Kind: database.KindString, NotNull: true},
+			{Name: "author_id", Kind: database.KindString, NotNull: true},
+			{Name: "published_year", Kind: database.KindInt},
+			{Name: "genre", Kind: database.KindEnum, NotNull: true},
+			{Name: "create_time", Kind: database.KindTimestamp, NotNull: true},
 		},
 	}
 }
@@ -101,7 +101,7 @@ func TestABIRecordRoundTrip(t *testing.T) {
 }
 
 func TestToBigTimestamp(t *testing.T) {
-	col := store.Column{Kind: store.KindTimestamp}
+	col := database.Column{Kind: database.KindTimestamp}
 	n, err := toBig(col, time.Unix(42, 0))
 	if err != nil || n.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("toBig timestamp = %v, %v; want 42", n, err)

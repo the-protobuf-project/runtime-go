@@ -1,4 +1,4 @@
-// Package evm implements the backend-agnostic store.Driver against an EVM chain,
+// Package evm implements the backend-agnostic database.Driver against an EVM chain,
 // driving the Solidity storage contracts protorm generates. It is the chain
 // counterpart of the orm driver: the same dynamic philosophy, but the record is
 // ABI-encoded for a contract call instead of mapped to SQL.
@@ -11,7 +11,7 @@
 //
 // Read/write asymmetry is explicit. Reads (Get/Exists/Count/List) are synchronous
 // eth_calls. Writes (Create/Update/Delete) submit a transaction and, by default,
-// return a pending [store.WriteResult] carrying the tx hash — an AIP-151
+// return a pending [database.WriteResult] carrying the tx hash — an AIP-151
 // long-running operation handle — rather than blocking; set Config.AwaitReceipt
 // to wait for the receipt and surface a synchronous result. A reverted call is
 // translated back into the store sentinel errors via the contract's require
@@ -32,5 +32,5 @@
 //	    Signer:    txOpts, // *bind.TransactOpts; nil disables writes
 //	    Resources: map[string]evm.Contract{"Book": book},
 //	})
-//	svc := adapter.New(driver, store.NewRegistry(grpcx.Resources...))
+//	svc := adapter.New(driver, database.NewRegistry(grpcx.Resources...))
 package evm

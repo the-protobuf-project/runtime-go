@@ -1,18 +1,37 @@
-version: '3.8'
-
+# Backends the interfaces module tests against.
+#
+# Mongo runs as a single-node replica set rather than standalone, because
+# transactions and change streams are both replica-set features — a standalone
+# server would make store.Transactional and store.Watcher untestable here and
+# quietly different in production.
 services:
+  mongodb:
+    image: mongo:7
+    container_name: interfaces-mongo
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: >
+        mongosh --quiet --eval "
+          try { rs.status().ok }
+          catch (e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }
+        "
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 5s
+
+  arangodb:
+    image: arangodb:3.12
+    container_name: interfaces-arango
+    environment:
+      ARANGO_ROOT_PASSWORD: root
+    ports:
+      - "8529:8529"
+
   redis:
-    image: redis:latest
-    container_name: redis-local
+    image: redis:7
+    container_name: interfaces-redis
     ports:
       - "6379:6379"
-    # Bind mount host directory so Redis RDB files persist on host
-    volumes:
-      - ./redis-data:/data
-    restart: unless-stopped
-    command: ["redis-server", "--notify-keyspace-events", "Ex"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5

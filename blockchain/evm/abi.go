@@ -13,7 +13,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database"
 )
 
 // parseABI parses a contract ABI JSON document.
@@ -33,7 +33,7 @@ func inputTuple(parsed abi.ABI, method string) (abi.Type, error) {
 // encodeRecord builds the go-ethereum tuple value for a record, taking column
 // values by index against the ABI tuple components (which the generator emits in
 // resource-column order).
-func encodeRecord(tt abi.Type, res *store.Resource, cols map[string]any) (any, error) {
+func encodeRecord(tt abi.Type, res *database.Resource, cols map[string]any) (any, error) {
 	if len(tt.TupleElems) != len(res.Columns) {
 		return nil, fmt.Errorf("evm: ABI tuple has %d fields but resource %q has %d columns", len(tt.TupleElems), res.Name, len(res.Columns))
 	}
@@ -50,7 +50,7 @@ func encodeRecord(tt abi.Type, res *store.Resource, cols map[string]any) (any, e
 }
 
 // decodeRecord reflects an ABI tuple value back into a normalized column map.
-func decodeRecord(res *store.Resource, tupleVal any) (map[string]any, error) {
+func decodeRecord(res *database.Resource, tupleVal any) (map[string]any, error) {
 	v := reflect.ValueOf(tupleVal)
 	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
@@ -70,7 +70,7 @@ func decodeRecord(res *store.Resource, tupleVal any) (map[string]any, error) {
 
 // toABIValue converts a normalized bridge value to the Go value go-ethereum's
 // ABI codec wants for the component type.
-func toABIValue(elem abi.Type, col store.Column, raw any) (any, error) {
+func toABIValue(elem abi.Type, col database.Column, raw any) (any, error) {
 	switch elem.T {
 	case abi.StringTy:
 		return toString(raw), nil
@@ -95,7 +95,7 @@ func toABIValue(elem abi.Type, col store.Column, raw any) (any, error) {
 }
 
 // fromABIValue normalizes an ABI Go value back to the bridge's column types.
-func fromABIValue(col store.Column, v any) any {
+func fromABIValue(col database.Column, v any) any {
 	switch x := v.(type) {
 	case string:
 		return x
@@ -122,11 +122,11 @@ func fromABIValue(col store.Column, v any) any {
 }
 
 // intNormalized maps an integer ABI value to the bridge type for its column kind.
-func intNormalized(col store.Column, n int64) any {
+func intNormalized(col database.Column, n int64) any {
 	switch col.Kind {
-	case store.KindTimestamp:
+	case database.KindTimestamp:
 		return time.Unix(n, 0).UTC()
-	case store.KindEnum:
+	case database.KindEnum:
 		return int32(n)
 	default:
 		return n
@@ -134,8 +134,8 @@ func intNormalized(col store.Column, n int64) any {
 }
 
 // toBig converts a normalized value to a *big.Int for an integer component.
-func toBig(col store.Column, raw any) (*big.Int, error) {
-	if col.Kind == store.KindTimestamp {
+func toBig(col database.Column, raw any) (*big.Int, error) {
+	if col.Kind == database.KindTimestamp {
 		t, ok := raw.(time.Time)
 		if !ok {
 			return nil, fmt.Errorf("timestamp column wants time.Time, got %T", raw)

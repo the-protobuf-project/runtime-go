@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database"
 )
 
 func TestRevertToError(t *testing.T) {
@@ -13,10 +13,10 @@ func TestRevertToError(t *testing.T) {
 		reason string
 		want   error // sentinel to errors.Is against, or nil for "wrapped"
 	}{
-		{"Book: not found", store.ErrNotFound},
-		{"Author: already exists", store.ErrAlreadyExists},
-		{"Book: not owner", store.ErrPermissionDenied},
-		{"Book: not record owner", store.ErrPermissionDenied},
+		{"Book: not found", database.ErrNotFound},
+		{"Author: already exists", database.ErrAlreadyExists},
+		{"Book: not owner", database.ErrPermissionDenied},
+		{"Book: not record owner", database.ErrPermissionDenied},
 	}
 	for _, tc := range cases {
 		got := revertToError(base, tc.reason)

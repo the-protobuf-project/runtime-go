@@ -186,11 +186,18 @@ func collect(root string) ([]pkg, error) {
 }
 
 // skipDir reports whether a directory should be pruned from the walk.
+//
+// The underscore rule is the Go tool's own: it ignores directories whose names
+// begin with "_" or ".", so code parked under one is not part of any package and
+// cannot be documented, imported or built. A doc gate that reported it as a
+// missing doc.go would be asking for documentation on something the compiler
+// never sees.
 func skipDir(root, p, name string) bool {
 	if p == root {
 		return false
 	}
-	return name == "vendor" || name == "testdata" || strings.HasPrefix(name, ".")
+	return name == "vendor" || name == "testdata" ||
+		strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")
 }
 
 // describe parses the package rooted at dir and returns its doc info. ok is false

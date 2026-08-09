@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database"
 )
 
 // revertToError classifies a call/transaction error. When reason carries a
@@ -18,11 +18,11 @@ import (
 func revertToError(err error, reason string) error {
 	switch {
 	case strings.HasSuffix(reason, ": not found"):
-		return store.ErrNotFound
+		return database.ErrNotFound
 	case strings.HasSuffix(reason, ": already exists"):
-		return store.ErrAlreadyExists
+		return database.ErrAlreadyExists
 	case strings.Contains(reason, "not owner"), strings.Contains(reason, "not record owner"):
-		return fmt.Errorf("%w: %s", store.ErrPermissionDenied, reason)
+		return fmt.Errorf("%w: %s", database.ErrPermissionDenied, reason)
 	case reason != "":
 		return fmt.Errorf("evm: reverted: %s", reason)
 	default:

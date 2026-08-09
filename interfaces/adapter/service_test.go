@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/interfaces/adapter"
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
 )
 
 // fakeDriver returns canned results so the adapter's dispatch + error mapping can
@@ -21,28 +21,28 @@ type fakeDriver struct {
 	createErr error
 }
 
-func (f *fakeDriver) Create(context.Context, *store.Resource, proto.Message) (store.WriteResult, error) {
-	return store.WriteResult{}, f.createErr
+func (f *fakeDriver) Create(context.Context, *database.Resource, proto.Message) (database.WriteResult, error) {
+	return database.WriteResult{}, f.createErr
 }
-func (f *fakeDriver) Get(context.Context, *store.Resource, string) (proto.Message, error) {
+func (f *fakeDriver) Get(context.Context, *database.Resource, string) (proto.Message, error) {
 	return f.getMsg, f.getErr
 }
-func (f *fakeDriver) Update(context.Context, *store.Resource, proto.Message) (store.WriteResult, error) {
-	return store.WriteResult{}, nil
+func (f *fakeDriver) Update(context.Context, *database.Resource, proto.Message) (database.WriteResult, error) {
+	return database.WriteResult{}, nil
 }
-func (f *fakeDriver) Delete(context.Context, *store.Resource, string) error { return nil }
-func (f *fakeDriver) List(context.Context, *store.Resource, store.ListOptions) (store.ListResult, error) {
-	return store.ListResult{}, nil
+func (f *fakeDriver) Delete(context.Context, *database.Resource, string) error { return nil }
+func (f *fakeDriver) List(context.Context, *database.Resource, database.ListOptions) (database.ListResult, error) {
+	return database.ListResult{}, nil
 }
-func (f *fakeDriver) Count(context.Context, *store.Resource, store.ListOptions) (int64, error) {
+func (f *fakeDriver) Count(context.Context, *database.Resource, database.ListOptions) (int64, error) {
 	return 0, nil
 }
-func (f *fakeDriver) Exists(context.Context, *store.Resource, string) (bool, error) {
+func (f *fakeDriver) Exists(context.Context, *database.Resource, string) (bool, error) {
 	return false, nil
 }
 
-func registry() *store.Registry {
-	return store.NewRegistry(store.Resource{
+func registry() *database.Registry {
+	return database.NewRegistry(database.Resource{
 		Name: "Book", Table: "books", PKColumn: "id",
 		New: func() proto.Message { return &wrapperspb.StringValue{} },
 	})
@@ -55,8 +55,8 @@ func TestServiceErrorMapping(t *testing.T) {
 		err  error
 		want codes.Code
 	}{
-		{"not found", store.ErrNotFound, codes.NotFound},
-		{"unimplemented", store.ErrUnimplemented, codes.Unimplemented},
+		{"not found", database.ErrNotFound, codes.NotFound},
+		{"unimplemented", database.ErrUnimplemented, codes.Unimplemented},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestServiceErrorMapping(t *testing.T) {
 		})
 	}
 
-	svc := adapter.New(&fakeDriver{createErr: store.ErrAlreadyExists}, registry())
+	svc := adapter.New(&fakeDriver{createErr: database.ErrAlreadyExists}, registry())
 	if _, err := svc.Create(ctx, "Book", &wrapperspb.StringValue{}); status.Code(err) != codes.AlreadyExists {
 		t.Fatalf("Create code = %v, want AlreadyExists", status.Code(err))
 	}

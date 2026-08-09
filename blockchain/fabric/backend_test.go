@@ -6,20 +6,20 @@ import (
 	"testing"
 
 	_ "github.com/the-protobuf-project/runtime-go/blockchain/fabric"
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database"
 )
 
 // Importing this package must register the driver, since that is what makes
-// store.NewDriver(store.Fabric, ...) work for anyone who imports it for effect
+// database.NewDriver(database.Fabric, ...) work for anyone who imports it for effect
 // alone.
 func TestInitRegistersFabricBackend(t *testing.T) {
-	if !slices.Contains(store.Backends(), store.Fabric) {
-		t.Fatalf("store.Backends() = %v, want it to contain %q", store.Backends(), store.Fabric)
+	if !slices.Contains(database.Backends(), database.Fabric) {
+		t.Fatalf("database.Backends() = %v, want it to contain %q", database.Backends(), database.Fabric)
 	}
 }
 
 func TestNewDriverBuildsWithoutConfig(t *testing.T) {
-	d, err := store.NewDriver(store.Fabric, nil)
+	d, err := database.NewDriver(database.Fabric, nil)
 	if err != nil {
 		t.Fatalf("NewDriver: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestNewDriverBuildsWithoutConfig(t *testing.T) {
 }
 
 func TestNewDriverRejectsUnexpectedConfig(t *testing.T) {
-	if _, err := store.NewDriver(store.Fabric, "unexpected"); !errors.Is(err, store.ErrBadConfig) {
-		t.Errorf("NewDriver error = %v, want it to wrap store.ErrBadConfig", err)
+	if _, err := database.NewDriver(database.Fabric, "unexpected"); !errors.Is(err, database.ErrBadConfig) {
+		t.Errorf("NewDriver error = %v, want it to wrap database.ErrBadConfig", err)
 	}
 }
