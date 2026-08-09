@@ -9,7 +9,8 @@ graphs; a driver implements what its backend can do and says so where it cannot.
 | PostgreSQL / MySQL / SQLite | [`database/orm`](./orm) | implemented (GORM) |
 | MongoDB | [`database/mongodb`](./mongodb) | implemented |
 | Redis | [`database/redis`](./redis) | implemented |
-| ArangoDB | `database/arangodb` | next |
+| ArangoDB | [`database/arangodb`](./arangodb) | implemented (documents + graph) |
+| TimescaleDB | [`database/timescale`](./timescale) | implemented (SQL + time series) |
 | Neo4j | `database/neo4j` | next |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for messaging see
@@ -69,13 +70,14 @@ with a refusal naming the backend, so every field on a `DB` is non-nil and a
 missing capability reports `ErrUnimplemented` instead of panicking somewhere far
 from the wiring that caused it.
 
-| | Driver | Tx | Migrator | Batcher | Watcher | Graph |
-| --- | --- | --- | --- | --- | --- | --- |
-| **orm** (SQL) | ✅ | ✅ | ✅ | — | — | — |
-| **mongodb** | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| **redis** | ✅ | — | ✅ | ✅ | — | — |
-| **arangodb** | ✅ | ✅ | ✅ | ✅ | — | ✅ |
-| **neo4j** | ✅ | ✅ | ✅ | — | — | ✅ |
+| | Driver | Tx | Migrator | Batcher | Watcher | Graph | Series |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **orm** (SQL) | ✅ | ✅ | ✅ | — | — | — | — |
+| **mongodb** | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
+| **redis** | ✅ | — | ✅ | ✅ | — | — | — |
+| **arangodb** | ✅ | ✅ | ✅ | ✅ | — | ✅ | — |
+| **timescale** | ✅ | ✅ | ✅ | — | — | — | ✅ |
+| **neo4j** | ✅ | ✅ | ✅ | — | — | ✅ | — |
 
 The split is by what a backend can do, not by what it is called. GORM and
 MongoDB are the closest pair here despite one being SQL and the other not;
@@ -121,6 +123,28 @@ descriptors describe them and edge properties need no second schema language.
 Loading the records a walk found is a separate call, because "what is connected
 to this" is one query and "load everything it is connected to" is one more per
 record.
+
+## Time series
+
+`Series` partitions a resource by time and reduces over it — the part of
+TimescaleDB that is not already PostgreSQL:
+
+```go
+db.Schema.EnsureSchema(ctx, res)
+db.Series.EnsureHypertable(ctx, res,
+    timescale.PartitionedBy(timescale.Daily, "observed_at"))
+
+buckets, _ := db.Series.Aggregate(ctx, res, database.AggregateOptions{
+    TimeColumn: "observed_at",
+    Every:      time.Hour,
+    Reduce:     []database.Reduction{{Func: database.Avg, Column: "celsius"}},
+    GroupBy:    []string{"device"},
+})
+```
+
+The reduction runs in the database. Pulling a month of rows across the wire to
+average them in Go is what a time-series store exists to stop, and it is what a
+caller writes when the contract gives it no way to say what it wanted.
 
 SQL does not implement `Graph`. `Resource.FKs` makes it tempting, but a join and
 a variable-depth traversal are not the same operation — `MaxDepth: 5` over a

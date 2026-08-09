@@ -110,8 +110,8 @@ func setup(t *testing.T) fixture {
 	p := arangodb.NewProvider(client, arangodb.WithRegistry(reg))
 
 	name := fmt.Sprintf("itest_%d_%d", os.Getpid(), seq.Add(1))
-	if err := p.EnsureDatabase(t.Context(), name); err != nil {
-		t.Fatalf("EnsureDatabase: %v", err)
+	if eerr := p.EnsureDatabase(t.Context(), name); eerr != nil {
+		t.Fatalf("EnsureDatabase: %v", eerr)
 	}
 	db, err := p.SetDatabase(t.Context(), name)
 	if err != nil {
@@ -722,8 +722,8 @@ func TestGraphNeedsARegistry(t *testing.T) {
 
 	p := arangodb.NewProvider(client) // no registry
 	name := fmt.Sprintf("itest_noreg_%d_%d", os.Getpid(), seq.Add(1))
-	if err := p.EnsureDatabase(ctx, name); err != nil {
-		t.Fatal(err)
+	if eerr := p.EnsureDatabase(ctx, name); eerr != nil {
+		t.Fatal(eerr)
 	}
 	defer func() { _ = p.DropDatabase(context.Background(), name) }()
 

@@ -59,6 +59,10 @@ type DB struct {
 	// with no graph its methods report [ErrUnimplemented].
 	Graph Graph
 
+	// Series partitions a resource by time and reduces over it. Never nil; on a
+	// backend that does not partition, its methods report [ErrUnimplemented].
+	Series TimeSeries
+
 	// Backend names the implementation behind this database.
 	Backend string
 
@@ -103,11 +107,16 @@ func Build(d Driver, backend, name string, release func() error) *DB {
 	if !ok {
 		graph = refuses{backend}
 	}
+	series, ok := d.(TimeSeries)
+	if !ok {
+		series = refuses{backend}
+	}
 	return &DB{
 		Driver:  d,
 		Tx:      tx,
 		Schema:  schema,
 		Graph:   graph,
+		Series:  series,
 		Backend: backend,
 		Name:    name,
 		Release: release,
@@ -122,6 +131,7 @@ var (
 	_ Transactional = refuses{}
 	_ Migrator      = refuses{}
 	_ Graph         = refuses{}
+	_ TimeSeries    = refuses{}
 )
 
 func (r refuses) Run(context.Context, func(*DB) error) error {
@@ -185,4 +195,16 @@ func (r refuses) Neighbors(context.Context, Ref, TraverseOptions) ([]Edge, error
 
 func (r refuses) Traverse(context.Context, Ref, TraverseOptions) ([]Path, error) {
 	return nil, fmt.Errorf("%w: %s is not a graph", ErrUnimplemented, r.backend)
+}
+
+func (r refuses) EnsureHypertable(context.Context, *Resource, HypertableOptions) error {
+	return fmt.Errorf("%w: %s does not partition a resource by time", ErrUnimplemented, r.backend)
+}
+
+func (r refuses) Range(context.Context, *Resource, RangeOptions) (ListResult, error) {
+	return ListResult{}, fmt.Errorf("%w: %s does not partition a resource by time", ErrUnimplemented, r.backend)
+}
+
+func (r refuses) Aggregate(context.Context, *Resource, AggregateOptions) ([]Bucket, error) {
+	return nil, fmt.Errorf("%w: %s cannot reduce over time", ErrUnimplemented, r.backend)
 }

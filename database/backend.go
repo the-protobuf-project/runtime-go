@@ -23,6 +23,11 @@ const (
 	// package.
 	ArangoDB Backend = "arangodb"
 
+	// TimescaleDB is the time-series driver, in the database/timescale package.
+	// It is PostgreSQL underneath, so the relational driver serves it too — what
+	// the timescale package adds is the partitioning.
+	TimescaleDB Backend = "timescaledb"
+
 	EVM Backend = "evm"
 	// Fabric is the Hyperledger Fabric driver, in the blockchain/fabric package.
 	Fabric Backend = "fabric"

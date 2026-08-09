@@ -123,8 +123,8 @@ func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.M
 	if err != nil {
 		return database.WriteResult{}, err
 	}
-	if _, err := coll.CreateDocument(ctx, doc); err != nil {
-		return database.WriteResult{}, translate(err, res, keyOf(doc))
+	if _, cerr := coll.CreateDocument(ctx, doc); cerr != nil {
+		return database.WriteResult{}, translate(cerr, res, keyOf(doc))
 	}
 
 	out, err := database.ColumnsToMessage(res, cols)

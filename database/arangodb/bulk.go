@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/arangodb/go-driver/v2/arangodb/shared"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/the-protobuf-project/runtime-go/database"
@@ -55,13 +57,19 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 		return nil, fmt.Errorf("arangodb: cannot insert into %s: %w", res.Table, err)
 	}
 
-	// The driver reports per-document outcomes through the reader rather than
-	// as one error, so a partial failure is discovered here.
+	// The driver reports per-document outcomes through the reader rather than as
+	// one error, so a partial failure is discovered here. Exhaustion and failure
+	// both end the loop and they are not the same thing: reading no further
+	// because the batch is done is success, and reading no further because the
+	// connection went is not.
 	written := 0
 	for {
 		meta, rerr := reader.Read()
-		if rerr != nil {
+		if shared.IsNoMoreDocuments(rerr) {
 			break
+		}
+		if rerr != nil {
+			return out[:written], fmt.Errorf("arangodb: cannot read the insert result: %w", rerr)
 		}
 		if meta.Error != nil && *meta.Error {
 			return out[:written], fmt.Errorf("%w: %s at index %d",

@@ -167,17 +167,13 @@ func (d *Driver) Traverse(ctx context.Context, from database.Ref, opts database.
 		if _, rerr := cur.ReadDocument(ctx, &raw); rerr != nil {
 			return nil, fmt.Errorf("arangodb: cannot read the traversal cursor: %w", rerr)
 		}
-		path, perr := d.decodePath(raw.Vertices, raw.Edges, opts.WithProps)
-		if perr != nil {
-			return nil, perr
-		}
-		out = append(out, path)
+		out = append(out, d.decodePath(raw.Vertices, raw.Edges, opts.WithProps))
 	}
 	return out, nil
 }
 
 // decodePath turns one AQL path into the contract's shape.
-func (d *Driver) decodePath(vertices, edges []map[string]any, withProps bool) (database.Path, error) {
+func (d *Driver) decodePath(vertices, edges []map[string]any, withProps bool) database.Path {
 	path := database.Path{
 		Vertices: make([]database.Ref, 0, len(vertices)),
 		Edges:    make([]database.Edge, 0, len(edges)),
@@ -207,7 +203,7 @@ func (d *Driver) decodePath(vertices, edges []map[string]any, withProps bool) (d
 		}
 		path.Edges = append(path.Edges, edge)
 	}
-	return path, nil
+	return path
 }
 
 // resolveRef turns a Ref into the document id an edge endpoint holds, checking

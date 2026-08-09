@@ -30,11 +30,7 @@ func toDocument(res *database.Resource, cols map[string]any) (map[string]any, er
 	for name, value := range cols {
 		v := value
 		if v != nil {
-			converted, err := toStored(res, name, v)
-			if err != nil {
-				return nil, err
-			}
-			v = converted
+			v = toStored(res, name, v)
 		}
 		if name == res.PKColumn {
 			key, ok := v.(string)
@@ -76,26 +72,26 @@ func fromDocument(res *database.Resource, doc map[string]any) (proto.Message, er
 // bytes become base64, because JSON has no binary and the driver would
 // otherwise encode a []byte as an array of numbers that no other reader would
 // recognize as a blob.
-func toStored(res *database.Resource, column string, value any) (any, error) {
+func toStored(res *database.Resource, column string, value any) any {
 	col, ok := res.LookupColumn(column)
 	if !ok {
-		return value, nil
+		return value
 	}
 	switch col.Kind {
 	case database.KindTimestamp:
 		t, ok := value.(time.Time)
 		if !ok {
-			return value, nil
+			return value
 		}
-		return t.UTC().Format(time.RFC3339Nano), nil
+		return t.UTC().Format(time.RFC3339Nano)
 	case database.KindBytes:
 		b, ok := value.([]byte)
 		if !ok {
-			return value, nil
+			return value
 		}
-		return encodeBytes(b), nil
+		return encodeBytes(b)
 	default:
-		return value, nil
+		return value
 	}
 }
 
