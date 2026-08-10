@@ -3,6 +3,7 @@ package arangodb
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/arangodb/go-driver/v2/arangodb"
@@ -27,6 +28,22 @@ type Config struct {
 
 	// ConnectTimeout bounds a request. Zero takes the driver's default.
 	ConnectTimeout time.Duration
+
+	// MaxConnsPerHost caps concurrent connections to one coordinator. Zero takes
+	// Go's default of unlimited, which is rarely what anyone wants: it lets a
+	// burst open as many sockets as there are in-flight requests, and the server
+	// runs out of file descriptors before the client notices anything is wrong.
+	MaxConnsPerHost int
+
+	// MaxIdleConnsPerHost keeps connections open between requests. Zero takes
+	// Go's default of two, which is far too few for a service under load — every
+	// request past the second pays a fresh TCP and TLS handshake, and that cost
+	// is invisible in a benchmark that runs one request at a time.
+	MaxIdleConnsPerHost int
+
+	// IdleConnTimeout closes a connection idle for longer than this. Zero takes
+	// Go's default.
+	IdleConnTimeout time.Duration
 }
 
 // Client is a connection to ArangoDB that you own.
@@ -48,9 +65,27 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("arangodb: at least one endpoint is required")
 	}
 
+	// The transport is built here rather than left to the driver, because its
+	// defaults are Go's: unlimited connections per host and two idle ones. Both
+	// are wrong for a service under load, in opposite directions — the first
+	// lets a burst open as many sockets as there are in-flight requests until
+	// the server runs out of descriptors, the second makes every request past
+	// the second pay a fresh handshake.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if cfg.MaxConnsPerHost > 0 {
+		transport.MaxConnsPerHost = cfg.MaxConnsPerHost
+	}
+	if cfg.MaxIdleConnsPerHost > 0 {
+		transport.MaxIdleConnsPerHost = cfg.MaxIdleConnsPerHost
+	}
+	if cfg.IdleConnTimeout > 0 {
+		transport.IdleConnTimeout = cfg.IdleConnTimeout
+	}
+
 	conn := connection.NewHttpConnection(connection.HttpConfiguration{
 		Endpoint:    connection.NewRoundRobinEndpoints(cfg.Endpoints),
 		ContentType: connection.ApplicationJSON,
+		Transport:   transport,
 	})
 	if cfg.Username != "" || cfg.Password != "" {
 		if err := conn.SetAuthentication(connection.NewBasicAuth(cfg.Username, cfg.Password)); err != nil {

@@ -41,6 +41,26 @@ type Config struct {
 	// driver's defaults, where selection alone is thirty seconds — set this in
 	// anything that checks its dependencies at startup.
 	ConnectTimeout time.Duration
+
+	// MaxPoolSize caps concurrent connections per server. Zero takes the
+	// driver's default of 100.
+	//
+	// This is the number that decides what happens under load, and the default
+	// is a starting point rather than an answer. Past the cap, operations queue
+	// rather than fail — so a service whose concurrency exceeds it sees latency
+	// climb with no error to point at, which is the hardest kind of saturation
+	// to diagnose. Size it from the concurrency you expect, not from the
+	// traffic.
+	MaxPoolSize uint64
+
+	// MinPoolSize keeps connections open when idle, so a burst after a quiet
+	// period does not pay to establish them. Zero keeps none.
+	MinPoolSize uint64
+
+	// MaxConnIdleTime closes a connection idle for longer than this. Zero keeps
+	// idle connections indefinitely, which is usually right behind a stable
+	// network and wrong behind a load balancer that silently drops them.
+	MaxConnIdleTime time.Duration
 }
 
 // Client is a connection to MongoDB that you own.
@@ -63,6 +83,15 @@ func NewClient(ctx context.Context, cfg Config) (*Client, error) {
 	}
 
 	opts := options.Client().ApplyURI(uri)
+	if cfg.MaxPoolSize > 0 {
+		opts = opts.SetMaxPoolSize(cfg.MaxPoolSize)
+	}
+	if cfg.MinPoolSize > 0 {
+		opts = opts.SetMinPoolSize(cfg.MinPoolSize)
+	}
+	if cfg.MaxConnIdleTime > 0 {
+		opts = opts.SetMaxConnIdleTime(cfg.MaxConnIdleTime)
+	}
 	if cfg.ConnectTimeout > 0 {
 		// Both, because they bound different things and only setting the first
 		// leaves an unreachable address hanging for the driver's 30-second

@@ -517,9 +517,16 @@ func TestDatabasesAreIsolated(t *testing.T) {
 
 func TestDatabaseNameIsChecked(t *testing.T) {
 	ctx := context.Background()
-	client, err := mongodb.NewClient(ctx, mongodb.Config{Address: testAddr()})
+	// A short timeout, because this test has nothing to say about an
+	// unreachable server: without one it waits out the driver's thirty-second
+	// server-selection default before skipping, which turns a four-second suite
+	// into a thirty-four-second one whenever the container is not up.
+	client, err := mongodb.NewClient(ctx, mongodb.Config{
+		Address:        testAddr(),
+		ConnectTimeout: 2 * time.Second,
+	})
 	if err != nil {
-		t.Skip(err)
+		t.Skipf("no MongoDB: %v", err)
 	}
 	defer func() { _ = client.Close(ctx) }()
 

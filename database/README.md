@@ -124,6 +124,37 @@ Loading the records a walk found is a separate call, because "what is connected
 to this" is one query and "load everything it is connected to" is one more per
 record.
 
+## Connection pools
+
+The pool is what decides what happens under load, and every default here is a
+starting point rather than an answer.
+
+Where a provider takes a client you built — `orm`, `timescale`, `redis` — sizing
+it is yours, on the client, before you hand it over:
+
+```go
+sql, _ := gormDB.DB()
+sql.SetMaxOpenConns(50)
+sql.SetMaxIdleConns(25)
+sql.SetConnMaxLifetime(30 * time.Minute)
+```
+
+Where a provider builds the client, its `Config` carries the settings:
+
+```go
+mongodb.Config{Address: "…", MaxPoolSize: 200, MinPoolSize: 20}
+arangodb.Config{Endpoints: […], MaxConnsPerHost: 200, MaxIdleConnsPerHost: 50}
+```
+
+Two defaults worth knowing because they fail quietly:
+
+- **MongoDB caps at 100 connections per server** and *queues* past that rather
+  than failing, so a service above that concurrency sees latency climb with no
+  error to point at.
+- **ArangoDB inherits Go's HTTP defaults** — unlimited connections and *two*
+  idle. The first lets a burst exhaust the server's descriptors; the second
+  makes every request past the second pay a fresh handshake.
+
 ## Time series
 
 `Series` partitions a resource by time and reduces over it — the part of
