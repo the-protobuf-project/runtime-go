@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // revertToError classifies a call/transaction error. When reason carries a

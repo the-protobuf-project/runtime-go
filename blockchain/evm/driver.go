@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // errNoSigner is returned by a write when the driver has no signer configured.

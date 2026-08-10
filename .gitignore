@@ -1,0 +1,13 @@
+# Compiled test binaries from `go test -c`, which land beside the package they
+# were built from and are platform-specific.
+*.test
+
+# Coverage and profile output.
+*.out
+coverage.*
+
+# Container volumes the compose files bind-mount.
+**/docker/redis-data/
+
+# Editor and OS noise.
+.DS_Store

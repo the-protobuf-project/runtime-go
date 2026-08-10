@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	_ "github.com/the-protobuf-project/runtime-go/blockchain/fabric"
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Importing this package must register the driver, since that is what makes

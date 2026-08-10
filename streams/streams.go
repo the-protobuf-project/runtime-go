@@ -75,6 +75,26 @@ type Options struct {
 
 	// ID publishes under a chosen identifier instead of a generated one.
 	ID string
+
+	// Group makes several subscribers share a subject rather than each
+	// receiving every message — a Kafka consumer group, a NATS queue group.
+	//
+	// It changes the delivery semantics rather than tuning them, which is why it
+	// is worth stating at the call: without a group a subject fans out and
+	// adding a second consumer doubles the work done, and with one it is shared
+	// and adding a second consumer halves the time. A provider with no group
+	// support rejects a non-empty Group rather than silently fanning out.
+	Group string
+
+	// PartitionKey decides which partition a message lands on, and so which
+	// messages are ordered relative to each other.
+	//
+	// Kafka orders within a partition and nowhere else, so two messages that
+	// must be seen in order need the same key — an account id, a device id.
+	// Providers with no partitions ignore it, which is what [Options] permits
+	// and is safe here: a backend that orders everything loses nothing by being
+	// told what could have shared an order.
+	PartitionKey string
 }
 
 // Option configures one operation.
@@ -90,6 +110,18 @@ func TTL(d time.Duration) Option {
 // ID publishes under a chosen identifier instead of a generated one.
 func ID(id string) Option {
 	return func(o *Options) { o.ID = id }
+}
+
+// Group makes several subscribers share a subject instead of each receiving
+// every message. See [Options.Group].
+func Group(name string) Option {
+	return func(o *Options) { o.Group = name }
+}
+
+// PartitionKey decides which messages are ordered relative to each other. See
+// [Options.PartitionKey].
+func PartitionKey(key string) Option {
+	return func(o *Options) { o.PartitionKey = key }
 }
 
 // NewOptions folds opts into a single Options. Providers call this rather than

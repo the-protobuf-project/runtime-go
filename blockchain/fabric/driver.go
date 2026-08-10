@@ -5,7 +5,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Driver is a not-yet-implemented Hyperledger Fabric store.Driver.

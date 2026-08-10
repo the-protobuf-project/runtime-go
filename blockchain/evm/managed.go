@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // fillManaged supplies generated keys and audit timestamps. onCreate generates

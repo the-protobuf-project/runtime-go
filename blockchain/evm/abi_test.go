@@ -7,7 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // bookABI is a complete-enough ABI: create (so inputTuple resolves) and get,

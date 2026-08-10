@@ -3,10 +3,10 @@ package evm
 import (
 	"fmt"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Registers the EVM driver with the store registry, so
+// Registers the EVM driver with the database registry, so
 // store.NewDriver(store.EVM, cfg) works once this package is linked in —
 // whether imported directly or for its side effect alone.
 func init() {

@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
+	"github.com/the-protobuf-project/runtime-go/database/store"
 	"github.com/the-protobuf-project/runtime-go/interfaces/adapter"
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
 )
 
 // fakeDriver returns canned results so the adapter's dispatch + error mapping can

@@ -6,8 +6,8 @@ import (
 
 	_ "github.com/the-protobuf-project/runtime-go/blockchain/evm"
 	_ "github.com/the-protobuf-project/runtime-go/blockchain/fabric"
-	_ "github.com/the-protobuf-project/runtime-go/interfaces/orm"
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	_ "github.com/the-protobuf-project/runtime-go/database/orm"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // All three drivers register into the one store registry, across both modules,

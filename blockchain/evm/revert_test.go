@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 func TestRevertToError(t *testing.T) {

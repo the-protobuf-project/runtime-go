@@ -3,10 +3,10 @@ package fabric
 import (
 	"fmt"
 
-	"github.com/the-protobuf-project/runtime-go/interfaces/store"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Registers the Fabric driver with the store registry, so
+// Registers the Fabric driver with the database registry, so
 // store.NewDriver(store.Fabric, nil) works once this package is linked in —
 // whether imported directly or for its side effect alone.
 func init() {

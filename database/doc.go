@@ -1,39 +1,39 @@
-// Package database defines the backend-agnostic contract for runtime-go's
-// document-store layer: durable records that live until they are deleted.
+// Package database stores Go structs in whichever backend you point it at.
 //
-// Providers live in subpackages and take a client you own, so nothing here dials
-// or closes a connection:
+//	type Book struct {
+//	    ID    string `db:"id,pk"`
+//	    Title string `db:"title,unique"`
+//	    Year  int32  `db:"published_year"`
+//	}
 //
-//	rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-//	store := redis.Connect(rdb, redis.WithPrefix("orders"))
+//	db, _ := mongodb.NewProvider(client).SetDatabase(ctx, "shop")
+//	books, _ := database.Collection[Book](db, "books")
 //
-//	id, _ := store.Create(ctx, "", book)
+//	books.EnsureSchema(ctx)
+//	id, _ := books.Create(ctx, Book{ID: "books/dune", Title: "Dune", Year: 1965})
+//	b, _ := books.Get(ctx, id)
 //
-// The prefix is how several independent stores share one database, or share it
-// with a cache or a stream. Hand the same client to all three and they share a
-// pool.
+// The same code runs against PostgreSQL, MongoDB, ArangoDB, Redis and
+// TimescaleDB — the only line that changes is the one that opens the client.
 //
-// # Your model, not ours
+// # This package and store
 //
-// There is no document type here. A value goes in as it is and comes back
-// decoded into a destination you own, so adding a field to your model is not a
-// change to this package. [For] puts a typed view over any Store when you want
-// the compiler to check that:
+// Underneath is [store], which is the same layer with nothing hidden: a Driver
+// over proto messages, driven by a Resource descriptor that protorm generates.
+// That is what the gRPC adapter and the chain drivers talk to, and what to reach
+// for when the schema already comes from a proto file.
 //
-//	books := database.For[Book](store)
-//	id, _ := books.Create(ctx, b)
-//	b2, _ := books.Get(ctx, id)
+// This package derives that descriptor from a struct instead. Nothing else
+// differs — a struct stored here and a message stored through [store] are the
+// same rows in the same table, and the two can share a database. Reach past this
+// package with [Coll.Resource] and [Coll.DB] whenever you need something it does
+// not cover: a graph edge, a time-series window, a transaction.
 //
-// # Not a cache
+// # What it costs
 //
-// Records here have no TTL and do not expire. For ephemeral, TTL-bound entries
-// use the sibling [github.com/the-protobuf-project/runtime-go/cache] module.
-// The two are separate because a cache miss is routine and a missing record is
-// not.
-//
-// # Not the proto Driver
-//
-// This is a store for ad-hoc values. The generated-proto CRUD seam —
-// [github.com/the-protobuf-project/runtime-go/interfaces/store] — operates on
-// proto.Message values through Resource descriptors and serves a different job.
+// A value written here is converted twice: from the struct into the column map
+// the bridge uses, and from there into the proto message the driver takes. Both
+// are in-memory reflection rather than round trips, and it buys one core rather
+// than two implementations of every backend — but it is why a program whose
+// schema is already proto should use [store] directly rather than this.
 package database
