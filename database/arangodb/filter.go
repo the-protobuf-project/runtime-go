@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // buildFilter turns an AIP-160 expression into an AQL FILTER and its bind
@@ -21,19 +22,20 @@ import (
 // the descriptor rather than pasted in. A filter routinely arrives from a
 // request, so a name this does not recognize is refused rather than reaching the
 // query.
-func buildFilter(res *database.Resource, expr string) (string, map[string]any, error) {
+func buildFilter(res *store.Resource, expr string) (string, map[string]any, error) {
 	binds := map[string]any{}
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return "", binds, nil
 	}
 
-	var clauses []string
-	for i, raw := range splitConjunction(expr) {
-		column, op, value, err := parseClause(raw)
-		if err != nil {
-			return "", nil, fmt.Errorf("arangodb: %w", err)
-		}
+	var parts []string
+	clauses, perr := core.ParseFilter(expr)
+	if perr != nil {
+		return "", nil, fmt.Errorf("arangodb: %w", perr)
+	}
+	for i, c := range clauses {
+		column, op, value := c.Column, c.Op, c.Value
 		col, ok := res.LookupColumn(column)
 		if !ok {
 			return "", nil, fmt.Errorf(
@@ -56,86 +58,9 @@ func buildFilter(res *database.Resource, expr string) (string, map[string]any, e
 
 		name := "f" + strconv.Itoa(i)
 		binds[name] = typed
-		clauses = append(clauses, fmt.Sprintf("%s %s @%s", field, aqlOperator(op), name))
+		parts = append(parts, fmt.Sprintf("%s %s @%s", field, aqlOperator(op), name))
 	}
-	return "FILTER " + strings.Join(clauses, " AND "), binds, nil
-}
-
-// splitConjunction breaks an expression on AND, outside quotes.
-func splitConjunction(expr string) []string {
-	var (
-		out     []string
-		current strings.Builder
-		quote   rune
-	)
-	runes := []rune(expr)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		switch {
-		case quote != 0:
-			current.WriteRune(r)
-			if r == quote {
-				quote = 0
-			}
-		case r == '"' || r == '\'':
-			quote = r
-			current.WriteRune(r)
-		case isAndAt(runes, i):
-			out = append(out, current.String())
-			current.Reset()
-			i += 2
-		default:
-			current.WriteRune(r)
-		}
-	}
-	if s := strings.TrimSpace(current.String()); s != "" {
-		out = append(out, s)
-	}
-	return out
-}
-
-// isAndAt reports whether a bare AND starts at i.
-func isAndAt(runes []rune, i int) bool {
-	if i+3 > len(runes) {
-		return false
-	}
-	if !strings.EqualFold(string(runes[i:i+3]), "AND") {
-		return false
-	}
-	before := i == 0 || runes[i-1] == ' '
-	after := i+3 == len(runes) || runes[i+3] == ' '
-	return before && after
-}
-
-// operators, longest first so ">=" is not read as ">".
-var operators = []string{">=", "<=", "!=", "=", ">", "<"}
-
-// parseClause splits one comparison into its parts.
-func parseClause(clause string) (column, op, value string, err error) {
-	clause = strings.TrimSpace(clause)
-	for _, candidate := range operators {
-		if i := strings.Index(clause, candidate); i > 0 {
-			column = strings.TrimSpace(clause[:i])
-			op = candidate
-			value = strings.TrimSpace(clause[i+len(candidate):])
-			if column == "" || value == "" {
-				return "", "", "", fmt.Errorf("filter clause %q is incomplete", clause)
-			}
-			return column, op, unquote(value), nil
-		}
-	}
-	return "", "", "", fmt.Errorf(
-		"filter clause %q is not understood; this backend accepts conjunctions of `column op value` with = != > >= < <=", clause)
-}
-
-// unquote strips a matching pair of surrounding quotes.
-func unquote(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
+	return "FILTER " + strings.Join(parts, " AND "), binds, nil
 }
 
 // aqlOperator maps a comparison to its AQL form.
@@ -149,33 +74,33 @@ func aqlOperator(op string) string {
 // coerce turns a filter's textual value into the type its column stores, so a
 // comparison against a number is a number rather than a string that never
 // matches.
-func coerce(kind database.Kind, raw string) (any, error) {
+func coerce(kind store.Kind, raw string) (any, error) {
 	switch kind {
-	case database.KindInt, database.KindEnum:
+	case store.KindInt, store.KindEnum:
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an integer", raw)
 		}
 		return n, nil
-	case database.KindUint:
+	case store.KindUint:
 		n, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an unsigned integer", raw)
 		}
 		return n, nil
-	case database.KindFloat:
+	case store.KindFloat:
 		f, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a number", raw)
 		}
 		return f, nil
-	case database.KindBool:
+	case store.KindBool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a boolean", raw)
 		}
 		return b, nil
-	case database.KindTimestamp:
+	case store.KindTimestamp:
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an RFC 3339 timestamp", raw)

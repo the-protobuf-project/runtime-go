@@ -27,8 +27,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	dbredis "github.com/the-protobuf-project/runtime-go/database/redis"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // dialTimeout bounds the reachability probe: a test that skips should skip
@@ -67,7 +67,7 @@ func requireServer(t *testing.T) string {
 
 // setup returns a database over a live server, namespaced per test so parallel
 // runs cannot see each other, and dropped when the test ends.
-func setup(t *testing.T) (*database.DB, *database.Resource, protoreflect.MessageDescriptor) {
+func setup(t *testing.T) (*store.DB, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	addr := requireServer(t)
 
@@ -92,7 +92,7 @@ func setup(t *testing.T) (*database.DB, *database.Resource, protoreflect.Message
 
 // userMD builds a dynamic User descriptor exercising the value kinds that a
 // JSON encoding would corrupt: bytes and a large uint64.
-func userMD(t *testing.T) protoreflect.MessageDescriptor {
+func userMD(t testing.TB) protoreflect.MessageDescriptor {
 	t.Helper()
 	fileProto := &descriptorpb.FileDescriptorProto{
 		Name:    proto.String("itest/v1/redis_test.proto"),
@@ -115,17 +115,17 @@ func userMD(t *testing.T) protoreflect.MessageDescriptor {
 	return fd.Messages().Get(0)
 }
 
-func userRes(md protoreflect.MessageDescriptor) *database.Resource {
-	return &database.Resource{
+func userRes(md protoreflect.MessageDescriptor) *store.Resource {
+	return &store.Resource{
 		Name:     "User",
 		Table:    "users",
 		PKColumn: "id",
 		New:      func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "email", Field: "email", Kind: database.KindString, Unique: true},
-			{Name: "avatar", Field: "avatar", Kind: database.KindBytes},
-			{Name: "credits", Field: "credits", Kind: database.KindUint},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "email", Field: "email", Kind: store.KindString, Unique: true},
+			{Name: "avatar", Field: "avatar", Kind: store.KindBytes},
+			{Name: "credits", Field: "credits", Kind: store.KindUint},
 		},
 	}
 }
@@ -177,7 +177,7 @@ func TestCRUD(t *testing.T) {
 	if err := db.Delete(ctx, res, "users/ada"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := db.Get(ctx, res, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get after delete = %v, want ErrNotFound", err)
 	}
 }
@@ -217,7 +217,7 @@ func TestCreateRefusesADuplicateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.Create(ctx, res, newUser(md, "users/ada", "b@example.com", nil, 0))
-	if !errors.Is(err, database.ErrAlreadyExists) {
+	if !errors.Is(err, store.ErrAlreadyExists) {
 		t.Fatalf("second Create = %v, want ErrAlreadyExists", err)
 	}
 
@@ -238,7 +238,7 @@ func TestUniqueColumnIsEnforced(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.Create(ctx, res, newUser(md, "users/b", "shared@example.com", nil, 0))
-	if !errors.Is(err, database.ErrAlreadyExists) {
+	if !errors.Is(err, store.ErrAlreadyExists) {
 		t.Fatalf("duplicate email = %v, want ErrAlreadyExists", err)
 	}
 
@@ -270,7 +270,7 @@ func TestUpdateMovesAUniqueReservation(t *testing.T) {
 	}
 	// The new one is not.
 	_, err := db.Create(ctx, res, newUser(md, "users/c", "new@example.com", nil, 0))
-	if !errors.Is(err, database.ErrAlreadyExists) {
+	if !errors.Is(err, store.ErrAlreadyExists) {
 		t.Errorf("the claimed address was not held: %v", err)
 	}
 }
@@ -324,7 +324,7 @@ func TestListPagesStably(t *testing.T) {
 		}
 	}
 
-	total, err := db.Count(ctx, res, database.ListOptions{})
+	total, err := db.Count(ctx, res, store.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +338,7 @@ func TestListPagesStably(t *testing.T) {
 		if pages > n {
 			t.Fatal("paging did not terminate")
 		}
-		out, lerr := db.List(ctx, res, database.ListOptions{PageSize: 10, PageToken: token})
+		out, lerr := db.List(ctx, res, store.ListOptions{PageSize: 10, PageToken: token})
 		if lerr != nil {
 			t.Fatal(lerr)
 		}
@@ -373,7 +373,7 @@ func TestListDescending(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	out, err := db.List(ctx, res, database.ListOptions{OrderBy: "id desc"})
+	out, err := db.List(ctx, res, store.ListOptions{OrderBy: "id desc"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,7 +409,7 @@ func TestConcurrentUniqueClaims(t *testing.T) {
 			switch {
 			case err == nil:
 				wins++
-			case errors.Is(err, database.ErrAlreadyExists):
+			case errors.Is(err, store.ErrAlreadyExists):
 				conflict++
 			default:
 				t.Errorf("unexpected error: %v", err)
@@ -425,7 +425,7 @@ func TestConcurrentUniqueClaims(t *testing.T) {
 		t.Errorf("%d conflicts, want %d", conflict, writers-1)
 	}
 
-	n, err := db.Count(ctx, res, database.ListOptions{})
+	n, err := db.Count(ctx, res, store.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,14 +464,14 @@ func TestDatabasesAreIsolated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := b.Get(ctx, res, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := b.Get(ctx, res, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("tenant_b sees tenant_a's record: %v", err)
 	}
 	// The same unique value is free in the other tenant.
 	if _, err := b.Create(ctx, res, newUser(md, "users/ada", "ada@example.com", nil, 0)); err != nil {
 		t.Errorf("tenant_b could not use a value tenant_a holds: %v", err)
 	}
-	if n, _ := a.Count(ctx, res, database.ListOptions{}); n != 1 {
+	if n, _ := a.Count(ctx, res, store.ListOptions{}); n != 1 {
 		t.Errorf("tenant_a holds %d records, want 1", n)
 	}
 }
@@ -481,8 +481,8 @@ func TestDatabasesAreIsolated(t *testing.T) {
 func TestTransactionsAreRefusedByName(t *testing.T) {
 	db, _, _ := setup(t)
 
-	err := db.Tx.Run(context.Background(), func(*database.DB) error { return nil })
-	if !errors.Is(err, database.ErrUnimplemented) {
+	err := db.Tx.Run(context.Background(), func(*store.DB) error { return nil })
+	if !errors.Is(err, store.ErrUnimplemented) {
 		t.Fatalf("Tx.Run = %v, want ErrUnimplemented", err)
 	}
 	if !strings.Contains(err.Error(), "redis") {
@@ -517,7 +517,7 @@ func TestDropSchemaRemovesEverything(t *testing.T) {
 	if err := db.Schema.DropSchema(ctx, res); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := db.Count(ctx, res, database.ListOptions{}); n != 0 {
+	if n, _ := db.Count(ctx, res, store.ListOptions{}); n != 0 {
 		t.Errorf("%d records survived the drop", n)
 	}
 	// And the reservations went with them.
@@ -536,7 +536,7 @@ func TestGetManyReturnsInOrderWithGaps(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	batcher, ok := db.Driver.(database.Batcher)
+	batcher, ok := db.Driver.(store.Batcher)
 	if !ok {
 		t.Fatal("the redis driver does not implement Batcher")
 	}
@@ -563,7 +563,7 @@ func TestTypedViewOverRedis(t *testing.T) {
 	ctx := context.Background()
 	db, res, md := setup(t)
 
-	users, err := database.For[*dynamicpb.Message](db, res)
+	users, err := store.For[*dynamicpb.Message](db, res)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -578,7 +578,7 @@ func TestTypedViewOverRedis(t *testing.T) {
 		t.Errorf("credits = %d, want 7", c)
 	}
 
-	all, err := users.All(ctx, database.ListOptions{PageSize: 2})
+	all, err := users.All(ctx, store.ListOptions{PageSize: 2})
 	if err != nil {
 		t.Fatal(err)
 	}

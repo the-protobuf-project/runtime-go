@@ -1,7 +1,7 @@
-// Package cached puts a read-through cache in front of any database.Driver, so a
+// Package cached puts a read-through cache in front of any store.Driver, so a
 // record read repeatedly is fetched from the backing store once.
 //
-// It is a decorator, not a backend: [Wrap] takes a [database.DB] and returns one,
+// It is a decorator, not a backend: [Wrap] takes a [store.DB] and returns one,
 // so the gRPC adapter, the typed views and every existing call site keep
 // working, and the database underneath keeps its capabilities.
 //

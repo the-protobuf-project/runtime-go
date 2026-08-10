@@ -6,17 +6,17 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
-	"github.com/the-protobuf-project/runtime-go/database"
 	_ "github.com/the-protobuf-project/runtime-go/database/orm"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 	"gorm.io/gorm"
 )
 
 // Importing this package must register the driver, since that is what makes
-// database.NewDriver(database.ORM, ...) work for anyone who imports it for effect
+// store.NewDriver(store.ORM, ...) work for anyone who imports it for effect
 // alone.
 func TestInitRegistersORMBackend(t *testing.T) {
-	if !slices.Contains(database.Backends(), database.ORM) {
-		t.Fatalf("database.Backends() = %v, want it to contain %q", database.Backends(), database.ORM)
+	if !slices.Contains(store.Backends(), store.ORM) {
+		t.Fatalf("store.Backends() = %v, want it to contain %q", store.Backends(), store.ORM)
 	}
 }
 
@@ -26,7 +26,7 @@ func TestNewDriverBuildsFromGormDB(t *testing.T) {
 		t.Fatalf("gorm.Open: %v", err)
 	}
 
-	d, err := database.NewDriver(database.ORM, db)
+	d, err := store.NewDriver(store.ORM, db)
 	if err != nil {
 		t.Fatalf("NewDriver: %v", err)
 	}
@@ -47,8 +47,8 @@ func TestNewDriverRejectsWrongConfig(t *testing.T) {
 		{"no config", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := database.NewDriver(database.ORM, tc.cfg); !errors.Is(err, database.ErrBadConfig) {
-				t.Errorf("NewDriver(%v) error = %v, want it to wrap database.ErrBadConfig", tc.cfg, err)
+			if _, err := store.NewDriver(store.ORM, tc.cfg); !errors.Is(err, store.ErrBadConfig) {
+				t.Errorf("NewDriver(%v) error = %v, want it to wrap store.ErrBadConfig", tc.cfg, err)
 			}
 		})
 	}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/the-protobuf-project/runtime-go/cache"
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // FromAside adapts a cache database into a [Cache].
@@ -24,14 +24,14 @@ import (
 // Every write through the decorator invalidates what it wrote, so in the ordinary
 // case entries do not go stale. The TTL is for the cases outside that: a write
 // that reaches the store and fails to invalidate, a migration, a
-// [database.Migrator.DropSchema], another process writing to the same database
+// [store.Migrator.DropSchema], another process writing to the same database
 // without this decorator in front of it. Without one, a wrong entry is wrong
 // until something happens to overwrite it, and nothing is guaranteed to.
 func FromAside(db *cache.DB, opts ...cache.Option) Cache {
 	return asideCache{db: db, opts: opts}
 }
 
-// asideCache builds one read-through view per resource over a cache database.
+// asideCache builds one read-through view per resource over a cache store.
 type asideCache struct {
 	db   *cache.DB
 	opts []cache.Option
@@ -42,17 +42,17 @@ var _ Cache = asideCache{}
 // Aside binds a loader to a read-through view.
 //
 // The two error translations here are what make the decorator's contract hold.
-// A [database.ErrNotFound] from the loader becomes the cache's own sentinel, which
+// A [store.ErrNotFound] from the loader becomes the cache's own sentinel, which
 // is what tells it to remember the absence; on the way back out it becomes
 // store's again, so the adapter above never learns which cache it is talking to.
 func (a asideCache) Aside(load func(ctx context.Context, key string) ([]byte, error)) Aside {
 	inner := a.db.Aside(func(ctx context.Context, id string) (any, error) {
 		body, err := load(ctx, id)
 		if err != nil {
-			if errors.Is(err, database.ErrNotFound) {
+			if errors.Is(err, store.ErrNotFound) {
 				// Translated so the cache remembers the absence. Without this it
 				// sees an ordinary failure, caches nothing, and every request
-				// for a record that does not exist reaches the database.
+				// for a record that does not exist reaches the store.
 				return nil, fmt.Errorf("%w: %s", cache.ErrNotFound, id)
 			}
 			return nil, err
@@ -86,7 +86,7 @@ func (v asideView) GetOrLoad(ctx context.Context, key string, dest *[]byte) erro
 	case err == nil:
 		return nil
 	case errors.Is(err, cache.ErrNotFound):
-		return fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	case errors.Is(err, cache.ErrOverloaded):
 		return fmt.Errorf("%w: %s", ErrOverloaded, key)
 	default:

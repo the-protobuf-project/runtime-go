@@ -27,7 +27,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 	"github.com/the-protobuf-project/runtime-go/database/timescale"
 )
 
@@ -71,8 +71,8 @@ func openDB(t *testing.T) *gorm.DB {
 }
 
 type fixture struct {
-	db  *database.DB
-	res *database.Resource
+	db  *store.DB
+	res *store.Resource
 	md  protoreflect.MessageDescriptor
 }
 
@@ -126,17 +126,17 @@ func readingMD(t *testing.T) protoreflect.MessageDescriptor {
 	return fd.Messages().Get(0)
 }
 
-func readingRes(md protoreflect.MessageDescriptor) *database.Resource {
-	return &database.Resource{
+func readingRes(md protoreflect.MessageDescriptor) *store.Resource {
+	return &store.Resource{
 		Name: "Reading", Table: "readings", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
+		Columns: []store.Column{
 			// The lookup key, but deliberately not a SQL PRIMARY KEY: see
 			// TestUniqueIndexConflictIsExplained.
-			{Name: "id", Field: "id", Kind: database.KindString, SQLType: "TEXT", NotNull: true},
-			{Name: "device", Field: "device", Kind: database.KindString, SQLType: "TEXT"},
-			{Name: "celsius", Field: "celsius", Kind: database.KindFloat, SQLType: "DOUBLE PRECISION"},
-			{Name: "observed_at", Field: "observed_at", Kind: database.KindTimestamp, SQLType: "TIMESTAMPTZ", NotNull: true},
+			{Name: "id", Field: "id", Kind: store.KindString, SQLType: "TEXT", NotNull: true},
+			{Name: "device", Field: "device", Kind: store.KindString, SQLType: "TEXT"},
+			{Name: "celsius", Field: "celsius", Kind: store.KindFloat, SQLType: "DOUBLE PRECISION"},
+			{Name: "observed_at", Field: "observed_at", Kind: store.KindTimestamp, SQLType: "TIMESTAMPTZ", NotNull: true},
 		},
 	}
 }
@@ -188,11 +188,11 @@ func TestCRUDStillWorks(t *testing.T) {
 	if c := got.ProtoReflect().Get(f.md.Fields().ByName("celsius")).Float(); c != 21.5 {
 		t.Errorf("celsius = %v", c)
 	}
-	if n, _ := f.db.Count(ctx, f.res, database.ListOptions{}); n != 1 {
+	if n, _ := f.db.Count(ctx, f.res, store.ListOptions{}); n != 1 {
 		t.Errorf("Count = %d, want 1", n)
 	}
 	// And the capabilities the relational driver has came across with it.
-	if err := f.db.Tx.Run(ctx, func(tx *database.DB) error {
+	if err := f.db.Tx.Run(ctx, func(tx *store.DB) error {
 		_, cerr := tx.Create(ctx, f.res, newReading(f.md, "r-2", "dev-a", 22, base.Add(time.Hour)))
 		return cerr
 	}); err != nil {
@@ -204,7 +204,7 @@ func TestEnsureHypertable(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	opts := database.HypertableOptions{
+	opts := store.HypertableOptions{
 		TimeColumn:    "observed_at",
 		ChunkInterval: 24 * time.Hour,
 	}
@@ -230,7 +230,7 @@ func TestEnsureHypertable(t *testing.T) {
 
 	// Rows still go in and come back the ordinary way.
 	seedHourly(t, f, 5)
-	if got, _ := f.db.Count(ctx, f.res, database.ListOptions{}); got != 5 {
+	if got, _ := f.db.Count(ctx, f.res, store.ListOptions{}); got != 5 {
 		t.Errorf("Count after partitioning = %d, want 5", got)
 	}
 }
@@ -242,12 +242,12 @@ func TestEnsureHypertableMigratesExistingRows(t *testing.T) {
 	f := setup(t)
 
 	seedHourly(t, f, 10)
-	if err := f.db.Series.EnsureHypertable(ctx, f.res, database.HypertableOptions{
+	if err := f.db.Series.EnsureHypertable(ctx, f.res, store.HypertableOptions{
 		TimeColumn: "observed_at",
 	}); err != nil {
 		t.Fatalf("EnsureHypertable over existing rows: %v", err)
 	}
-	if got, _ := f.db.Count(ctx, f.res, database.ListOptions{}); got != 10 {
+	if got, _ := f.db.Count(ctx, f.res, store.ListOptions{}); got != 10 {
 		t.Errorf("%d rows survived the conversion, want 10", got)
 	}
 }
@@ -256,14 +256,14 @@ func TestEnsureHypertableChecksTheColumn(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	if err := f.db.Series.EnsureHypertable(ctx, f.res, database.HypertableOptions{
+	if err := f.db.Series.EnsureHypertable(ctx, f.res, store.HypertableOptions{
 		TimeColumn: "nosuch",
 	}); err == nil {
 		t.Error("a missing time column was accepted")
 	}
 	// Partitioning on something that is not time would order rows by something
 	// that is not time.
-	err := f.db.Series.EnsureHypertable(ctx, f.res, database.HypertableOptions{
+	err := f.db.Series.EnsureHypertable(ctx, f.res, store.HypertableOptions{
 		TimeColumn: "device",
 	})
 	if err == nil {
@@ -277,7 +277,7 @@ func TestEnsureHypertableChecksTheColumn(t *testing.T) {
 func TestRange(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
-	if err := f.db.Series.EnsureHypertable(ctx, f.res, database.HypertableOptions{
+	if err := f.db.Series.EnsureHypertable(ctx, f.res, store.HypertableOptions{
 		TimeColumn: "observed_at", ChunkInterval: 6 * time.Hour,
 	}); err != nil {
 		t.Fatal(err)
@@ -286,7 +286,7 @@ func TestRange(t *testing.T) {
 
 	// A window inclusive of start and exclusive of end, so consecutive windows
 	// tile without double-counting the boundary row.
-	out, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	out, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at",
 		Start:      base.Add(4 * time.Hour),
 		End:        base.Add(8 * time.Hour),
@@ -307,10 +307,10 @@ func TestRange(t *testing.T) {
 	}
 
 	// The two halves of a split window tile exactly.
-	lower, _ := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	lower, _ := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at", Start: base, End: base.Add(12 * time.Hour), PageSize: 100,
 	})
-	upper, _ := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	upper, _ := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at", Start: base.Add(12 * time.Hour), End: base.Add(24 * time.Hour), PageSize: 100,
 	})
 	if lower.Total+upper.Total != 24 {
@@ -319,7 +319,7 @@ func TestRange(t *testing.T) {
 	}
 
 	// Newest first.
-	desc, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	desc, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at", Descending: true, PageSize: 1,
 	})
 	if err != nil {
@@ -331,7 +331,7 @@ func TestRange(t *testing.T) {
 	}
 
 	// And the filter narrows within the window.
-	filtered, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	filtered, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at", Filter: "device = dev-a", PageSize: 100,
 	})
 	if err != nil {
@@ -353,7 +353,7 @@ func TestRangePages(t *testing.T) {
 		if pages > 30 {
 			t.Fatal("paging did not terminate")
 		}
-		out, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+		out, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 			TimeColumn: "observed_at", PageSize: 10, PageToken: token,
 		})
 		if err != nil {
@@ -382,23 +382,23 @@ func TestRangePages(t *testing.T) {
 func TestAggregate(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
-	if err := f.db.Series.EnsureHypertable(ctx, f.res, database.HypertableOptions{
+	if err := f.db.Series.EnsureHypertable(ctx, f.res, store.HypertableOptions{
 		TimeColumn: "observed_at", ChunkInterval: 6 * time.Hour,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	seedHourly(t, f, 24) // celsius = 0..23, one per hour
 
-	buckets, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	buckets, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at",
 		Start:      base,
 		End:        base.Add(24 * time.Hour),
 		Every:      6 * time.Hour,
-		Reduce: []database.Reduction{
-			{Func: database.Count},
-			{Func: database.Avg, Column: "celsius"},
-			{Func: database.Min, Column: "celsius", As: "coldest"},
-			{Func: database.Max, Column: "celsius", As: "hottest"},
+		Reduce: []store.Reduction{
+			{Func: store.Count},
+			{Func: store.Avg, Column: "celsius"},
+			{Func: store.Min, Column: "celsius", As: "coldest"},
+			{Func: store.Max, Column: "celsius", As: "hottest"},
 		},
 	})
 	if err != nil {
@@ -435,11 +435,11 @@ func TestAggregateGroups(t *testing.T) {
 	f := setup(t)
 	seedHourly(t, f, 12)
 
-	buckets, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	buckets, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at",
 		Every:      12 * time.Hour,
 		GroupBy:    []string{"device"},
-		Reduce:     []database.Reduction{{Func: database.Count}},
+		Reduce:     []store.Reduction{{Func: store.Count}},
 	})
 	if err != nil {
 		t.Fatalf("Aggregate: %v", err)
@@ -463,21 +463,21 @@ func TestAggregateRefusesWhatItCannotMean(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	if _, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	if _, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at",
-		Reduce:     []database.Reduction{{Func: database.Count}},
+		Reduce:     []store.Reduction{{Func: store.Count}},
 	}); err == nil {
 		t.Error("an aggregation with no bucket width was accepted")
 	}
-	if _, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	if _, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at", Every: time.Hour,
 	}); err == nil {
 		t.Error("an aggregation with no reduction was accepted")
 	}
 	// Averaging text is not meaningful, and saying so beats a database error.
-	_, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	_, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at", Every: time.Hour,
-		Reduce: []database.Reduction{{Func: database.Avg, Column: "device"}},
+		Reduce: []store.Reduction{{Func: store.Avg, Column: "device"}},
 	})
 	if err == nil {
 		t.Fatal("averaging a text column was accepted")
@@ -486,9 +486,9 @@ func TestAggregateRefusesWhatItCannotMean(t *testing.T) {
 		t.Errorf("the error does not say why: %v", err)
 	}
 	// A reduction outside the closed set.
-	if _, err := f.db.Series.Aggregate(ctx, f.res, database.AggregateOptions{
+	if _, err := f.db.Series.Aggregate(ctx, f.res, store.AggregateOptions{
 		TimeColumn: "observed_at", Every: time.Hour,
-		Reduce: []database.Reduction{{Func: "median", Column: "celsius"}},
+		Reduce: []store.Reduction{{Func: "median", Column: "celsius"}},
 	}); err == nil {
 		t.Error("a reduction this contract does not define was accepted")
 	}
@@ -501,7 +501,7 @@ func TestFilterIsBoundNotInterpolated(t *testing.T) {
 	seedHourly(t, f, 4)
 
 	// A value that would end the statement if it were pasted in.
-	out, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	out, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at",
 		Filter:     "device = '; DROP TABLE readings; --",
 		PageSize:   10,
@@ -513,12 +513,12 @@ func TestFilterIsBoundNotInterpolated(t *testing.T) {
 		t.Errorf("the injected value matched %d rows", out.Total)
 	}
 	// The table is still there.
-	if n, cerr := f.db.Count(ctx, f.res, database.ListOptions{}); cerr != nil || n != 4 {
+	if n, cerr := f.db.Count(ctx, f.res, store.ListOptions{}); cerr != nil || n != 4 {
 		t.Errorf("Count after the injected filter = %d, %v; want 4", n, cerr)
 	}
 
 	// A column nobody declared is refused rather than reaching the query.
-	if _, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{
+	if _, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{
 		TimeColumn: "observed_at", Filter: "nosuch = 1",
 	}); err == nil {
 		t.Error("a filter naming an unknown column was accepted")
@@ -529,10 +529,10 @@ func TestTimeColumnIsRequired(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	if _, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{}); err == nil {
+	if _, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{}); err == nil {
 		t.Error("a range with no time column was accepted")
 	}
-	if _, err := f.db.Series.Range(ctx, f.res, database.RangeOptions{TimeColumn: "nosuch"}); err == nil {
+	if _, err := f.db.Series.Range(ctx, f.res, store.RangeOptions{TimeColumn: "nosuch"}); err == nil {
 		t.Error("a range on an unknown column was accepted")
 	}
 }
@@ -551,9 +551,9 @@ func TestExtensionIsCheckedAtSelection(t *testing.T) {
 }
 
 func TestSeriesRefusedOnABackendWithoutIt(t *testing.T) {
-	db := database.Build(bare{}, "sqlite", "", nil)
-	err := db.Series.EnsureHypertable(context.Background(), nil, database.HypertableOptions{})
-	if !errors.Is(err, database.ErrUnimplemented) {
+	db := store.Build(bare{}, "sqlite", "", nil)
+	err := db.Series.EnsureHypertable(context.Background(), nil, store.HypertableOptions{})
+	if !errors.Is(err, store.ErrUnimplemented) {
 		t.Fatalf("EnsureHypertable = %v, want ErrUnimplemented", err)
 	}
 	if !strings.Contains(err.Error(), "sqlite") {
@@ -561,7 +561,7 @@ func TestSeriesRefusedOnABackendWithoutIt(t *testing.T) {
 	}
 }
 
-type bare struct{ database.Driver }
+type bare struct{ store.Driver }
 
 // A descriptor written for any other backend has an id primary key and a time
 // column beside it, which is exactly what TimescaleDB cannot partition. The
@@ -582,7 +582,7 @@ func TestUniqueIndexConflictIsExplained(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := f.db.Series.EnsureHypertable(ctx, keyed, database.HypertableOptions{
+	err := f.db.Series.EnsureHypertable(ctx, keyed, store.HypertableOptions{
 		TimeColumn: "observed_at",
 	})
 	if err == nil {

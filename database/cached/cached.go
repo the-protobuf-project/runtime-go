@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // ErrOverloaded is what a [Cache] reports when it will not start another load.
@@ -32,7 +32,7 @@ type Cache interface {
 	// Aside returns a read-through view that calls load on a miss.
 	//
 	// One view per resource, built once at wiring time. A load reporting an
-	// error wrapping [database.ErrNotFound] must have that absence remembered, or
+	// error wrapping [store.ErrNotFound] must have that absence remembered, or
 	// requests for a record that does not exist reach the backing store forever
 	// — which is the traffic a scraper produces.
 	Aside(load func(ctx context.Context, key string) ([]byte, error)) Aside
@@ -43,7 +43,7 @@ type Aside interface {
 	// GetOrLoad fills dest with the record's encoded bytes, calling the loader
 	// on a miss. Concurrent calls for one key must collapse into one load.
 	//
-	// It reports an error wrapping [database.ErrNotFound] for a record that is not
+	// It reports an error wrapping [store.ErrNotFound] for a record that is not
 	// there, including one whose absence was remembered earlier.
 	GetOrLoad(ctx context.Context, key string, dest *[]byte) error
 
@@ -53,7 +53,7 @@ type Aside interface {
 	Invalidate(ctx context.Context, keys ...string) error
 }
 
-// Driver is a [database.Driver] that reads through a cache and writes through to
+// Driver is a [store.Driver] that reads through a cache and writes through to
 // the driver underneath.
 //
 // # What is cached and what is not
@@ -74,21 +74,21 @@ type Aside interface {
 // is never served from the cache after a write it did not observe, except in
 // the window between those two steps — see [Driver.Create].
 type Driver struct {
-	next  database.Driver
+	next  store.Driver
 	cache Cache
 
 	mu     sync.RWMutex
 	asides map[string]Aside // resource name -> its read-through view
 }
 
-var _ database.Driver = (*Driver)(nil)
+var _ store.Driver = (*Driver)(nil)
 
 // New returns a driver that reads next through c.
 //
-// Prefer [Wrap] where you have a [database.DB]: this returns a bare Driver, so the
+// Prefer [Wrap] where you have a [store.DB]: this returns a bare Driver, so the
 // capabilities the underlying database had — transactions, migrations — are not
 // reachable through the result.
-func New(next database.Driver, c Cache) *Driver {
+func New(next store.Driver, c Cache) *Driver {
 	return &Driver{next: next, cache: c, asides: map[string]Aside{}}
 }
 
@@ -98,12 +98,12 @@ func New(next database.Driver, c Cache) *Driver {
 // so wrapping a database in a cache cannot quietly cost it transactions or
 // migrations — and the transaction runner is wrapped too, so writes committed
 // inside one invalidate what they touched.
-func Wrap(db *database.DB, c Cache) *database.DB {
+func Wrap(db *store.DB, c Cache) *store.DB {
 	if db == nil {
 		return nil
 	}
 	d := New(db.Driver, c)
-	return &database.DB{
+	return &store.DB{
 		Driver:  d,
 		Tx:      &cachedTx{next: db.Tx, driver: d},
 		Schema:  db.Schema,
@@ -118,7 +118,7 @@ func Wrap(db *database.DB, c Cache) *database.DB {
 // One per resource rather than one overall, because a view is bound to a loader
 // and the loader has to know which resource it is loading. They are cheap: a
 // cache that collapses loads shares that machinery across the views it makes.
-func (d *Driver) aside(res *database.Resource) Aside {
+func (d *Driver) aside(res *store.Resource) Aside {
 	d.mu.RLock()
 	a, ok := d.asides[res.Name]
 	d.mu.RUnlock()
@@ -153,7 +153,7 @@ func (d *Driver) aside(res *database.Resource) Aside {
 // a proto message twice over: it does not know the field names, and for a
 // dynamic message it has nothing to marshal at all. Wire format in, wire format
 // out, and the cache only ever sees opaque bytes.
-func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (proto.Message, error) {
+func (d *Driver) Get(ctx context.Context, res *store.Resource, key string) (proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("cached: Get needs a resource")
 	}
@@ -184,17 +184,17 @@ func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (p
 // remembers the absence, so a record created afterwards would stay invisible
 // until that memory expired — the one bug a read-through cache produces that
 // looks exactly like a database that lost a write.
-func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Create(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("cached: Create needs a resource")
+		return store.WriteResult{}, fmt.Errorf("cached: Create needs a resource")
 	}
 	out, err := d.next.Create(ctx, res, msg)
 	if err != nil {
 		return out, err
 	}
-	key, kerr := database.KeyOf(res, out.Message)
+	key, kerr := store.KeyOf(res, out.Message)
 	if kerr != nil {
-		key, kerr = database.KeyOf(res, msg)
+		key, kerr = store.KeyOf(res, msg)
 	}
 	if kerr == nil {
 		d.forget(ctx, res, key)
@@ -203,22 +203,22 @@ func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.M
 }
 
 // Update overwrites a record and drops the cached copy.
-func (d *Driver) Update(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("cached: Update needs a resource")
+		return store.WriteResult{}, fmt.Errorf("cached: Update needs a resource")
 	}
 	out, err := d.next.Update(ctx, res, msg)
 	if err != nil {
 		return out, err
 	}
-	if key, kerr := database.KeyOf(res, msg); kerr == nil {
+	if key, kerr := store.KeyOf(res, msg); kerr == nil {
 		d.forget(ctx, res, key)
 	}
 	return out, nil
 }
 
 // Delete removes a record and drops the cached copy.
-func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string) error {
+func (d *Driver) Delete(ctx context.Context, res *store.Resource, key string) error {
 	if res == nil {
 		return fmt.Errorf("cached: Delete needs a resource")
 	}
@@ -230,22 +230,22 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 }
 
 // List passes through; see [Driver].
-func (d *Driver) List(ctx context.Context, res *database.Resource, opts database.ListOptions) (database.ListResult, error) {
+func (d *Driver) List(ctx context.Context, res *store.Resource, opts store.ListOptions) (store.ListResult, error) {
 	return d.next.List(ctx, res, opts)
 }
 
 // Count passes through; see [Driver].
-func (d *Driver) Count(ctx context.Context, res *database.Resource, opts database.ListOptions) (int64, error) {
+func (d *Driver) Count(ctx context.Context, res *store.Resource, opts store.ListOptions) (int64, error) {
 	return d.next.Count(ctx, res, opts)
 }
 
 // Exists passes through; see [Driver].
-func (d *Driver) Exists(ctx context.Context, res *database.Resource, key string) (bool, error) {
+func (d *Driver) Exists(ctx context.Context, res *store.Resource, key string) (bool, error) {
 	return d.next.Exists(ctx, res, key)
 }
 
 // Unwrap returns the driver underneath, for reads that must not be cached.
-func (d *Driver) Unwrap() database.Driver { return d.next }
+func (d *Driver) Unwrap() store.Driver { return d.next }
 
 // forget drops a cached record.
 //
@@ -254,7 +254,7 @@ func (d *Driver) Unwrap() database.Driver { return d.next }
 // a caller its write failed when it did not. The entry is wrong until it
 // expires, which is the reason a cache in front of a store wants a TTL even
 // though every write invalidates.
-func (d *Driver) forget(ctx context.Context, res *database.Resource, key string) {
+func (d *Driver) forget(ctx context.Context, res *store.Resource, key string) {
 	if key == "" {
 		return
 	}
@@ -270,15 +270,15 @@ func (d *Driver) forget(ctx context.Context, res *database.Resource, key string)
 // they happen, because a rollback would otherwise have thrown away entries that
 // are still correct.
 type cachedTx struct {
-	next   database.Transactional
+	next   store.Transactional
 	driver *Driver
 }
 
-var _ database.Transactional = (*cachedTx)(nil)
+var _ store.Transactional = (*cachedTx)(nil)
 
-func (t *cachedTx) Run(ctx context.Context, fn func(*database.DB) error) error {
+func (t *cachedTx) Run(ctx context.Context, fn func(*store.DB) error) error {
 	var touched []touch
-	err := t.next.Run(ctx, func(inner *database.DB) error {
+	err := t.next.Run(ctx, func(inner *store.DB) error {
 		// The body sees a DB whose driver records what it wrote, and whose
 		// other capabilities are the transaction's own — a cache in front of a
 		// transaction would be showing it data it has not committed.
@@ -301,7 +301,7 @@ func (t *cachedTx) Run(ctx context.Context, fn func(*database.DB) error) error {
 
 // touch is one record a transaction wrote.
 type touch struct {
-	res *database.Resource
+	res *store.Resource
 	key string
 }
 
@@ -309,31 +309,31 @@ type touch struct {
 // through to the real transactional driver and is remembered so the cache can be
 // corrected after the commit.
 type recorder struct {
-	database.Driver
+	store.Driver
 	touched []touch
 }
 
-func (r *recorder) Create(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (r *recorder) Create(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	out, err := r.Driver.Create(ctx, res, msg)
 	if err == nil {
-		if key, kerr := database.KeyOf(res, out.Message); kerr == nil {
+		if key, kerr := store.KeyOf(res, out.Message); kerr == nil {
 			r.touched = append(r.touched, touch{res, key})
 		}
 	}
 	return out, err
 }
 
-func (r *recorder) Update(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (r *recorder) Update(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	out, err := r.Driver.Update(ctx, res, msg)
 	if err == nil {
-		if key, kerr := database.KeyOf(res, msg); kerr == nil {
+		if key, kerr := store.KeyOf(res, msg); kerr == nil {
 			r.touched = append(r.touched, touch{res, key})
 		}
 	}
 	return out, err
 }
 
-func (r *recorder) Delete(ctx context.Context, res *database.Resource, key string) error {
+func (r *recorder) Delete(ctx context.Context, res *store.Resource, key string) error {
 	err := r.Driver.Delete(ctx, res, key)
 	if err == nil {
 		r.touched = append(r.touched, touch{res, key})

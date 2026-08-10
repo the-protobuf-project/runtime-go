@@ -17,8 +17,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/cached"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // ---------------------------------------------------------------- descriptors
@@ -45,14 +45,14 @@ func bookMD(t *testing.T) protoreflect.MessageDescriptor {
 	return fd.Messages().Get(0)
 }
 
-func bookRes(md protoreflect.MessageDescriptor) *database.Resource {
-	return &database.Resource{
+func bookRes(md protoreflect.MessageDescriptor) *store.Resource {
+	return &store.Resource{
 		Name: "Book", Table: "books", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "title", Field: "title", Kind: database.KindString},
-			{Name: "cover", Field: "cover", Kind: database.KindBytes},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "title", Field: "title", Kind: store.KindString},
+			{Name: "cover", Field: "cover", Kind: store.KindBytes},
 		},
 	}
 }
@@ -73,13 +73,13 @@ func title(msg proto.Message, md protoreflect.MessageDescriptor) string {
 
 // ---------------------------------------------------------------- a fake store
 
-// fakeStore is an in-memory database.Driver that counts what is asked of it, so a
+// fakeStore is an in-memory store.Driver that counts what is asked of it, so a
 // test can assert how many times the backing store was reached rather than only
 // that the right value came back. That count is the entire point of a cache.
 type fakeStore struct {
 	mu   sync.Mutex
 	recs map[string][]byte
-	res  *database.Resource
+	res  *store.Resource
 
 	gets    atomic.Int64
 	hold    chan struct{} // when non-nil, Get blocks on it
@@ -87,29 +87,29 @@ type fakeStore struct {
 	once    sync.Once
 }
 
-func newFakeStore(res *database.Resource) *fakeStore {
+func newFakeStore(res *store.Resource) *fakeStore {
 	return &fakeStore{recs: map[string][]byte{}, res: res}
 }
 
-func (f *fakeStore) Create(_ context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
-	key, err := database.KeyOf(res, msg)
+func (f *fakeStore) Create(_ context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
+	key, err := store.KeyOf(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.recs[key]; ok {
-		return database.WriteResult{}, database.ErrAlreadyExists
+		return store.WriteResult{}, store.ErrAlreadyExists
 	}
 	f.recs[key] = body
-	return database.WriteResult{Message: msg}, nil
+	return store.WriteResult{Message: msg}, nil
 }
 
-func (f *fakeStore) Get(_ context.Context, res *database.Resource, key string) (proto.Message, error) {
+func (f *fakeStore) Get(_ context.Context, res *store.Resource, key string) (proto.Message, error) {
 	f.gets.Add(1)
 	if f.arrived != nil {
 		f.once.Do(func() { close(f.arrived) })
@@ -121,7 +121,7 @@ func (f *fakeStore) Get(_ context.Context, res *database.Resource, key string) (
 	body, ok := f.recs[key]
 	f.mu.Unlock()
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return nil, fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 	msg := res.New()
 	if err := proto.Unmarshal(body, msg); err != nil {
@@ -130,45 +130,45 @@ func (f *fakeStore) Get(_ context.Context, res *database.Resource, key string) (
 	return msg, nil
 }
 
-func (f *fakeStore) Update(_ context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
-	key, err := database.KeyOf(res, msg)
+func (f *fakeStore) Update(_ context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
+	key, err := store.KeyOf(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.recs[key]; !ok {
-		return database.WriteResult{}, fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return store.WriteResult{}, fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 	f.recs[key] = body
-	return database.WriteResult{Message: msg}, nil
+	return store.WriteResult{Message: msg}, nil
 }
 
-func (f *fakeStore) Delete(_ context.Context, _ *database.Resource, key string) error {
+func (f *fakeStore) Delete(_ context.Context, _ *store.Resource, key string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.recs[key]; !ok {
-		return fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 	delete(f.recs, key)
 	return nil
 }
 
-func (f *fakeStore) List(context.Context, *database.Resource, database.ListOptions) (database.ListResult, error) {
-	return database.ListResult{}, nil
+func (f *fakeStore) List(context.Context, *store.Resource, store.ListOptions) (store.ListResult, error) {
+	return store.ListResult{}, nil
 }
 
-func (f *fakeStore) Count(context.Context, *database.Resource, database.ListOptions) (int64, error) {
+func (f *fakeStore) Count(context.Context, *store.Resource, store.ListOptions) (int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return int64(len(f.recs)), nil
 }
 
-func (f *fakeStore) Exists(_ context.Context, _ *database.Resource, key string) (bool, error) {
+func (f *fakeStore) Exists(_ context.Context, _ *store.Resource, key string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	_, ok := f.recs[key]
@@ -216,7 +216,7 @@ func (a *fakeAside) GetOrLoad(ctx context.Context, key string, dest *[]byte) err
 	a.c.mu.Unlock()
 	if ok {
 		if e.void {
-			return fmt.Errorf("%w: %s", database.ErrNotFound, key)
+			return fmt.Errorf("%w: %s", store.ErrNotFound, key)
 		}
 		*dest = e.body
 		return nil
@@ -244,7 +244,7 @@ func (a *fakeAside) GetOrLoad(ctx context.Context, key string, dest *[]byte) err
 
 	body, err := a.load(ctx, key)
 	if err != nil {
-		if errors.Is(err, database.ErrNotFound) {
+		if errors.Is(err, store.ErrNotFound) {
 			a.c.mu.Lock()
 			a.c.entries[key] = entry{void: true}
 			a.c.mu.Unlock()
@@ -267,13 +267,13 @@ func (a *fakeAside) Invalidate(_ context.Context, keys ...string) error {
 	return nil
 }
 
-func setup(t *testing.T) (*database.DB, *fakeStore, *fakeCache, *database.Resource, protoreflect.MessageDescriptor) {
+func setup(t *testing.T) (*store.DB, *fakeStore, *fakeCache, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	md := bookMD(t)
 	res := bookRes(md)
 	backing := newFakeStore(res)
 	fc := newFakeCache()
-	db := cached.Wrap(database.Build(backing, "fake", "test", nil), fc)
+	db := cached.Wrap(store.Build(backing, "fake", "test", nil), fc)
 	return db, backing, fc, res, md
 }
 
@@ -327,7 +327,7 @@ func TestCreateClearsARememberedAbsence(t *testing.T) {
 	ctx := context.Background()
 	db, _, _, res, md := setup(t)
 
-	if _, err := db.Get(ctx, res, "books/new"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "books/new"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("first Get = %v, want ErrNotFound", err)
 	}
 	if _, err := db.Create(ctx, res, newBook(md, "books/new", "New", nil)); err != nil {
@@ -379,7 +379,7 @@ func TestDeleteIsVisibleImmediately(t *testing.T) {
 	if err := db.Delete(ctx, res, "books/a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Get(ctx, res, "books/a"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "books/a"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a deleted record was still served: %v", err)
 	}
 }
@@ -391,7 +391,7 @@ func TestAbsenceIsRemembered(t *testing.T) {
 	db, backing, _, res, _ := setup(t)
 
 	for range 10 {
-		if _, err := db.Get(ctx, res, "books/ghost"); !errors.Is(err, database.ErrNotFound) {
+		if _, err := db.Get(ctx, res, "books/ghost"); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("Get = %v, want ErrNotFound", err)
 		}
 	}
@@ -463,7 +463,7 @@ func TestWrapKeepsCapabilities(t *testing.T) {
 	res := bookRes(md)
 	backing := newFakeStore(res)
 
-	inner := database.Build(backing, "fake", "test", nil)
+	inner := store.Build(backing, "fake", "test", nil)
 	outer := cached.Wrap(inner, newFakeCache())
 
 	if outer.Schema == nil || outer.Tx == nil {
@@ -474,11 +474,11 @@ func TestWrapKeepsCapabilities(t *testing.T) {
 	}
 	// The fake store has neither capability, so both must still refuse by name
 	// rather than pretend.
-	err := outer.Tx.Run(context.Background(), func(*database.DB) error { return nil })
-	if !errors.Is(err, database.ErrUnimplemented) {
+	err := outer.Tx.Run(context.Background(), func(*store.DB) error { return nil })
+	if !errors.Is(err, store.ErrUnimplemented) {
 		t.Errorf("Tx.Run = %v, want ErrUnimplemented", err)
 	}
-	if err := outer.Schema.EnsureSchema(context.Background(), res); !errors.Is(err, database.ErrUnimplemented) {
+	if err := outer.Schema.EnsureSchema(context.Background(), res); !errors.Is(err, store.ErrUnimplemented) {
 		t.Errorf("EnsureSchema = %v, want ErrUnimplemented", err)
 	}
 }
@@ -492,7 +492,7 @@ func TestCommittedTransactionInvalidates(t *testing.T) {
 	res := bookRes(md)
 	backing := newFakeStore(res)
 
-	inner := database.Build(backing, "fake", "test", nil)
+	inner := store.Build(backing, "fake", "test", nil)
 	inner.Tx = fakeTx{backing}
 	db := cached.Wrap(inner, newFakeCache())
 
@@ -503,7 +503,7 @@ func TestCommittedTransactionInvalidates(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := db.Tx.Run(ctx, func(tx *store.DB) error {
 		_, uerr := tx.Update(ctx, res, newBook(md, "books/a", "After", nil))
 		return uerr
 	})
@@ -528,7 +528,7 @@ func TestRolledBackTransactionKeepsTheCache(t *testing.T) {
 	res := bookRes(md)
 	backing := newFakeStore(res)
 
-	inner := database.Build(backing, "fake", "test", nil)
+	inner := store.Build(backing, "fake", "test", nil)
 	inner.Tx = fakeTx{backing}
 	db := cached.Wrap(inner, newFakeCache())
 
@@ -541,7 +541,7 @@ func TestRolledBackTransactionKeepsTheCache(t *testing.T) {
 	before := backing.gets.Load()
 
 	boom := errors.New("rolled back")
-	if err := db.Tx.Run(ctx, func(*database.DB) error { return boom }); !errors.Is(err, boom) {
+	if err := db.Tx.Run(ctx, func(*store.DB) error { return boom }); !errors.Is(err, boom) {
 		t.Fatalf("Run = %v, want the caller's error", err)
 	}
 
@@ -558,6 +558,6 @@ func TestRolledBackTransactionKeepsTheCache(t *testing.T) {
 // transaction semantics.
 type fakeTx struct{ backing *fakeStore }
 
-func (f fakeTx) Run(_ context.Context, fn func(*database.DB) error) error {
-	return fn(database.Build(f.backing, "fake", "test", nil))
+func (f fakeTx) Run(_ context.Context, fn func(*store.DB) error) error {
+	return fn(store.Build(f.backing, "fake", "test", nil))
 }

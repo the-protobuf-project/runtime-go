@@ -34,7 +34,7 @@ type Config struct {
 	Password string
 
 	// AuthSource is the database credentials are checked against. Empty leaves
-	// it to the driver, which uses "admin" for a URI that names no database.
+	// it to the driver, which uses "admin" for a URI that names no store.
 	AuthSource string
 
 	// ConnectTimeout bounds both the dial and server selection. Zero takes the

@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Driver is a database.Driver backed by Redis.
+// Driver is a store.Driver backed by Redis.
 //
 // Records are stored as proto wire format under one key each, with a set of
 // primary keys alongside so they can be listed. That is the whole layout — see
@@ -22,7 +21,7 @@ import (
 //
 // # Why not a column map
 //
-// Every other driver here writes a [database.Resource]'s columns into something
+// Every other driver here writes a [store.Resource]'s columns into something
 // column-shaped: SQL columns, ABI arguments. Redis stores opaque bytes, so
 // there is nothing to spread a message across and the only question is how to
 // encode it. Proto wire format is the answer that cannot lose anything: JSON
@@ -38,9 +37,9 @@ type Driver struct {
 }
 
 var (
-	_ database.Driver   = (*Driver)(nil)
-	_ database.Migrator = (*Driver)(nil)
-	_ database.Batcher  = (*Driver)(nil)
+	_ store.Driver   = (*Driver)(nil)
+	_ store.Migrator = (*Driver)(nil)
+	_ store.Batcher  = (*Driver)(nil)
 )
 
 // New returns a driver over a client you own, writing every resource on the
@@ -64,36 +63,36 @@ func New(rdb goredis.UniversalClient, opts ...Option) *Driver {
 // leave a reservation with no record behind it.
 //
 // That orphan is not silent — the next Create of the same value fails with
-// [database.ErrAlreadyExists] naming a key that does not exist, which is the
+// [store.ErrAlreadyExists] naming a key that does not exist, which is the
 // symptom to look for. A real transaction is the fix and Redis does not have
 // one across these keys; a Lua script would, and is the upgrade path if this
 // turns out to matter.
-func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Create(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("redis: Create needs a resource")
+		return store.WriteResult{}, fmt.Errorf("redis: Create needs a resource")
 	}
 	msg, err := fillManaged(res, msg, true)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	key, err := database.KeyOf(res, msg)
+	key, err := store.KeyOf(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	if key == "" {
-		return database.WriteResult{}, fmt.Errorf("redis: resource %q has an empty primary key", res.Name)
+		return store.WriteResult{}, fmt.Errorf("redis: resource %q has an empty primary key", res.Name)
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return database.WriteResult{}, fmt.Errorf("redis: cannot encode %s: %w", res.Name, err)
+		return store.WriteResult{}, fmt.Errorf("redis: cannot encode %s: %w", res.Name, err)
 	}
 
 	won, err := d.rdb.SetNX(ctx, d.keys.record(res, key), body, 0).Result()
 	if err != nil {
-		return database.WriteResult{}, fmt.Errorf("redis: cannot store %s: %w", key, err)
+		return store.WriteResult{}, fmt.Errorf("redis: cannot store %s: %w", key, err)
 	}
 	if !won {
-		return database.WriteResult{}, fmt.Errorf("%w: %s", database.ErrAlreadyExists, key)
+		return store.WriteResult{}, fmt.Errorf("%w: %s", store.ErrAlreadyExists, key)
 	}
 
 	claimed, conflict, err := d.claimUnique(ctx, res, msg, key)
@@ -103,25 +102,25 @@ func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.M
 		d.release(ctx, claimed)
 		_ = d.rdb.Del(ctx, d.keys.record(res, key)).Err()
 		if err != nil {
-			return database.WriteResult{}, err
+			return store.WriteResult{}, err
 		}
-		return database.WriteResult{}, fmt.Errorf("%w: %s is already held", database.ErrAlreadyExists, conflict)
+		return store.WriteResult{}, fmt.Errorf("%w: %s is already held", store.ErrAlreadyExists, conflict)
 	}
 
-	if err := d.rdb.SAdd(ctx, d.keys.ids(res), key).Err(); err != nil {
-		return database.WriteResult{}, fmt.Errorf("redis: cannot index %s: %w", key, err)
+	if err := d.rdb.ZAdd(ctx, d.keys.ids(res), goredis.Z{Score: 0, Member: key}).Err(); err != nil {
+		return store.WriteResult{}, fmt.Errorf("redis: cannot index %s: %w", key, err)
 	}
-	return database.WriteResult{Message: msg}, nil
+	return store.WriteResult{Message: msg}, nil
 }
 
 // Get returns the record under key.
-func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (proto.Message, error) {
+func (d *Driver) Get(ctx context.Context, res *store.Resource, key string) (proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("redis: Get needs a resource")
 	}
 	body, err := d.rdb.Get(ctx, d.keys.record(res, key)).Bytes()
 	if errors.Is(err, goredis.Nil) {
-		return nil, fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return nil, fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("redis: cannot read %s: %w", key, err)
@@ -135,42 +134,42 @@ func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (p
 // changed releases the old key and claims the new one. Without that, changing a
 // user's e-mail would leave the old address reserved forever and nobody could
 // ever use it again.
-func (d *Driver) Update(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("redis: Update needs a resource")
+		return store.WriteResult{}, fmt.Errorf("redis: Update needs a resource")
 	}
 	msg, err := fillManaged(res, msg, false)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	key, err := database.KeyOf(res, msg)
+	key, err := store.KeyOf(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 
 	old, err := d.Get(ctx, res, key)
 	if err != nil {
-		return database.WriteResult{}, err // ErrNotFound travels as itself
+		return store.WriteResult{}, err // ErrNotFound travels as itself
 	}
 	body, err := proto.Marshal(msg)
 	if err != nil {
-		return database.WriteResult{}, fmt.Errorf("redis: cannot encode %s: %w", res.Name, err)
+		return store.WriteResult{}, fmt.Errorf("redis: cannot encode %s: %w", res.Name, err)
 	}
 
 	claimed, conflict, err := d.moveUnique(ctx, res, old, msg, key)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	if conflict != "" {
 		d.release(ctx, claimed)
-		return database.WriteResult{}, fmt.Errorf("%w: %s is already held", database.ErrAlreadyExists, conflict)
+		return store.WriteResult{}, fmt.Errorf("%w: %s is already held", store.ErrAlreadyExists, conflict)
 	}
 
 	if err := d.rdb.Set(ctx, d.keys.record(res, key), body, 0).Err(); err != nil {
 		d.release(ctx, claimed)
-		return database.WriteResult{}, fmt.Errorf("redis: cannot update %s: %w", key, err)
+		return store.WriteResult{}, fmt.Errorf("redis: cannot update %s: %w", key, err)
 	}
-	return database.WriteResult{Message: msg}, nil
+	return store.WriteResult{Message: msg}, nil
 }
 
 // Delete removes the record under key and releases what it reserved.
@@ -178,7 +177,7 @@ func (d *Driver) Update(ctx context.Context, res *database.Resource, msg proto.M
 // Unlike a cache, a missing record is reported: records here do not expire on
 // their own, so asking to delete one that is not there means the caller's view
 // of the store is wrong.
-func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string) error {
+func (d *Driver) Delete(ctx context.Context, res *store.Resource, key string) error {
 	if res == nil {
 		return fmt.Errorf("redis: Delete needs a resource")
 	}
@@ -196,7 +195,7 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 	}
 	pipe := d.rdb.TxPipeline()
 	pipe.Del(ctx, doomed...)
-	pipe.SRem(ctx, d.keys.ids(res), key)
+	pipe.ZRem(ctx, d.keys.ids(res), key)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("redis: cannot delete %s: %w", key, err)
 	}
@@ -204,7 +203,7 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 }
 
 // Exists reports whether a record with the given key is there.
-func (d *Driver) Exists(ctx context.Context, res *database.Resource, key string) (bool, error) {
+func (d *Driver) Exists(ctx context.Context, res *store.Resource, key string) (bool, error) {
 	if res == nil {
 		return false, fmt.Errorf("redis: Exists needs a resource")
 	}
@@ -217,14 +216,17 @@ func (d *Driver) Exists(ctx context.Context, res *database.Resource, key string)
 
 // Count returns how many records this resource holds.
 //
-// opts.Filter is ignored, as [database.ListOptions] permits: Redis has no query
+// opts.Filter is ignored, as [store.ListOptions] permits: Redis has no query
 // language, and filtering here would mean reading every record to count them.
 // Count stays O(1) and answers the question it can.
-func (d *Driver) Count(ctx context.Context, res *database.Resource, _ database.ListOptions) (int64, error) {
+func (d *Driver) Count(ctx context.Context, res *store.Resource, opts store.ListOptions) (int64, error) {
 	if res == nil {
 		return 0, fmt.Errorf("redis: Count needs a resource")
 	}
-	n, err := d.rdb.SCard(ctx, d.keys.ids(res)).Result()
+	if err := refuseFilter(opts.Filter); err != nil {
+		return 0, err
+	}
+	n, err := d.rdb.ZCard(ctx, d.keys.ids(res)).Result()
 	if err != nil {
 		return 0, fmt.Errorf("redis: cannot count %s: %w", res.Name, err)
 	}
@@ -235,96 +237,79 @@ func (d *Driver) Count(ctx context.Context, res *database.Resource, _ database.L
 //
 // # What it honors and what it cannot
 //
-// Paging works: ids are read with a cursor, sorted, and cut by an offset token,
-// so a page is stable between calls. Ordering works for the primary key, in
-// either direction. opts.Filter and an OrderBy naming any other column are
-// ignored, which [database.ListOptions] permits — Redis has no query language, and
-// pretending otherwise by filtering client-side would make a page size mean
-// nothing and read the whole table to return ten rows.
+// Paging and ordering both happen in the server. The index is a sorted set, so
+// a page is one range read in log time and costs the same whatever the table
+// holds — it used to be a plain set, which meant reading every id into this
+// process to sort and slice it. Ordering is by primary key, either direction; an
+// OrderBy naming any other column falls back to the key, which
+// [store.ListOptions] permits.
 //
-// The cost is honest and worth stating: this is O(records) in the id set on
-// every call, whatever the page size. It is a store, not a query engine.
-func (d *Driver) List(ctx context.Context, res *database.Resource, opts database.ListOptions) (database.ListResult, error) {
+// A filter is refused rather than ignored — see [refuseFilter]. Redis has no
+// query language, and honoring one client-side would read the whole table to
+// return ten rows while making the page size mean nothing.
+func (d *Driver) List(ctx context.Context, res *store.Resource, opts store.ListOptions) (store.ListResult, error) {
 	if res == nil {
-		return database.ListResult{}, fmt.Errorf("redis: List needs a resource")
+		return store.ListResult{}, fmt.Errorf("redis: List needs a resource")
 	}
-	ids, err := d.allIDs(ctx, res)
-	if err != nil {
-		return database.ListResult{}, err
+	if err := refuseFilter(opts.Filter); err != nil {
+		return store.ListResult{}, err
 	}
-	total := int64(len(ids))
-
-	slices.Sort(ids)
-	if descending(opts.OrderBy, res) {
-		slices.Reverse(ids)
+	total := core.NoTotal
+	if !opts.OmitTotal {
+		var cerr error
+		if total, cerr = d.Count(ctx, res, opts); cerr != nil {
+			return store.ListResult{}, cerr
+		}
 	}
 
 	limit := core.PageSize(opts.PageSize)
 	offset := core.DecodeToken(opts.PageToken)
-	if offset >= int64(len(ids)) {
-		return database.ListResult{Items: nil, Total: total}, nil
+	fetch := core.FetchLimit(limit, opts.OmitTotal)
+
+	// The page comes back already ordered and already cut. The index used to be
+	// an unordered set, which meant reading every id into this process to sort
+	// and slice it — a million records allocated a million strings to return
+	// fifty, on every call and once per concurrent caller. A sorted set does the
+	// same work in the server, in log time, and hands back only the page.
+	key := d.keys.ids(res)
+	stop := offset + fetch - 1
+	var (
+		page []string
+		perr error
+	)
+	if descending(opts.OrderBy, res) {
+		page, perr = d.rdb.ZRevRange(ctx, key, offset, stop).Result()
+	} else {
+		page, perr = d.rdb.ZRange(ctx, key, offset, stop).Result()
 	}
-	page := ids[offset:]
-	if limit < int64(len(page)) {
-		page = page[:limit]
+	if perr != nil {
+		return store.ListResult{}, fmt.Errorf("redis: cannot read the index of %s: %w", res.Name, perr)
 	}
+	if len(page) == 0 {
+		return store.ListResult{Items: nil, Total: total}, nil
+	}
+	page, next := core.TrimPage(page, offset, limit, total, opts.OmitTotal)
 
 	msgs, err := d.GetMany(ctx, res, page)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 	items := make([]proto.Message, 0, len(msgs))
 	for i, m := range msgs {
 		if m == nil {
 			// The id survived but the record is gone — a delete that failed
 			// partway. Drop the stale member and skip it.
-			_ = d.rdb.SRem(ctx, d.keys.ids(res), page[i]).Err()
+			_ = d.rdb.ZRem(ctx, d.keys.ids(res), page[i]).Err()
 			continue
 		}
 		items = append(items, m)
 	}
 
-	return database.ListResult{
-		Items:         items,
-		NextPageToken: core.EncodeToken(offset, int64(len(page)), total),
-		Total:         total,
-	}, nil
-}
-
-// allIDs reads the id set with a cursor rather than SMEMBERS.
-//
-// SMEMBERS builds the entire reply before sending any of it, and Redis is
-// single-threaded while it does — a resource with a million records would stall
-// every other client for the length of that one command. A cursor is the same
-// total work spread over many small replies.
-func (d *Driver) allIDs(ctx context.Context, res *database.Resource) ([]string, error) {
-	var (
-		out    []string
-		seen   = map[string]struct{}{}
-		cursor uint64
-	)
-	for {
-		batch, next, err := d.rdb.SScan(ctx, d.keys.ids(res), cursor, "", scanBatch).Result()
-		if err != nil {
-			return nil, fmt.Errorf("redis: cannot read the index of %s: %w", res.Name, err)
-		}
-		for _, id := range batch {
-			// A cursor may hand back a member more than once.
-			if _, dup := seen[id]; dup {
-				continue
-			}
-			seen[id] = struct{}{}
-			out = append(out, id)
-		}
-		if next == 0 {
-			return out, nil
-		}
-		cursor = next
-	}
+	return store.ListResult{Items: items, NextPageToken: next, Total: total}, nil
 }
 
 // decode turns stored bytes back into a message of the resource's type.
-func decode(res *database.Resource, body []byte) (proto.Message, error) {
+func decode(res *store.Resource, body []byte) (proto.Message, error) {
 	if res.New == nil {
 		return nil, fmt.Errorf("redis: resource %q has no New constructor", res.Name)
 	}
@@ -337,7 +322,7 @@ func decode(res *database.Resource, body []byte) (proto.Message, error) {
 
 // descending reports whether an AIP-132 order expression asks for the primary
 // key in reverse. Any other column is ignored — see [Driver.List].
-func descending(orderBy string, res *database.Resource) bool {
+func descending(orderBy string, res *store.Resource) bool {
 	if orderBy == "" {
 		return false
 	}
@@ -358,14 +343,32 @@ func descending(orderBy string, res *database.Resource) bool {
 // round-trips through one to reach [core.FillManaged] and back. The trip is
 // lossless — every value stays a Go value with no encoding in between — and is
 // skipped entirely for a resource with nothing to fill, which is most of them.
-func fillManaged(res *database.Resource, msg proto.Message, onCreate bool) (proto.Message, error) {
+func fillManaged(res *store.Resource, msg proto.Message, onCreate bool) (proto.Message, error) {
 	if !core.HasManaged(res) {
 		return msg, nil
 	}
-	cols, err := database.MessageToColumns(res, msg)
+	cols, err := store.MessageToColumns(res, msg)
 	if err != nil {
 		return nil, err
 	}
 	core.FillManaged(res, cols, onCreate)
-	return database.ColumnsToMessage(res, cols)
+	return store.ColumnsToMessage(res, cols)
+}
+
+// refuseFilter reports a filter this backend cannot apply.
+//
+// Redis has no query language, so a filter can only be honored by reading every
+// record into this process — which would make a page size mean nothing and read
+// the whole table to return ten rows. The contract's rule is that a backend
+// either honors a filter or refuses it by name, and silently returning the
+// unfiltered set is the one outcome it forbids: the wrong records, with nothing
+// to say anything was ignored.
+func refuseFilter(filter string) error {
+	if strings.TrimSpace(filter) == "" {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: redis has no query language, so it cannot apply the filter %q; "+
+			"list by key and narrow in the caller, or hold this resource in a backend that can query",
+		store.ErrUnimplemented, filter)
 }

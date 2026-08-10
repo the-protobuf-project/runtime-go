@@ -10,11 +10,11 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Driver is a database.Driver backed by MongoDB.
+// Driver is a store.Driver backed by MongoDB.
 //
 // A resource is a collection, a record is a document, and the descriptor's
 // columns are the document's fields — so what lands in MongoDB is queryable
@@ -35,9 +35,9 @@ type Driver struct {
 }
 
 var (
-	_ database.Driver   = (*Driver)(nil)
-	_ database.Migrator = (*Driver)(nil)
-	_ database.Batcher  = (*Driver)(nil)
+	_ store.Driver   = (*Driver)(nil)
+	_ store.Migrator = (*Driver)(nil)
+	_ store.Batcher  = (*Driver)(nil)
 )
 
 // New returns a driver over a client you own, writing every resource into the
@@ -51,7 +51,7 @@ func New(client *mongo.Client) *Driver { return &Driver{client: client} }
 //
 // A database selected at runtime wins over the one the descriptor was generated
 // with: the descriptor says what a Book is, the selection says whose.
-func (d *Driver) collection(res *database.Resource) (*mongo.Collection, error) {
+func (d *Driver) collection(res *store.Resource) (*mongo.Collection, error) {
 	db := d.db
 	if db == "" {
 		db = res.Schema
@@ -64,46 +64,46 @@ func (d *Driver) collection(res *database.Resource) (*mongo.Collection, error) {
 
 // Create stores msg as a new document.
 //
-// A duplicate primary key is reported as [database.ErrAlreadyExists] rather than as
+// A duplicate primary key is reported as [store.ErrAlreadyExists] rather than as
 // a driver error, and so is any other unique index the descriptor declared —
 // both arrive as the same write exception and both mean the same thing to a
 // caller.
-func (d *Driver) Create(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Create(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("mongodb: Create needs a resource")
+		return store.WriteResult{}, fmt.Errorf("mongodb: Create needs a resource")
 	}
 	coll, err := d.collection(res)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	cols, err := database.MessageToColumns(res, msg)
+	cols, err := store.MessageToColumns(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	core.FillManaged(res, cols, true)
 
 	doc, err := toDocument(res, cols)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	if _, ierr := coll.InsertOne(ctx, doc); ierr != nil {
 		if mongo.IsDuplicateKeyError(ierr) {
-			return database.WriteResult{}, fmt.Errorf("%w: %s", database.ErrAlreadyExists, res.Name)
+			return store.WriteResult{}, fmt.Errorf("%w: %s", store.ErrAlreadyExists, res.Name)
 		}
-		return database.WriteResult{}, fmt.Errorf("mongodb: cannot insert into %s: %w", res.Table, ierr)
+		return store.WriteResult{}, fmt.Errorf("mongodb: cannot insert into %s: %w", res.Table, ierr)
 	}
 
 	// The message the caller gets back carries whatever the driver supplied — a
 	// generated key, the audit timestamps — rather than what it handed in.
-	out, err := database.ColumnsToMessage(res, cols)
+	out, err := store.ColumnsToMessage(res, cols)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	return database.WriteResult{Message: out}, nil
+	return store.WriteResult{Message: out}, nil
 }
 
 // Get returns the document under key.
-func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (proto.Message, error) {
+func (d *Driver) Get(ctx context.Context, res *store.Resource, key string) (proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("mongodb: Get needs a resource")
 	}
@@ -114,7 +114,7 @@ func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (p
 	var doc bson.M
 	if err := coll.FindOne(ctx, bson.M{"_id": key}).Decode(&doc); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("%w: %s", database.ErrNotFound, key)
+			return nil, fmt.Errorf("%w: %s", store.ErrNotFound, key)
 		}
 		return nil, fmt.Errorf("mongodb: cannot read %s: %w", key, err)
 	}
@@ -127,48 +127,48 @@ func (d *Driver) Get(ctx context.Context, res *database.Resource, key string) (p
 // Update overwrites the record: a $set of the columns present would leave a
 // field that used to have a value and no longer does exactly as it was, which
 // reads as the write having silently half-applied.
-func (d *Driver) Update(ctx context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	if res == nil {
-		return database.WriteResult{}, fmt.Errorf("mongodb: Update needs a resource")
+		return store.WriteResult{}, fmt.Errorf("mongodb: Update needs a resource")
 	}
 	coll, err := d.collection(res)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	key, err := database.KeyOf(res, msg)
+	key, err := store.KeyOf(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	cols, err := database.MessageToColumns(res, msg)
+	cols, err := store.MessageToColumns(res, msg)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	core.FillManaged(res, cols, false)
 
 	doc, err := toDocument(res, cols)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	result, err := coll.ReplaceOne(ctx, bson.M{"_id": key}, doc)
 	if err != nil {
 		if mongo.IsDuplicateKeyError(err) {
-			return database.WriteResult{}, fmt.Errorf("%w: %s", database.ErrAlreadyExists, key)
+			return store.WriteResult{}, fmt.Errorf("%w: %s", store.ErrAlreadyExists, key)
 		}
-		return database.WriteResult{}, fmt.Errorf("mongodb: cannot update %s: %w", key, err)
+		return store.WriteResult{}, fmt.Errorf("mongodb: cannot update %s: %w", key, err)
 	}
 	if result.MatchedCount == 0 {
-		return database.WriteResult{}, fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return store.WriteResult{}, fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 
-	out, err := database.ColumnsToMessage(res, cols)
+	out, err := store.ColumnsToMessage(res, cols)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
-	return database.WriteResult{Message: out}, nil
+	return store.WriteResult{Message: out}, nil
 }
 
 // Delete removes the document under key.
-func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string) error {
+func (d *Driver) Delete(ctx context.Context, res *store.Resource, key string) error {
 	if res == nil {
 		return fmt.Errorf("mongodb: Delete needs a resource")
 	}
@@ -181,7 +181,7 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 		return fmt.Errorf("mongodb: cannot delete %s: %w", key, err)
 	}
 	if result.DeletedCount == 0 {
-		return fmt.Errorf("%w: %s", database.ErrNotFound, key)
+		return fmt.Errorf("%w: %s", store.ErrNotFound, key)
 	}
 	return nil
 }
@@ -190,7 +190,7 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 //
 // A projection of nothing but _id, so the answer costs an index lookup rather
 // than transferring a document to throw it away.
-func (d *Driver) Exists(ctx context.Context, res *database.Resource, key string) (bool, error) {
+func (d *Driver) Exists(ctx context.Context, res *store.Resource, key string) (bool, error) {
 	if res == nil {
 		return false, fmt.Errorf("mongodb: Exists needs a resource")
 	}
@@ -211,7 +211,7 @@ func (d *Driver) Exists(ctx context.Context, res *database.Resource, key string)
 }
 
 // Count returns how many documents match opts.Filter.
-func (d *Driver) Count(ctx context.Context, res *database.Resource, opts database.ListOptions) (int64, error) {
+func (d *Driver) Count(ctx context.Context, res *store.Resource, opts store.ListOptions) (int64, error) {
 	if res == nil {
 		return 0, fmt.Errorf("mongodb: Count needs a resource")
 	}
@@ -236,24 +236,24 @@ func (d *Driver) Count(ctx context.Context, res *database.Resource, opts databas
 // deliberately small subset of AIP-160 — see [parseFilter] — because accepting
 // the whole grammar and honoring part of it is worse than accepting a little and
 // honoring all of it.
-func (d *Driver) List(ctx context.Context, res *database.Resource, opts database.ListOptions) (database.ListResult, error) {
+func (d *Driver) List(ctx context.Context, res *store.Resource, opts store.ListOptions) (store.ListResult, error) {
 	if res == nil {
-		return database.ListResult{}, fmt.Errorf("mongodb: List needs a resource")
+		return store.ListResult{}, fmt.Errorf("mongodb: List needs a resource")
 	}
 	coll, err := d.collection(res)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 	filter, err := parseFilter(res, opts.Filter)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 
 	total := core.NoTotal
 	if !opts.OmitTotal {
 		var cerr error
 		if total, cerr = coll.CountDocuments(ctx, filter); cerr != nil {
-			return database.ListResult{}, fmt.Errorf("mongodb: cannot count %s: %w", res.Table, cerr)
+			return store.ListResult{}, fmt.Errorf("mongodb: cannot count %s: %w", res.Table, cerr)
 		}
 	}
 
@@ -263,7 +263,7 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 	find := mongoFindPage(sortOf(res, opts.OrderBy), core.FetchLimit(limit, opts.OmitTotal), offset)
 	cur, err := coll.Find(ctx, filter, find)
 	if err != nil {
-		return database.ListResult{}, fmt.Errorf("mongodb: cannot list %s: %w", res.Table, err)
+		return store.ListResult{}, fmt.Errorf("mongodb: cannot list %s: %w", res.Table, err)
 	}
 	defer func() { _ = cur.Close(ctx) }()
 
@@ -271,20 +271,20 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 	for cur.Next(ctx) {
 		var doc bson.M
 		if derr := cur.Decode(&doc); derr != nil {
-			return database.ListResult{}, fmt.Errorf("mongodb: cannot decode a %s: %w", res.Name, derr)
+			return store.ListResult{}, fmt.Errorf("mongodb: cannot decode a %s: %w", res.Name, derr)
 		}
 		msg, merr := fromDocument(res, doc)
 		if merr != nil {
-			return database.ListResult{}, merr
+			return store.ListResult{}, merr
 		}
 		items = append(items, msg)
 	}
 	if cerr := cur.Err(); cerr != nil {
-		return database.ListResult{}, fmt.Errorf("mongodb: cannot read the %s cursor: %w", res.Name, cerr)
+		return store.ListResult{}, fmt.Errorf("mongodb: cannot read the %s cursor: %w", res.Name, cerr)
 	}
 
 	items, next := core.TrimPage(items, offset, limit, total, opts.OmitTotal)
-	return database.ListResult{Items: items, NextPageToken: next, Total: total}, nil
+	return store.ListResult{Items: items, NextPageToken: next, Total: total}, nil
 }
 
 // sortOf turns an AIP-132 order expression into a Mongo sort.
@@ -292,7 +292,7 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 // An unrecognized column sorts by _id instead of failing: ordering is a
 // presentation concern, and a listing that returns the right records in an
 // unexpected order is more useful than one that returns an error.
-func sortOf(res *database.Resource, orderBy string) bson.D {
+func sortOf(res *store.Resource, orderBy string) bson.D {
 	if orderBy == "" {
 		return bson.D{{Key: "_id", Value: 1}}
 	}

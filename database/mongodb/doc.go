@@ -1,4 +1,4 @@
-// Package mongodb implements the backend-agnostic database.Driver over MongoDB.
+// Package mongodb implements the backend-agnostic store.Driver over MongoDB.
 //
 // A resource is a collection, a record is a document, and the descriptor's
 // columns are the document's fields — so what lands in MongoDB is queryable with
@@ -17,8 +17,8 @@
 //
 // # What it has
 //
-// All four capabilities: [database.Transactional], [database.Migrator],
-// [database.Batcher] and [database.Watcher] — the last of which is the reason to
+// All four capabilities: [store.Transactional], [store.Migrator],
+// [store.Batcher] and [store.Watcher] — the last of which is the reason to
 // reach for this backend when something has to react to writes, since the
 // alternative without a change stream is polling.
 //
@@ -41,7 +41,7 @@
 //
 // # Filtering is a small subset, deliberately
 //
-// [database.ListOptions.Filter] accepts conjunctions of `column op value` with
+// [store.ListOptions.Filter] accepts conjunctions of `column op value` with
 // = != > >= < <=, and refuses anything else by name. That is a fraction of
 // AIP-160, and the fraction is the design: a backend that accepts the whole
 // grammar and honors part of it returns the wrong records with nothing to say

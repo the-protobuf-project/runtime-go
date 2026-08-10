@@ -4,21 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // EnsureSchema does nothing, successfully.
 //
 // Redis has no schema: a key holds whatever it is given, and a resource is ready
 // to store the moment something stores it. Reporting that as success rather than
-// as [database.ErrUnimplemented] is the honest answer to what the method actually
+// as [store.ErrUnimplemented] is the honest answer to what the method actually
 // asks — "is what this descriptor describes ready to use" — and it means a
 // program that calls EnsureSchema on startup runs unchanged against Redis and
 // against SQL, which is the point of having one contract.
 //
 // What it does not do is create the id set. That appears on the first write and
 // an empty set is indistinguishable from no set in Redis anyway.
-func (d *Driver) EnsureSchema(_ context.Context, res *database.Resource) error {
+func (d *Driver) EnsureSchema(_ context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("redis: EnsureSchema needs a resource")
 	}
@@ -30,7 +30,7 @@ func (d *Driver) EnsureSchema(_ context.Context, res *database.Resource) error {
 // For the same reason EnsureSchema succeeds: there is nothing that could be
 // absent. A caller using this to decide whether to run a migration will
 // correctly decide not to.
-func (d *Driver) HasSchema(_ context.Context, res *database.Resource) (bool, error) {
+func (d *Driver) HasSchema(_ context.Context, res *store.Resource) (bool, error) {
 	if res == nil {
 		return false, fmt.Errorf("redis: HasSchema needs a resource")
 	}
@@ -46,7 +46,7 @@ func (d *Driver) HasSchema(_ context.Context, res *database.Resource) (bool, err
 // Proportional to the whole keyspace, not to the resource, and not atomic: a
 // write arriving mid-walk may survive. Fine for a teardown; think twice
 // elsewhere.
-func (d *Driver) DropSchema(ctx context.Context, res *database.Resource) error {
+func (d *Driver) DropSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("redis: DropSchema needs a resource")
 	}

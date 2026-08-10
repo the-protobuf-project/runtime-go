@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // defaultBucketLimit bounds an aggregation that names none, for the reason a
@@ -19,7 +19,7 @@ const defaultBucketLimit = 1000
 
 // EnsureHypertable partitions the table a resource describes by time.
 //
-// It converts an existing table, so [database.Migrator.EnsureSchema] runs first.
+// It converts an existing table, so [store.Migrator.EnsureSchema] runs first.
 // TimescaleDB requires that order too — create_hypertable takes a table — and
 // the contract says so rather than hiding a CREATE TABLE in here where a caller
 // looking for one would not find it.
@@ -27,7 +27,7 @@ const defaultBucketLimit = 1000
 // migrate_data is deliberately on. Converting a table that already holds rows
 // otherwise fails, and a caller adding partitioning to something already in
 // production is the normal case rather than the exception.
-func (d *Driver) EnsureHypertable(ctx context.Context, res *database.Resource, opts database.HypertableOptions) error {
+func (d *Driver) EnsureHypertable(ctx context.Context, res *store.Resource, opts store.HypertableOptions) error {
 	if res == nil {
 		return fmt.Errorf("timescale: EnsureHypertable needs a resource")
 	}
@@ -35,7 +35,7 @@ func (d *Driver) EnsureHypertable(ctx context.Context, res *database.Resource, o
 	if !ok {
 		return fmt.Errorf("timescale: resource %q has no column %q to partition on", res.Name, opts.TimeColumn)
 	}
-	if col.Kind != database.KindTimestamp {
+	if col.Kind != store.KindTimestamp {
 		return fmt.Errorf(
 			"timescale: column %q is %v, not a timestamp; partitioning on it would order rows by something that is not time",
 			opts.TimeColumn, col.Kind)
@@ -86,24 +86,24 @@ func (d *Driver) EnsureHypertable(ctx context.Context, res *database.Resource, o
 }
 
 // Range returns the records whose time column falls inside a window.
-func (d *Driver) Range(ctx context.Context, res *database.Resource, opts database.RangeOptions) (database.ListResult, error) {
+func (d *Driver) Range(ctx context.Context, res *store.Resource, opts store.RangeOptions) (store.ListResult, error) {
 	if res == nil {
-		return database.ListResult{}, fmt.Errorf("timescale: Range needs a resource")
+		return store.ListResult{}, fmt.Errorf("timescale: Range needs a resource")
 	}
 	timeCol, err := d.timeColumn(res, opts.TimeColumn)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 
 	where, args, err := buildWhere(res, opts.Filter, timeCol, opts.Start, opts.End)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 
 	var total int64
 	countSQL := fmt.Sprintf("SELECT count(*) FROM %s %s", d.table(res), where)
 	if cerr := d.db.WithContext(ctx).Raw(countSQL, args...).Scan(&total).Error; cerr != nil {
-		return database.ListResult{}, fmt.Errorf("timescale: cannot count %s: %w", res.Table, cerr)
+		return store.ListResult{}, fmt.Errorf("timescale: cannot count %s: %w", res.Table, cerr)
 	}
 
 	direction := "ASC"
@@ -119,14 +119,14 @@ func (d *Driver) Range(ctx context.Context, res *database.Resource, opts databas
 
 	var rows []map[string]any
 	if serr := d.db.WithContext(ctx).Raw(sql, rowArgs...).Scan(&rows).Error; serr != nil {
-		return database.ListResult{}, fmt.Errorf("timescale: cannot read %s: %w", res.Table, serr)
+		return store.ListResult{}, fmt.Errorf("timescale: cannot read %s: %w", res.Table, serr)
 	}
 
 	items, err := core.RowsToMessages(res, rows)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
-	return database.ListResult{
+	return store.ListResult{
 		Items:         items,
 		NextPageToken: core.EncodeToken(offset, int64(len(rows)), total),
 		Total:         total,
@@ -138,7 +138,7 @@ func (d *Driver) Range(ctx context.Context, res *database.Resource, opts databas
 // The reduction runs in the database. That is the whole point of the method: a
 // caller without it pulls every row across the wire to average them in Go, which
 // is what a time-series store exists to stop.
-func (d *Driver) Aggregate(ctx context.Context, res *database.Resource, opts database.AggregateOptions) ([]database.Bucket, error) {
+func (d *Driver) Aggregate(ctx context.Context, res *store.Resource, opts store.AggregateOptions) ([]store.Bucket, error) {
 	if res == nil {
 		return nil, fmt.Errorf("timescale: Aggregate needs a resource")
 	}
@@ -199,9 +199,9 @@ func (d *Driver) Aggregate(ctx context.Context, res *database.Resource, opts dat
 		return nil, fmt.Errorf("timescale: cannot aggregate %s: %w", res.Table, serr)
 	}
 
-	out := make([]database.Bucket, 0, len(rows))
+	out := make([]store.Bucket, 0, len(rows))
 	for _, row := range rows {
-		b := database.Bucket{Values: make(map[string]float64, len(names))}
+		b := store.Bucket{Values: make(map[string]float64, len(names))}
 		if t, ok := row["bucket"].(time.Time); ok {
 			b.Start = t.UTC()
 		}
@@ -220,7 +220,7 @@ func (d *Driver) Aggregate(ctx context.Context, res *database.Resource, opts dat
 }
 
 // timeColumn resolves and validates the column a window applies to.
-func (d *Driver) timeColumn(res *database.Resource, name string) (string, error) {
+func (d *Driver) timeColumn(res *store.Resource, name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("timescale: a time column is required; there is no sensible default")
 	}
@@ -232,7 +232,7 @@ func (d *Driver) timeColumn(res *database.Resource, name string) (string, error)
 }
 
 // table returns the schema-qualified table a resource lives in.
-func (d *Driver) table(res *database.Resource) string {
+func (d *Driver) table(res *store.Resource) string {
 	schema := d.schema
 	if schema == "" {
 		schema = res.Schema
@@ -296,7 +296,7 @@ func toFloat(v any) float64 {
 // reads as an implementation detail. This catches it first and says what the
 // rule is and what the two ways out are, because a caller hitting this has a
 // design decision to make rather than a bug to fix.
-func (d *Driver) checkUniqueIndexes(ctx context.Context, res *database.Resource, timeColumn string) error {
+func (d *Driver) checkUniqueIndexes(ctx context.Context, res *store.Resource, timeColumn string) error {
 	type indexRow struct {
 		Name string
 		Cols string

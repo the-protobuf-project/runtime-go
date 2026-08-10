@@ -1,4 +1,4 @@
-// Package orm implements the backend-agnostic database.Driver over GORM. It is the
+// Package orm implements the backend-agnostic store.Driver over GORM. It is the
 // reference relational driver: a single dynamic engine that runs CRUD for every
 // resource using GORM's map + Table API, so no per-resource Go model types are
 // needed (the dynamic counterpart of protorm's statically-typed generated
@@ -6,7 +6,7 @@
 //
 // The *gorm.DB passed to New should be opened with gorm.Config{TranslateError:
 // true} so duplicate-key and not-found driver errors are reported as the GORM
-// sentinels this driver maps to database.ErrAlreadyExists / database.ErrNotFound.
+// sentinels this driver maps to store.ErrAlreadyExists / store.ErrNotFound.
 //
 // # Example
 //
@@ -14,7 +14,7 @@
 // model types, one dynamic engine for every resource:
 //
 //	db, _ := gorm.Open(sqlite.Open("app.db"), &gorm.Config{TranslateError: true})
-//	reg := database.NewRegistry(grpcx.Resources...) // descriptors from target=grpc
+//	reg := store.NewRegistry(grpcx.Resources...) // descriptors from target=grpc
 //	svc := adapter.New(orm.New(db), reg)          // wire svc into your gRPC server
 //
 // # Selecting a schema, and the capabilities beyond CRUD
@@ -27,7 +27,7 @@
 //	defer tenant.Close()
 //
 //	tenant.Schema.EnsureSchema(ctx, res)  // CREATE TABLE from the descriptor
-//	tenant.Tx.Run(ctx, func(tx *database.DB) error {
+//	tenant.Tx.Run(ctx, func(tx *store.DB) error {
 //	    _, err := tx.Create(ctx, res, book)
 //	    return err
 //	})
@@ -37,7 +37,7 @@
 // before it reaches a statement — in a multi-tenant program the name arrives
 // from a request, which is exactly the path an injected identifier travels.
 //
-// This driver implements [database.Transactional] and [database.Migrator]. The client
+// This driver implements [store.Transactional] and [store.Migrator]. The client
 // is yours: this package does not open it and does not close it, so
-// [database.DB.Close] is a no-op here.
+// [store.DB.Close] is a no-op here.
 package orm

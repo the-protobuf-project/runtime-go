@@ -14,8 +14,8 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 	"gorm.io/gorm"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/orm"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // openDB returns an empty in-memory database — no table, because the point of
@@ -159,7 +159,7 @@ func TestSelectingADatabaseRedirectsEveryResource(t *testing.T) {
 	}
 
 	// The same descriptor, the same key, a different tenant: not there.
-	if _, err := b.Get(ctx, res, "books/dune"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := b.Get(ctx, res, "books/dune"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("tenant_b sees tenant_a's record: err = %v, want ErrNotFound", err)
 	}
 	if _, err := a.Get(ctx, res, "books/dune"); err != nil {
@@ -180,7 +180,7 @@ func TestTransactionCommits(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, res, newBook(md, "books/a", "A", 2000, 1)); cerr != nil {
 			return cerr
 		}
@@ -191,7 +191,7 @@ func TestTransactionCommits(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	n, err := db.Count(ctx, res, database.ListOptions{})
+	n, err := db.Count(ctx, res, store.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestTransactionRollsBack(t *testing.T) {
 	}
 
 	boom := errors.New("second write failed")
-	err := db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, res, newBook(md, "books/a", "A", 2000, 1)); cerr != nil {
 			return cerr
 		}
@@ -223,7 +223,7 @@ func TestTransactionRollsBack(t *testing.T) {
 		t.Fatalf("Run error = %v, want the caller's error", err)
 	}
 
-	n, err := db.Count(ctx, res, database.ListOptions{})
+	n, err := db.Count(ctx, res, store.ListOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,12 +243,12 @@ func TestDatabaseNameIsChecked(t *testing.T) {
 		"1abc",
 		strings.Repeat("x", 64),
 	} {
-		if err := database.CheckDatabaseName(name); err == nil {
+		if err := store.CheckDatabaseName(name); err == nil {
 			t.Errorf("CheckDatabaseName(%q) was accepted", name)
 		}
 	}
 	for _, name := range []string{"", "orders", "tenant_a", "Tenant1", "_private"} {
-		if err := database.CheckDatabaseName(name); err != nil {
+		if err := store.CheckDatabaseName(name); err != nil {
 			t.Errorf("CheckDatabaseName(%q) = %v, want nil", name, err)
 		}
 	}
@@ -261,18 +261,18 @@ func TestDatabaseNameIsChecked(t *testing.T) {
 
 // A capability a backend does not have must refuse by name, not panic.
 func TestMissingCapabilitiesRefuseByName(t *testing.T) {
-	db := database.Build(bareDriver{}, "chain", "", nil)
+	db := store.Build(bareDriver{}, "chain", "", nil)
 	ctx := context.Background()
 
-	err := db.Tx.Run(ctx, func(*database.DB) error { return nil })
-	if !errors.Is(err, database.ErrUnimplemented) {
+	err := db.Tx.Run(ctx, func(*store.DB) error { return nil })
+	if !errors.Is(err, store.ErrUnimplemented) {
 		t.Errorf("Tx.Run = %v, want ErrUnimplemented", err)
 	}
 	if !strings.Contains(err.Error(), "chain") {
 		t.Errorf("the refusal does not name the backend: %v", err)
 	}
 
-	if err := db.Schema.EnsureSchema(ctx, nil); !errors.Is(err, database.ErrUnimplemented) {
+	if err := db.Schema.EnsureSchema(ctx, nil); !errors.Is(err, store.ErrUnimplemented) {
 		t.Errorf("Schema.EnsureSchema = %v, want ErrUnimplemented", err)
 	}
 }
@@ -287,7 +287,7 @@ func TestTypedViewChecksTheDescriptorAgainstTheType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	books, err := database.For[*dynamicpb.Message](db, res)
+	books, err := store.For[*dynamicpb.Message](db, res)
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
@@ -303,14 +303,14 @@ func TestTypedViewChecksTheDescriptorAgainstTheType(t *testing.T) {
 	}
 
 	// A resource with no New cannot allocate, and that is caught at wiring time.
-	if _, err := database.For[*dynamicpb.Message](db, &database.Resource{Name: "Broken"}); err == nil {
+	if _, err := store.For[*dynamicpb.Message](db, &store.Resource{Name: "Broken"}); err == nil {
 		t.Error("For accepted a resource with no New")
 	}
 }
 
 // bareDriver implements the CRUD contract and nothing else, standing in for a
 // backend with no transactions and no migrations.
-type bareDriver struct{ database.Driver }
+type bareDriver struct{ store.Driver }
 
 // countingDB wraps a *gorm.DB's logger to count the statements that reach the
 // server, so a test can assert what a listing costs rather than only what it
@@ -363,13 +363,13 @@ func TestOmitTotalHalvesTheQueries(t *testing.T) {
 
 	counter.counts.Store(0)
 	counter.selects.Store(0)
-	if _, lerr := db.List(ctx, res, database.ListOptions{PageSize: 10}); lerr != nil {
+	if _, lerr := db.List(ctx, res, store.ListOptions{PageSize: 10}); lerr != nil {
 		t.Fatal(lerr)
 	}
 	withTotal := counter.counts.Load()
 
 	counter.counts.Store(0)
-	out, err := db.List(ctx, res, database.ListOptions{PageSize: 10, OmitTotal: true})
+	out, err := db.List(ctx, res, store.ListOptions{PageSize: 10, OmitTotal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -421,7 +421,7 @@ func TestOmitTotalPagesToTheEnd(t *testing.T) {
 		if pages > total {
 			t.Fatal("paging did not terminate")
 		}
-		out, lerr := db.List(ctx, res, database.ListOptions{
+		out, lerr := db.List(ctx, res, store.ListOptions{
 			PageSize: 5, PageToken: token, OmitTotal: true,
 		})
 		if lerr != nil {

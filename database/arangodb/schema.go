@@ -7,10 +7,10 @@ import (
 	"github.com/arangodb/go-driver/v2/arangodb"
 	arangoshared "github.com/arangodb/go-driver/v2/arangodb/shared"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-var _ database.Transactional = (*Driver)(nil)
+var _ store.Transactional = (*Driver)(nil)
 
 // Run executes fn inside a stream transaction, committing when it returns nil
 // and rolling back on any error or panic.
@@ -29,7 +29,7 @@ var _ database.Transactional = (*Driver)(nil)
 //
 // The alternative was to make the caller declare collections, which would put an
 // ArangoDB detail into a contract that four other backends share.
-func (d *Driver) Run(ctx context.Context, fn func(tx *database.DB) error) error {
+func (d *Driver) Run(ctx context.Context, fn func(tx *store.DB) error) error {
 	if d.tx != nil {
 		return fmt.Errorf("arangodb: already inside a transaction")
 	}
@@ -60,7 +60,7 @@ func (d *Driver) Run(ctx context.Context, fn func(tx *database.DB) error) error 
 		_ = tx.Abort(context.WithoutCancel(ctx), nil)
 	}()
 
-	if ferr := fn(database.Build(bound, "arangodb", d.dbName, nil)); ferr != nil {
+	if ferr := fn(store.Build(bound, "arangodb", d.dbName, nil)); ferr != nil {
 		return ferr
 	}
 	if cerr := tx.Commit(ctx, nil); cerr != nil {
@@ -93,7 +93,7 @@ func (d *Driver) collectionNames(ctx context.Context, db arangodb.Database) ([]s
 // the collection on first write, but a column the descriptor marks Unique is
 // only unique if something enforces it — and a descriptor claiming a constraint
 // the store does not have is the quiet lie this contract exists to avoid.
-func (d *Driver) EnsureSchema(ctx context.Context, res *database.Resource) error {
+func (d *Driver) EnsureSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("arangodb: EnsureSchema needs a resource")
 	}
@@ -133,7 +133,7 @@ func (d *Driver) EnsureSchema(ctx context.Context, res *database.Resource) error
 }
 
 // DropSchema removes the collection res describes, and everything in it.
-func (d *Driver) DropSchema(ctx context.Context, res *database.Resource) error {
+func (d *Driver) DropSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("arangodb: DropSchema needs a resource")
 	}
@@ -151,7 +151,7 @@ func (d *Driver) DropSchema(ctx context.Context, res *database.Resource) error {
 }
 
 // HasSchema reports whether the collection res describes is already there.
-func (d *Driver) HasSchema(ctx context.Context, res *database.Resource) (bool, error) {
+func (d *Driver) HasSchema(ctx context.Context, res *store.Resource) (bool, error) {
 	if res == nil {
 		return false, fmt.Errorf("arangodb: HasSchema needs a resource")
 	}

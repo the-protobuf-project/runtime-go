@@ -6,7 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // The query fragments, kept apart from the operations that assemble them.
@@ -16,7 +17,7 @@ import (
 // request, and a time-series endpoint is exactly the shape that takes one.
 
 // buildWhere assembles the window and the filter into one clause.
-func buildWhere(res *database.Resource, filter, timeColumn string, start, end time.Time) (string, []any, error) {
+func buildWhere(res *store.Resource, filter, timeColumn string, start, end time.Time) (string, []any, error) {
 	var (
 		clauses []string
 		args    []any
@@ -52,21 +53,22 @@ func buildWhere(res *database.Resource, filter, timeColumn string, start, end ti
 // `column op value` with = != > >= < <=. Small because a backend that took the
 // whole grammar and honored part of it would return the wrong rows with nothing
 // to say it ignored something.
-func parseFilter(res *database.Resource, expr string) ([]string, []any, error) {
+func parseFilter(res *store.Resource, expr string) ([]string, []any, error) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return nil, nil, nil
 	}
 
 	var (
-		clauses []string
-		args    []any
+		parts []string
+		args  []any
 	)
-	for _, raw := range splitConjunction(expr) {
-		column, op, value, err := parseClause(raw)
-		if err != nil {
-			return nil, nil, fmt.Errorf("timescale: %w", err)
-		}
+	clauses, perr := core.ParseFilter(expr)
+	if perr != nil {
+		return nil, nil, fmt.Errorf("timescale: %w", perr)
+	}
+	for _, c := range clauses {
+		column, op, value := c.Column, c.Op, c.Value
 		col, ok := res.LookupColumn(column)
 		if !ok {
 			return nil, nil, fmt.Errorf(
@@ -76,14 +78,14 @@ func parseFilter(res *database.Resource, expr string) ([]string, []any, error) {
 		if cerr != nil {
 			return nil, nil, fmt.Errorf("timescale: filter on %q: %w", column, cerr)
 		}
-		clauses = append(clauses, fmt.Sprintf("%s %s ?", quote(col.Name), sqlOperator(op)))
+		parts = append(parts, fmt.Sprintf("%s %s ?", quote(col.Name), sqlOperator(op)))
 		args = append(args, typed)
 	}
-	return clauses, args, nil
+	return parts, args, nil
 }
 
 // columnNames resolves a list of column names through the descriptor.
-func columnNames(res *database.Resource, names []string) ([]string, error) {
+func columnNames(res *store.Resource, names []string) ([]string, error) {
 	out := make([]string, 0, len(names))
 	for _, name := range names {
 		col, ok := res.LookupColumn(name)
@@ -96,14 +98,14 @@ func columnNames(res *database.Resource, names []string) ([]string, error) {
 }
 
 // reduction renders one reduction and the name its result takes.
-func reduction(res *database.Resource, r database.Reduction) (expr, alias string, err error) {
+func reduction(res *store.Resource, r store.Reduction) (expr, alias string, err error) {
 	fn, ok := reducers[r.Func]
 	if !ok {
 		return "", "", fmt.Errorf(
 			"timescale: %q is not a reduction this contract defines; it accepts count, sum, avg, min and max", r.Func)
 	}
 
-	if r.Func == database.Count {
+	if r.Func == store.Count {
 		alias = r.As
 		if alias == "" {
 			alias = "count"
@@ -117,7 +119,7 @@ func reduction(res *database.Resource, r database.Reduction) (expr, alias string
 			"timescale: resource %q has no column %q to %s", res.Name, r.Column, r.Func)
 	}
 	switch col.Kind {
-	case database.KindInt, database.KindUint, database.KindFloat:
+	case store.KindInt, store.KindUint, store.KindFloat:
 	default:
 		return "", "", fmt.Errorf(
 			"timescale: %s over %q is not meaningful; it is %v, not a number", r.Func, r.Column, col.Kind)
@@ -133,89 +135,12 @@ func reduction(res *database.Resource, r database.Reduction) (expr, alias string
 // reducers is the closed set, mapped to SQL. Closed because an open one would be
 // the backend's own expression language passing through a contract that claims
 // to be portable.
-var reducers = map[database.Reducer]string{
-	database.Count: "count",
-	database.Sum:   "sum",
-	database.Avg:   "avg",
-	database.Min:   "min",
-	database.Max:   "max",
-}
-
-// splitConjunction breaks an expression on AND, outside quotes.
-func splitConjunction(expr string) []string {
-	var (
-		out     []string
-		current strings.Builder
-		quoteCh rune
-	)
-	runes := []rune(expr)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		switch {
-		case quoteCh != 0:
-			current.WriteRune(r)
-			if r == quoteCh {
-				quoteCh = 0
-			}
-		case r == '"' || r == '\'':
-			quoteCh = r
-			current.WriteRune(r)
-		case isAndAt(runes, i):
-			out = append(out, current.String())
-			current.Reset()
-			i += 2
-		default:
-			current.WriteRune(r)
-		}
-	}
-	if s := strings.TrimSpace(current.String()); s != "" {
-		out = append(out, s)
-	}
-	return out
-}
-
-// isAndAt reports whether a bare AND starts at i.
-func isAndAt(runes []rune, i int) bool {
-	if i+3 > len(runes) {
-		return false
-	}
-	if !strings.EqualFold(string(runes[i:i+3]), "AND") {
-		return false
-	}
-	before := i == 0 || runes[i-1] == ' '
-	after := i+3 == len(runes) || runes[i+3] == ' '
-	return before && after
-}
-
-// operators, longest first so ">=" is not read as ">".
-var operators = []string{">=", "<=", "!=", "=", ">", "<"}
-
-// parseClause splits one comparison into its parts.
-func parseClause(clause string) (column, op, value string, err error) {
-	clause = strings.TrimSpace(clause)
-	for _, candidate := range operators {
-		if i := strings.Index(clause, candidate); i > 0 {
-			column = strings.TrimSpace(clause[:i])
-			op = candidate
-			value = strings.TrimSpace(clause[i+len(candidate):])
-			if column == "" || value == "" {
-				return "", "", "", fmt.Errorf("filter clause %q is incomplete", clause)
-			}
-			return column, op, unquote(value), nil
-		}
-	}
-	return "", "", "", fmt.Errorf(
-		"filter clause %q is not understood; this backend accepts conjunctions of `column op value` with = != > >= < <=", clause)
-}
-
-// unquote strips a matching pair of surrounding quotes.
-func unquote(s string) string {
-	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
-			return s[1 : len(s)-1]
-		}
-	}
-	return s
+var reducers = map[store.Reducer]string{
+	store.Count: "count",
+	store.Sum:   "sum",
+	store.Avg:   "avg",
+	store.Min:   "min",
+	store.Max:   "max",
 }
 
 // sqlOperator maps a comparison to SQL, where "=" is already right.
@@ -229,33 +154,33 @@ func sqlOperator(op string) string {
 // coerce turns a filter's textual value into the type its column stores, so a
 // comparison against a number is a number rather than text the database has to
 // cast on every row.
-func coerce(kind database.Kind, raw string) (any, error) {
+func coerce(kind store.Kind, raw string) (any, error) {
 	switch kind {
-	case database.KindInt, database.KindEnum:
+	case store.KindInt, store.KindEnum:
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an integer", raw)
 		}
 		return n, nil
-	case database.KindUint:
+	case store.KindUint:
 		n, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an unsigned integer", raw)
 		}
 		return n, nil
-	case database.KindFloat:
+	case store.KindFloat:
 		f, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a number", raw)
 		}
 		return f, nil
-	case database.KindBool:
+	case store.KindBool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a boolean", raw)
 		}
 		return b, nil
-	case database.KindTimestamp:
+	case store.KindTimestamp:
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an RFC 3339 timestamp", raw)

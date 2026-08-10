@@ -1,69 +1,52 @@
 package database
 
-import "google.golang.org/protobuf/proto"
+import "github.com/the-protobuf-project/runtime-go/database/store"
 
-// ListOptions controls pagination, ordering, and filtering for List and Count.
-// It is shaped after AIP-132 (page_size / page_token) rather than SQL
-// limit/offset, so the same options translate to a relational query, an
-// eth_call range, or a subgraph GraphQL query. A driver that cannot honor a
-// field (e.g. an on-chain driver that delegates filtering to a subgraph) is
-// free to ignore it.
-type ListOptions struct {
-	// PageSize caps the number of records returned; <= 0 means the driver default.
-	PageSize int32
+// ListOption narrows or pages a listing.
+//
+// Options rather than a struct so a call says only what it means: a listing that
+// wants twenty of something reads as Page(20) rather than as a literal with four
+// zero fields, and a backend can gain a way to narrow a read without changing
+// any signature.
+type ListOption func(*store.ListOptions)
 
-	// PageToken is an opaque continuation token from a previous List response.
-	// Drivers encode whatever they need into it; the adapter passes it through.
-	PageToken string
-
-	// OrderBy is an AIP-132 order expression, e.g. "title desc". Optional.
-	OrderBy string
-
-	// Filter is an AIP-160 filter expression. Optional; backends that lack
-	// server-side filtering ignore it.
-	Filter string
-
-	// OmitTotal skips computing [ListResult.Total], which is then -1.
-	//
-	// It halves the cost of a listing. Every relational and document backend
-	// here answers a page with two queries — one to count the matching rows and
-	// one to read the page — and the count is the expensive half, because it
-	// touches every matching row while the page touches only the ones returned.
-	// A caller that renders "page 3 of 47" needs it; one that renders a feed
-	// with a Next button does not, and pays double for a number nobody reads.
-	//
-	// Paging still works: a backend that skips the count reads one row past the
-	// page to learn whether another exists, which costs a row rather than a
-	// scan.
-	OmitTotal bool
+// Page caps how many records come back.
+func Page(n int) ListOption {
+	return func(o *store.ListOptions) { o.PageSize = int32(n) }
 }
 
-// ListResult is what a Driver.List returns: the page of records plus the
-// AIP-132 continuation token and total size. NextPageToken is empty on the last
-// page; Total is the count of records matching the filter ignoring pagination,
-// or -1 when a backend cannot compute it cheaply.
-type ListResult struct {
-	Items         []proto.Message
-	NextPageToken string
-	Total         int64
+// Where narrows a listing with an AIP-160 expression.
+//
+// Every backend here accepts conjunctions of `column op value` with
+// = != > >= < <= and refuses anything else by name. That is a small fraction of
+// the grammar, and the smallness is deliberate: a store that accepted the whole
+// thing and honored part of it would return the wrong records with nothing to
+// say it had ignored something.
+//
+//	books.List(ctx, database.Where("published_year >= 1984"), database.Page(20))
+func Where(filter string) ListOption {
+	return func(o *store.ListOptions) { o.Filter = filter }
 }
 
-// WriteResult is returned by Create and Update. For a synchronous backend (a SQL
-// database) Pending is false and Message holds the persisted record. For an
-// asynchronous backend (a blockchain) Pending is true: the write was submitted
-// but not finalized, Message holds the optimistic value, and Metadata carries
-// backend handles (e.g. {"txHash": "0x…", "operation": "operations/…"}) that the
-// adapter surfaces as a long-running operation rather than pretending the write
-// completed synchronously.
-type WriteResult struct {
-	// Message is the resulting record. For a pending write it is the submitted
-	// value, not a confirmed read-back.
-	Message proto.Message
+// OrderBy sorts a listing, e.g. "published_year desc".
+func OrderBy(expr string) ListOption {
+	return func(o *store.ListOptions) { o.OrderBy = expr }
+}
 
-	// Pending is true when the backend has accepted but not finalized the write.
-	Pending bool
+// pageToken continues a listing from where the last page ended. It is unexported
+// because the token is opaque by contract — a caller passes back what List
+// handed it, which [Coll.All] does on its behalf.
+func pageToken(token string) ListOption {
+	return func(o *store.ListOptions) { o.PageToken = token }
+}
 
-	// Metadata carries backend-specific handles for a pending write. Nil for a
-	// synchronous result.
-	Metadata map[string]string
+// listOptions folds the options into the shape the layer underneath takes.
+func listOptions(opts []ListOption) store.ListOptions {
+	var o store.ListOptions
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	return o
 }

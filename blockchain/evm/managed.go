@@ -11,13 +11,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // fillManaged supplies generated keys and audit timestamps. onCreate generates
 // keys and sets both create and update timestamps; otherwise only AutoUpdate
 // columns are touched.
-func fillManaged(res *database.Resource, cols map[string]any, onCreate bool) {
+func fillManaged(res *store.Resource, cols map[string]any, onCreate bool) {
 	now := time.Now().UTC()
 	for _, c := range res.Columns {
 		switch {

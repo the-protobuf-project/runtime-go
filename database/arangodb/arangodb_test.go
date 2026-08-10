@@ -24,8 +24,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/arangodb"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 const dialTimeout = 2 * time.Second
@@ -44,10 +44,10 @@ func endpoint() string {
 }
 
 type fixture struct {
-	db     *database.DB
-	user   *database.Resource
-	org    *database.Resource
-	member *database.Resource
+	db     *store.DB
+	user   *store.Resource
+	org    *store.Resource
+	member *store.Resource
 	md     protoreflect.MessageDescriptor
 	edgeMD protoreflect.MessageDescriptor
 }
@@ -77,36 +77,36 @@ func setup(t *testing.T) fixture {
 	t.Cleanup(func() { _ = client.Close() })
 
 	md, edgeMD := schemas(t)
-	userRes := &database.Resource{
+	userRes := &store.Resource{
 		Name: "User", Table: "users", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "email", Field: "email", Kind: database.KindString, Unique: true},
-			{Name: "age", Field: "age", Kind: database.KindInt},
-			{Name: "avatar", Field: "avatar", Kind: database.KindBytes},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "email", Field: "email", Kind: store.KindString, Unique: true},
+			{Name: "age", Field: "age", Kind: store.KindInt},
+			{Name: "avatar", Field: "avatar", Kind: store.KindBytes},
 		},
 	}
-	orgRes := &database.Resource{
+	orgRes := &store.Resource{
 		Name: "Org", Table: "orgs", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "email", Field: "email", Kind: database.KindString},
-			{Name: "age", Field: "age", Kind: database.KindInt},
-			{Name: "avatar", Field: "avatar", Kind: database.KindBytes},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "email", Field: "email", Kind: store.KindString},
+			{Name: "age", Field: "age", Kind: store.KindInt},
+			{Name: "avatar", Field: "avatar", Kind: store.KindBytes},
 		},
 	}
-	memberRes := &database.Resource{
+	memberRes := &store.Resource{
 		Name: "MemberOf", Table: "member_of", PKColumn: "id", IsEdge: true,
 		New: func() proto.Message { return dynamicpb.NewMessage(edgeMD) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true},
-			{Name: "role", Field: "role", Kind: database.KindString},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true},
+			{Name: "role", Field: "role", Kind: store.KindString},
 		},
 	}
 
-	reg := database.NewRegistry(*userRes, *orgRes, *memberRes)
+	reg := store.NewRegistry(*userRes, *orgRes, *memberRes)
 	p := arangodb.NewProvider(client, arangodb.WithRegistry(reg))
 
 	name := fmt.Sprintf("itest_%d_%d", os.Getpid(), seq.Add(1))
@@ -122,7 +122,7 @@ func setup(t *testing.T) fixture {
 		_ = db.Close()
 	})
 
-	for _, r := range []*database.Resource{userRes, orgRes, memberRes} {
+	for _, r := range []*store.Resource{userRes, orgRes, memberRes} {
 		if err := db.Schema.EnsureSchema(t.Context(), r); err != nil {
 			t.Fatalf("EnsureSchema %s: %v", r.Name, err)
 		}
@@ -213,10 +213,10 @@ func TestCRUD(t *testing.T) {
 	if err := f.db.Delete(ctx, f.user, "users/ada"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := f.db.Get(ctx, f.user, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := f.db.Get(ctx, f.user, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get after delete = %v, want ErrNotFound", err)
 	}
-	if err := f.db.Delete(ctx, f.user, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if err := f.db.Delete(ctx, f.user, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Delete of a missing record = %v, want ErrNotFound", err)
 	}
 }
@@ -276,10 +276,10 @@ func TestDuplicateAndUnique(t *testing.T) {
 	if _, err := f.db.Create(ctx, f.user, newUser(f.md, "users/a", "a@x.com", 1, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.db.Create(ctx, f.user, newUser(f.md, "users/a", "b@x.com", 2, nil)); !errors.Is(err, database.ErrAlreadyExists) {
+	if _, err := f.db.Create(ctx, f.user, newUser(f.md, "users/a", "b@x.com", 2, nil)); !errors.Is(err, store.ErrAlreadyExists) {
 		t.Errorf("duplicate key = %v, want ErrAlreadyExists", err)
 	}
-	if _, err := f.db.Create(ctx, f.user, newUser(f.md, "users/b", "a@x.com", 2, nil)); !errors.Is(err, database.ErrAlreadyExists) {
+	if _, err := f.db.Create(ctx, f.user, newUser(f.md, "users/b", "a@x.com", 2, nil)); !errors.Is(err, store.ErrAlreadyExists) {
 		t.Errorf("duplicate unique column = %v, want ErrAlreadyExists", err)
 	}
 }
@@ -295,7 +295,7 @@ func TestListPagesFiltersAndOrders(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if total, err := f.db.Count(ctx, f.user, database.ListOptions{}); err != nil || total != n {
+	if total, err := f.db.Count(ctx, f.user, store.ListOptions{}); err != nil || total != n {
 		t.Fatalf("Count = %d, %v; want %d", total, err, n)
 	}
 
@@ -305,7 +305,7 @@ func TestListPagesFiltersAndOrders(t *testing.T) {
 		if pages > n {
 			t.Fatal("paging did not terminate")
 		}
-		out, err := f.db.List(ctx, f.user, database.ListOptions{PageSize: 10, PageToken: token})
+		out, err := f.db.List(ctx, f.user, store.ListOptions{PageSize: 10, PageToken: token})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -326,7 +326,7 @@ func TestListPagesFiltersAndOrders(t *testing.T) {
 		}
 	}
 
-	out, err := f.db.List(ctx, f.user, database.ListOptions{Filter: "age >= 20"})
+	out, err := f.db.List(ctx, f.user, store.ListOptions{Filter: "age >= 20"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +334,7 @@ func TestListPagesFiltersAndOrders(t *testing.T) {
 		t.Errorf("filter returned %d items, total %d; want 5 and 5", len(out.Items), out.Total)
 	}
 
-	desc, err := f.db.List(ctx, f.user, database.ListOptions{OrderBy: "id desc", PageSize: 3})
+	desc, err := f.db.List(ctx, f.user, store.ListOptions{OrderBy: "id desc", PageSize: 3})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,10 +342,10 @@ func TestListPagesFiltersAndOrders(t *testing.T) {
 		t.Errorf("first descending id = %q, want users/24", first)
 	}
 
-	if _, err := f.db.List(ctx, f.user, database.ListOptions{Filter: "nosuch = 1"}); err == nil {
+	if _, err := f.db.List(ctx, f.user, store.ListOptions{Filter: "nosuch = 1"}); err == nil {
 		t.Error("a filter naming an unknown column was accepted")
 	}
-	if _, err := f.db.List(ctx, f.user, database.ListOptions{Filter: "age LIKE 3"}); err == nil {
+	if _, err := f.db.List(ctx, f.user, store.ListOptions{Filter: "age LIKE 3"}); err == nil {
 		t.Error("a filter this backend cannot honor was accepted rather than refused")
 	}
 }
@@ -354,7 +354,7 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	err := f.db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := f.db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, f.user, newUser(f.md, "users/a", "a@x.com", 1, nil)); cerr != nil {
 			return cerr
 		}
@@ -364,12 +364,12 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if n, _ := f.db.Count(ctx, f.user, database.ListOptions{}); n != 2 {
+	if n, _ := f.db.Count(ctx, f.user, store.ListOptions{}); n != 2 {
 		t.Errorf("committed %d records, want 2", n)
 	}
 
 	boom := errors.New("second write failed")
-	err = f.db.Tx.Run(ctx, func(tx *database.DB) error {
+	err = f.db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, f.user, newUser(f.md, "users/c", "c@x.com", 3, nil)); cerr != nil {
 			return cerr
 		}
@@ -378,7 +378,7 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("Run error = %v, want the caller's error", err)
 	}
-	if n, _ := f.db.Count(ctx, f.user, database.ListOptions{}); n != 2 {
+	if n, _ := f.db.Count(ctx, f.user, store.ListOptions{}); n != 2 {
 		t.Errorf("%d records after a rollback, want 2 — the transaction leaked a write", n)
 	}
 }
@@ -387,7 +387,7 @@ func TestBulk(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	batcher, ok := f.db.Driver.(database.Batcher)
+	batcher, ok := f.db.Driver.(store.Batcher)
 	if !ok {
 		t.Fatal("the arangodb driver does not implement Batcher")
 	}
@@ -428,8 +428,8 @@ func TestConnectAndNeighbors(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ada := database.Ref{Resource: "User", Key: "users/ada"}
-	acme := database.Ref{Resource: "Org", Key: "orgs/acme"}
+	ada := store.Ref{Resource: "User", Key: "users/ada"}
+	acme := store.Ref{Resource: "Org", Key: "orgs/acme"}
 
 	edge, err := f.db.Graph.Connect(ctx, f.member, ada, acme, nil)
 	if err != nil {
@@ -442,8 +442,8 @@ func TestConnectAndNeighbors(t *testing.T) {
 		t.Errorf("edge endpoints = %v -> %v", edge.From, edge.To)
 	}
 
-	edges, err := f.db.Graph.Neighbors(ctx, ada, database.TraverseOptions{
-		Types: []string{"MemberOf"}, Direction: database.Outbound,
+	edges, err := f.db.Graph.Neighbors(ctx, ada, store.TraverseOptions{
+		Types: []string{"MemberOf"}, Direction: store.Outbound,
 	})
 	if err != nil {
 		t.Fatalf("Neighbors: %v", err)
@@ -459,8 +459,8 @@ func TestConnectAndNeighbors(t *testing.T) {
 	}
 
 	// Inbound finds it from the other end.
-	back, err := f.db.Graph.Neighbors(ctx, acme, database.TraverseOptions{
-		Types: []string{"MemberOf"}, Direction: database.Inbound,
+	back, err := f.db.Graph.Neighbors(ctx, acme, store.TraverseOptions{
+		Types: []string{"MemberOf"}, Direction: store.Inbound,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -472,7 +472,7 @@ func TestConnectAndNeighbors(t *testing.T) {
 	if err := f.db.Graph.Disconnect(ctx, f.member, edge.Key); err != nil {
 		t.Fatalf("Disconnect: %v", err)
 	}
-	edges, _ = f.db.Graph.Neighbors(ctx, ada, database.TraverseOptions{Types: []string{"MemberOf"}})
+	edges, _ = f.db.Graph.Neighbors(ctx, ada, store.TraverseOptions{Types: []string{"MemberOf"}})
 	if len(edges) != 0 {
 		t.Errorf("%d edges survived Disconnect", len(edges))
 	}
@@ -490,10 +490,10 @@ func TestConnectRefusesAMissingEndpoint(t *testing.T) {
 	}
 	_, err := f.db.Graph.Connect(ctx,
 		f.member,
-		database.Ref{Resource: "User", Key: "users/ada"},
-		database.Ref{Resource: "Org", Key: "orgs/ghost"},
+		store.Ref{Resource: "User", Key: "users/ada"},
+		store.Ref{Resource: "Org", Key: "orgs/ghost"},
 		nil)
-	if !errors.Is(err, database.ErrNotFound) {
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Connect to a missing endpoint = %v, want ErrNotFound", err)
 	}
 }
@@ -511,14 +511,14 @@ func TestTraverseWalksMultipleHops(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ref := func(id string) database.Ref { return database.Ref{Resource: "User", Key: id} }
+	ref := func(id string) store.Ref { return store.Ref{Resource: "User", Key: id} }
 	for i := range 3 {
 		if _, err := f.db.Graph.Connect(ctx, f.member, ref(ids[i]), ref(ids[i+1]), nil); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	paths, err := f.db.Graph.Traverse(ctx, ref("users/a"), database.TraverseOptions{
+	paths, err := f.db.Graph.Traverse(ctx, ref("users/a"), store.TraverseOptions{
 		Types: []string{"MemberOf"}, MaxDepth: 3,
 	})
 	if err != nil {
@@ -546,7 +546,7 @@ func TestTraverseWalksMultipleHops(t *testing.T) {
 	}
 
 	// A shallower bound stops earlier.
-	shallow, err := f.db.Graph.Traverse(ctx, ref("users/a"), database.TraverseOptions{
+	shallow, err := f.db.Graph.Traverse(ctx, ref("users/a"), store.TraverseOptions{
 		Types: []string{"MemberOf"}, MaxDepth: 1,
 	})
 	if err != nil {
@@ -563,8 +563,8 @@ func TestTraverseRequiresADepth(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	_, err := f.db.Graph.Traverse(ctx, database.Ref{Resource: "User", Key: "users/a"},
-		database.TraverseOptions{Types: []string{"MemberOf"}})
+	_, err := f.db.Graph.Traverse(ctx, store.Ref{Resource: "User", Key: "users/a"},
+		store.TraverseOptions{Types: []string{"MemberOf"}})
 	if err == nil {
 		t.Fatal("an unbounded traversal was accepted")
 	}
@@ -589,13 +589,13 @@ func TestEdgePropertiesRoundTrip(t *testing.T) {
 	props := dynamicpb.NewMessage(f.edgeMD)
 	props.ProtoReflect().Set(f.edgeMD.Fields().ByName("role"), protoreflect.ValueOfString("admin"))
 
-	ada := database.Ref{Resource: "User", Key: "users/ada"}
-	acme := database.Ref{Resource: "Org", Key: "orgs/acme"}
+	ada := store.Ref{Resource: "User", Key: "users/ada"}
+	acme := store.Ref{Resource: "Org", Key: "orgs/acme"}
 	if _, err := f.db.Graph.Connect(ctx, f.member, ada, acme, props); err != nil {
 		t.Fatalf("Connect with props: %v", err)
 	}
 
-	edges, err := f.db.Graph.Neighbors(ctx, ada, database.TraverseOptions{
+	edges, err := f.db.Graph.Neighbors(ctx, ada, store.TraverseOptions{
 		Types: []string{"MemberOf"}, WithProps: true,
 	})
 	if err != nil {
@@ -613,7 +613,7 @@ func TestEdgePropertiesRoundTrip(t *testing.T) {
 	}
 
 	// And without asking, the fields are not paid for.
-	plain, err := f.db.Graph.Neighbors(ctx, ada, database.TraverseOptions{Types: []string{"MemberOf"}})
+	plain, err := f.db.Graph.Neighbors(ctx, ada, store.TraverseOptions{Types: []string{"MemberOf"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -631,22 +631,22 @@ func TestGraphInsideATransaction(t *testing.T) {
 	if _, err := f.db.Create(ctx, f.org, newUser(f.md, "orgs/acme", "acme@x.com", 0, nil)); err != nil {
 		t.Fatal(err)
 	}
-	acme := database.Ref{Resource: "Org", Key: "orgs/acme"}
+	acme := store.Ref{Resource: "Org", Key: "orgs/acme"}
 
-	err := f.db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := f.db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, f.user, newUser(f.md, "users/new", "new@x.com", 1, nil)); cerr != nil {
 			return cerr
 		}
 		_, cerr := tx.Graph.Connect(ctx, f.member,
-			database.Ref{Resource: "User", Key: "users/new"}, acme, nil)
+			store.Ref{Resource: "User", Key: "users/new"}, acme, nil)
 		return cerr
 	})
 	if err != nil {
 		t.Fatalf("record and edge in one transaction: %v", err)
 	}
 
-	edges, err := f.db.Graph.Neighbors(ctx, database.Ref{Resource: "User", Key: "users/new"},
-		database.TraverseOptions{Types: []string{"MemberOf"}})
+	edges, err := f.db.Graph.Neighbors(ctx, store.Ref{Resource: "User", Key: "users/new"},
+		store.TraverseOptions{Types: []string{"MemberOf"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,12 +656,12 @@ func TestGraphInsideATransaction(t *testing.T) {
 
 	// And a rollback takes both halves with it.
 	boom := errors.New("no")
-	_ = f.db.Tx.Run(ctx, func(tx *database.DB) error {
+	_ = f.db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, f.user, newUser(f.md, "users/gone", "gone@x.com", 1, nil)); cerr != nil {
 			return cerr
 		}
 		if _, cerr := tx.Graph.Connect(ctx, f.member,
-			database.Ref{Resource: "User", Key: "users/gone"}, acme, nil); cerr != nil {
+			store.Ref{Resource: "User", Key: "users/gone"}, acme, nil); cerr != nil {
 			return cerr
 		}
 		return boom
@@ -675,11 +675,11 @@ func TestGraphMigrator(t *testing.T) {
 	ctx := context.Background()
 	f := setup(t)
 
-	gm, ok := f.db.Driver.(database.GraphMigrator)
+	gm, ok := f.db.Driver.(store.GraphMigrator)
 	if !ok {
 		t.Fatal("the arangodb driver does not implement GraphMigrator")
 	}
-	defs := []database.EdgeDefinition{{
+	defs := []store.EdgeDefinition{{
 		Edge: "MemberOf", From: []string{"User"}, To: []string{"Org"},
 	}}
 	if err := gm.EnsureGraph(ctx, "org_chart", defs); err != nil {
@@ -731,8 +731,8 @@ func TestGraphNeedsARegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = db.Graph.Neighbors(ctx, database.Ref{Resource: "User", Key: "x"},
-		database.TraverseOptions{Types: []string{"MemberOf"}, MaxDepth: 1})
+	_, err = db.Graph.Neighbors(ctx, store.Ref{Resource: "User", Key: "x"},
+		store.TraverseOptions{Types: []string{"MemberOf"}, MaxDepth: 1})
 	if err == nil {
 		t.Fatal("a graph walk without a registry was accepted")
 	}
@@ -762,7 +762,7 @@ func TestSetDatabaseRequiresAnExistingDatabase(t *testing.T) {
 	defer func() { _ = client.Close() }()
 
 	_, err = arangodb.NewProvider(client).SetDatabase(ctx, "itest_does_not_exist_ever")
-	if !errors.Is(err, database.ErrNotFound) {
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetDatabase on a missing database = %v, want ErrNotFound", err)
 	}
 }

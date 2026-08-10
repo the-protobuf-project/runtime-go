@@ -23,8 +23,8 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/cache"
 	rediscache "github.com/the-protobuf-project/runtime-go/cache/redis"
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/cached"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 const dialTimeout = 2 * time.Second
@@ -75,12 +75,12 @@ func liveCache(t *testing.T) cached.Cache {
 	return cached.FromAside(cdb, cache.TTL(time.Minute))
 }
 
-func liveSetup(t *testing.T) (*database.DB, *fakeStore, *database.Resource, protoreflect.MessageDescriptor) {
+func liveSetup(t *testing.T) (*store.DB, *fakeStore, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	md := bookMD(t)
 	res := bookRes(md)
 	backing := newFakeStore(res)
-	db := cached.Wrap(database.Build(backing, "fake", "test", nil), liveCache(t))
+	db := cached.Wrap(store.Build(backing, "fake", "test", nil), liveCache(t))
 	return db, backing, res, md
 }
 
@@ -114,7 +114,7 @@ func TestLiveRoundTrip(t *testing.T) {
 	}
 }
 
-// database.ErrNotFound has to survive the trip into the cache's vocabulary and back
+// store.ErrNotFound has to survive the trip into the cache's vocabulary and back
 // out of it, or the gRPC adapter stops mapping a missing record to NotFound.
 func TestLiveNotFoundSurvivesTranslation(t *testing.T) {
 	ctx := context.Background()
@@ -122,8 +122,8 @@ func TestLiveNotFoundSurvivesTranslation(t *testing.T) {
 
 	for range 5 {
 		_, err := db.Get(ctx, res, "books/ghost")
-		if !errors.Is(err, database.ErrNotFound) {
-			t.Fatalf("Get = %v, want database.ErrNotFound", err)
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("Get = %v, want store.ErrNotFound", err)
 		}
 	}
 	// And the absence was remembered on the server, not just refused each time.
@@ -136,7 +136,7 @@ func TestLiveCreateClearsARememberedAbsence(t *testing.T) {
 	ctx := context.Background()
 	db, _, res, md := liveSetup(t)
 
-	if _, err := db.Get(ctx, res, "books/new"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "books/new"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("first Get = %v, want ErrNotFound", err)
 	}
 	if _, err := db.Create(ctx, res, newBook(md, "books/new", "New", nil)); err != nil {
@@ -175,7 +175,7 @@ func TestLiveWriteIsVisibleImmediately(t *testing.T) {
 	if err := db.Delete(ctx, res, "books/a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Get(ctx, res, "books/a"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "books/a"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a deleted record was still served: %v", err)
 	}
 }

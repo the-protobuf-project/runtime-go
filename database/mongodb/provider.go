@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Provider is a MongoDB backend bound to a client you own.
@@ -14,7 +14,7 @@ type Provider struct {
 	client *Client
 }
 
-var _ database.Provider = (*Provider)(nil)
+var _ store.Provider = (*Provider)(nil)
 
 // NewProvider returns a provider over client.
 func NewProvider(client *Client) *Provider { return &Provider{client: client} }
@@ -28,17 +28,17 @@ func (p *Provider) Backend() string { return "mongodb" }
 // than a naming convention: dropping one leaves its neighbors alone, and two
 // tenants cannot read each other's collections by constructing a key. That is
 // what makes this the natural backend for a multi-tenant program, and why the
-// name overrides [database.Resource.Schema] for every resource driven through the
+// name overrides [store.Resource.Schema] for every resource driven through the
 // result.
 //
 // An empty name keeps each resource in the database its descriptor names.
 // Nothing is derived either way — one client serves every database — so
-// [database.DB.Close] is a no-op and closing the client stays your job.
-func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, error) {
+// [store.DB.Close] is a no-op and closing the client stays your job.
+func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, error) {
 	if p.client == nil || p.client.inner == nil {
-		return nil, fmt.Errorf("%w: mongodb provider has no client", database.ErrBadConfig)
+		return nil, fmt.Errorf("%w: mongodb provider has no client", store.ErrBadConfig)
 	}
-	if err := database.CheckDatabaseName(name); err != nil {
+	if err := store.CheckDatabaseName(name); err != nil {
 		return nil, fmt.Errorf("mongodb: %w", err)
 	}
 
@@ -50,15 +50,15 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, 
 	}
 
 	d := &Driver{client: p.client.inner, db: name}
-	return database.Build(d, "mongodb", name, nil), nil
+	return store.Build(d, "mongodb", name, nil), nil
 }
 
 // DropDatabase removes a database and everything in it.
 func (p *Provider) DropDatabase(ctx context.Context, name string) error {
 	if p.client == nil || p.client.inner == nil {
-		return fmt.Errorf("%w: mongodb provider has no client", database.ErrBadConfig)
+		return fmt.Errorf("%w: mongodb provider has no client", store.ErrBadConfig)
 	}
-	if err := database.CheckDatabaseName(name); err != nil {
+	if err := store.CheckDatabaseName(name); err != nil {
 		return fmt.Errorf("mongodb: %w", err)
 	}
 	if name == "" {

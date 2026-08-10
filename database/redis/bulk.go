@@ -8,7 +8,7 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // batchSize is how many keys go into one pipeline. Large enough that the
@@ -25,7 +25,7 @@ const batchSize = 256
 //
 // A nil entry is a record that was not there — not an error, because a listing
 // racing a delete is ordinary and the caller decides what a gap means.
-func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []string) ([]proto.Message, error) {
+func (d *Driver) GetMany(ctx context.Context, res *store.Resource, keys []string) ([]proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("redis: GetMany needs a resource")
 	}
@@ -76,8 +76,8 @@ func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []str
 // So this exists for the shape rather than the speed, and stops at the first
 // failure with the results so far. Where uniqueness is not in play, the write
 // path is a single SET NX and a loop is already close to a pipeline's cost.
-func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []proto.Message) ([]database.WriteResult, error) {
-	out := make([]database.WriteResult, 0, len(msgs))
+func (d *Driver) CreateMany(ctx context.Context, res *store.Resource, msgs []proto.Message) ([]store.WriteResult, error) {
+	out := make([]store.WriteResult, 0, len(msgs))
 	for i, msg := range msgs {
 		r, err := d.Create(ctx, res, msg)
 		if err != nil {

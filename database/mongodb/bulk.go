@@ -8,8 +8,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // batchSize is how many keys go into one bulk read.
@@ -22,7 +22,7 @@ const batchSize = 512
 // partial success no caller could act on: with the contract returning one result
 // per message in order, a gap in the middle has no way to say which message it
 // belonged to.
-func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []proto.Message) ([]database.WriteResult, error) {
+func (d *Driver) CreateMany(ctx context.Context, res *store.Resource, msgs []proto.Message) ([]store.WriteResult, error) {
 	if res == nil {
 		return nil, fmt.Errorf("mongodb: CreateMany needs a resource")
 	}
@@ -35,9 +35,9 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 	}
 
 	docs := make([]any, 0, len(msgs))
-	out := make([]database.WriteResult, 0, len(msgs))
+	out := make([]store.WriteResult, 0, len(msgs))
 	for i, msg := range msgs {
-		cols, cerr := database.MessageToColumns(res, msg)
+		cols, cerr := store.MessageToColumns(res, msg)
 		if cerr != nil {
 			return nil, fmt.Errorf("mongodb: CreateMany stopped at index %d: %w", i, cerr)
 		}
@@ -46,12 +46,12 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 		if derr != nil {
 			return nil, fmt.Errorf("mongodb: CreateMany stopped at index %d: %w", i, derr)
 		}
-		filled, merr := database.ColumnsToMessage(res, cols)
+		filled, merr := store.ColumnsToMessage(res, cols)
 		if merr != nil {
 			return nil, fmt.Errorf("mongodb: CreateMany stopped at index %d: %w", i, merr)
 		}
 		docs = append(docs, doc)
-		out = append(out, database.WriteResult{Message: filled})
+		out = append(out, store.WriteResult{Message: filled})
 	}
 
 	result, err := coll.InsertMany(ctx, docs)
@@ -61,7 +61,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 			written = len(result.InsertedIDs)
 		}
 		if mongo.IsDuplicateKeyError(err) {
-			return out[:written], fmt.Errorf("%w: %s at index %d", database.ErrAlreadyExists, res.Name, written)
+			return out[:written], fmt.Errorf("%w: %s at index %d", store.ErrAlreadyExists, res.Name, written)
 		}
 		return out[:written], fmt.Errorf("mongodb: cannot insert into %s: %w", res.Table, err)
 	}
@@ -74,7 +74,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 // order afterwards — a $in returns them in whatever order the index walked. A
 // nil entry is a document that was not there, which is ordinary for a bulk read
 // racing a delete.
-func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []string) ([]proto.Message, error) {
+func (d *Driver) GetMany(ctx context.Context, res *store.Resource, keys []string) ([]proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("mongodb: GetMany needs a resource")
 	}
@@ -111,7 +111,7 @@ func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []str
 				_ = cur.Close(ctx)
 				return nil, merr
 			}
-			key, kerr := database.KeyOf(res, msg)
+			key, kerr := store.KeyOf(res, msg)
 			if kerr != nil {
 				_ = cur.Close(ctx)
 				return nil, kerr

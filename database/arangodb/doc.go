@@ -1,4 +1,4 @@
-// Package arangodb implements the backend-agnostic database.Driver over
+// Package arangodb implements the backend-agnostic store.Driver over
 // ArangoDB, and the graph capability alongside it.
 //
 // A resource is a collection, a record is a document, and the descriptor's
@@ -24,8 +24,8 @@
 //
 // # What it has
 //
-// [database.Transactional], [database.Migrator], [database.Batcher],
-// [database.Graph] and [database.GraphMigrator]. No [database.Watcher]: ArangoDB
+// [store.Transactional], [store.Migrator], [store.Batcher],
+// [store.Graph] and [store.GraphMigrator]. No [store.Watcher]: ArangoDB
 // has a write-ahead-log tail, but it reports raw operations against collections
 // rather than changes to records, and adapting it would mean guessing which
 // resource a document belonged to. The capability is absent rather than
@@ -33,7 +33,7 @@
 //
 // # The registry
 //
-// Graph operations need one, record operations do not. A [database.Ref] carries
+// Graph operations need one, record operations do not. A [store.Ref] carries
 // a resource name rather than a collection, because that is the only identifier
 // portable to Neo4j — so turning one back into a collection means holding the
 // registry the rest of the program already has. Supply it with [WithRegistry];
@@ -59,7 +59,7 @@
 //
 // # Filtering is a small subset, deliberately
 //
-// [database.ListOptions.Filter] accepts conjunctions of `column op value` with
+// [store.ListOptions.Filter] accepts conjunctions of `column op value` with
 // = != > >= < <=, bound rather than interpolated, and refuses anything else by
 // name. AQL could express far more; a filter that arrives from a request and
 // reaches a query is not the place to find that out.

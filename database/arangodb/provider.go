@@ -7,7 +7,7 @@ import (
 	"github.com/arangodb/go-driver/v2/arangodb"
 	arangoshared "github.com/arangodb/go-driver/v2/arangodb/shared"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Option configures a provider.
@@ -18,19 +18,19 @@ type Option func(*Provider)
 //
 // A program that only stores records never needs it: every CRUD call is handed
 // the descriptor it operates on. A program that walks edges does, because a
-// [database.Ref] carries a name rather than a collection — which is what makes
+// [store.Ref] carries a name rather than a collection — which is what makes
 // it portable to Neo4j, where collections do not exist.
-func WithRegistry(reg *database.Registry) Option {
+func WithRegistry(reg *store.Registry) Option {
 	return func(p *Provider) { p.registry = reg }
 }
 
 // Provider is an ArangoDB backend bound to a client you own.
 type Provider struct {
 	client   *Client
-	registry *database.Registry
+	registry *store.Registry
 }
 
-var _ database.Provider = (*Provider)(nil)
+var _ store.Provider = (*Provider)(nil)
 
 // NewProvider returns a provider over client.
 func NewProvider(client *Client, opts ...Option) *Provider {
@@ -55,11 +55,11 @@ func (p *Provider) Backend() string { return "arangodb" }
 // It must already exist. Creating one is [Provider.EnsureDatabase], kept
 // separate because a typo in a database name should not silently produce an
 // empty database that every read then reports as missing records.
-func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, error) {
+func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, error) {
 	if p.client == nil || p.client.inner == nil {
-		return nil, fmt.Errorf("%w: arangodb provider has no client", database.ErrBadConfig)
+		return nil, fmt.Errorf("%w: arangodb provider has no client", store.ErrBadConfig)
 	}
-	if err := database.CheckDatabaseName(name); err != nil {
+	if err := store.CheckDatabaseName(name); err != nil {
 		return nil, fmt.Errorf("arangodb: %w", err)
 	}
 	if name == "" {
@@ -71,22 +71,22 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, 
 	// a request handler.
 	if _, err := p.client.inner.GetDatabase(ctx, name, &arangodb.GetDatabaseOptions{SkipExistCheck: false}); err != nil {
 		if arangoshared.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: database %q", database.ErrNotFound, name)
+			return nil, fmt.Errorf("%w: database %q", store.ErrNotFound, name)
 		}
 		return nil, fmt.Errorf("arangodb: database %q is not reachable: %w", name, err)
 	}
 
 	d := &Driver{client: p.client.inner, dbName: name, registry: p.registry}
-	return database.Build(d, "arangodb", name, nil), nil
+	return store.Build(d, "arangodb", name, nil), nil
 }
 
 // EnsureDatabase creates a database if it is not already there, and is safe to
 // call repeatedly.
 func (p *Provider) EnsureDatabase(ctx context.Context, name string) error {
 	if p.client == nil || p.client.inner == nil {
-		return fmt.Errorf("%w: arangodb provider has no client", database.ErrBadConfig)
+		return fmt.Errorf("%w: arangodb provider has no client", store.ErrBadConfig)
 	}
-	if err := database.CheckDatabaseName(name); err != nil {
+	if err := store.CheckDatabaseName(name); err != nil {
 		return fmt.Errorf("arangodb: %w", err)
 	}
 	if _, err := p.client.inner.CreateDatabase(ctx, name, nil); err != nil && !arangoshared.IsConflict(err) {
@@ -98,9 +98,9 @@ func (p *Provider) EnsureDatabase(ctx context.Context, name string) error {
 // DropDatabase removes a database and everything in it.
 func (p *Provider) DropDatabase(ctx context.Context, name string) error {
 	if p.client == nil || p.client.inner == nil {
-		return fmt.Errorf("%w: arangodb provider has no client", database.ErrBadConfig)
+		return fmt.Errorf("%w: arangodb provider has no client", store.ErrBadConfig)
 	}
-	if err := database.CheckDatabaseName(name); err != nil {
+	if err := store.CheckDatabaseName(name); err != nil {
 		return fmt.Errorf("arangodb: %w", err)
 	}
 	db, err := p.client.inner.GetDatabase(ctx, name, &arangodb.GetDatabaseOptions{SkipExistCheck: true})

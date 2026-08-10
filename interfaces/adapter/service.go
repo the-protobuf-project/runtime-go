@@ -8,26 +8,26 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Service routes AIP standard-method calls to a database.Driver, resolving each
+// Service routes AIP standard-method calls to a store.Driver, resolving each
 // request's resource by name and mapping driver errors to gRPC status codes. It
 // is backend-agnostic: the same Service drives a relational, EVM, or Fabric
 // driver. Generated shims hold a *Service and call its helpers.
 type Service struct {
-	driver   database.Driver
-	registry *database.Registry
+	driver   store.Driver
+	registry *store.Registry
 }
 
 // New returns a Service backed by driver, resolving resources through registry.
-func New(driver database.Driver, registry *database.Registry) *Service {
+func New(driver store.Driver, registry *store.Registry) *Service {
 	return &Service{driver: driver, registry: registry}
 }
 
 // Driver returns the underlying driver (handy for advanced shims, e.g. the LRO
 // path that needs backend-specific operation handles).
-func (s *Service) Driver() database.Driver { return s.driver }
+func (s *Service) Driver() store.Driver { return s.driver }
 
 // Get returns the record of the named resource with the given key.
 func (s *Service) Get(ctx context.Context, resource, key string) (proto.Message, error) {
@@ -40,20 +40,20 @@ func (s *Service) Get(ctx context.Context, resource, key string) (proto.Message,
 }
 
 // Create stores msg as a new record of the named resource.
-func (s *Service) Create(ctx context.Context, resource string, msg proto.Message) (database.WriteResult, error) {
+func (s *Service) Create(ctx context.Context, resource string, msg proto.Message) (store.WriteResult, error) {
 	res, err := s.resource(resource)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	wr, err := s.driver.Create(ctx, res, msg)
 	return wr, toStatus(err)
 }
 
 // Update overwrites the record identified by msg's primary key.
-func (s *Service) Update(ctx context.Context, resource string, msg proto.Message) (database.WriteResult, error) {
+func (s *Service) Update(ctx context.Context, resource string, msg proto.Message) (store.WriteResult, error) {
 	res, err := s.resource(resource)
 	if err != nil {
-		return database.WriteResult{}, err
+		return store.WriteResult{}, err
 	}
 	wr, err := s.driver.Update(ctx, res, msg)
 	return wr, toStatus(err)
@@ -69,10 +69,10 @@ func (s *Service) Delete(ctx context.Context, resource, key string) error {
 }
 
 // List returns a page of the named resource per opts.
-func (s *Service) List(ctx context.Context, resource string, opts database.ListOptions) (database.ListResult, error) {
+func (s *Service) List(ctx context.Context, resource string, opts store.ListOptions) (store.ListResult, error) {
 	res, err := s.resource(resource)
 	if err != nil {
-		return database.ListResult{}, err
+		return store.ListResult{}, err
 	}
 	lr, err := s.driver.List(ctx, res, opts)
 	return lr, toStatus(err)
@@ -81,7 +81,7 @@ func (s *Service) List(ctx context.Context, resource string, opts database.ListO
 // resource resolves a registered descriptor, returning an Internal status (a
 // generated shim referencing an unregistered resource is a wiring bug, not a
 // client error).
-func (s *Service) resource(name string) (*database.Resource, error) {
+func (s *Service) resource(name string) (*store.Resource, error) {
 	res, err := s.registry.Resource(name)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -95,13 +95,13 @@ func toStatus(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, database.ErrNotFound):
+	case errors.Is(err, store.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, database.ErrAlreadyExists):
+	case errors.Is(err, store.ErrAlreadyExists):
 		return status.Error(codes.AlreadyExists, err.Error())
-	case errors.Is(err, database.ErrUnimplemented):
+	case errors.Is(err, store.ErrUnimplemented):
 		return status.Error(codes.Unimplemented, err.Error())
-	case errors.Is(err, database.ErrPermissionDenied):
+	case errors.Is(err, store.ErrPermissionDenied):
 		return status.Error(codes.PermissionDenied, err.Error())
 	default:
 		// Already a status error? Preserve its code.

@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // batchSize is how many keys go into one bulk read.
@@ -20,7 +20,7 @@ const batchSize = 512
 // It stops at the first failure and returns the results written before it, which
 // is what the contract's one-result-per-message shape allows a caller to act on:
 // a gap in the middle has no way to say which message it belonged to.
-func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []proto.Message) ([]database.WriteResult, error) {
+func (d *Driver) CreateMany(ctx context.Context, res *store.Resource, msgs []proto.Message) ([]store.WriteResult, error) {
 	if res == nil {
 		return nil, fmt.Errorf("arangodb: CreateMany needs a resource")
 	}
@@ -33,9 +33,9 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 	}
 
 	docs := make([]map[string]any, 0, len(msgs))
-	out := make([]database.WriteResult, 0, len(msgs))
+	out := make([]store.WriteResult, 0, len(msgs))
 	for i, msg := range msgs {
-		cols, cerr := database.MessageToColumns(res, msg)
+		cols, cerr := store.MessageToColumns(res, msg)
 		if cerr != nil {
 			return nil, fmt.Errorf("arangodb: CreateMany stopped at index %d: %w", i, cerr)
 		}
@@ -44,12 +44,12 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 		if derr != nil {
 			return nil, fmt.Errorf("arangodb: CreateMany stopped at index %d: %w", i, derr)
 		}
-		filled, merr := database.ColumnsToMessage(res, cols)
+		filled, merr := store.ColumnsToMessage(res, cols)
 		if merr != nil {
 			return nil, fmt.Errorf("arangodb: CreateMany stopped at index %d: %w", i, merr)
 		}
 		docs = append(docs, doc)
-		out = append(out, database.WriteResult{Message: filled})
+		out = append(out, store.WriteResult{Message: filled})
 	}
 
 	reader, err := coll.CreateDocuments(ctx, docs)
@@ -73,7 +73,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 		}
 		if meta.Error != nil && *meta.Error {
 			return out[:written], fmt.Errorf("%w: %s at index %d",
-				database.ErrAlreadyExists, res.Name, written)
+				store.ErrAlreadyExists, res.Name, written)
 		}
 		written++
 	}
@@ -85,7 +85,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *database.Resource, msgs []
 // One query per batch rather than one read per key, with the results put back in
 // order afterwards. A nil entry is a document that was not there, which is
 // ordinary for a bulk read racing a delete.
-func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []string) ([]proto.Message, error) {
+func (d *Driver) GetMany(ctx context.Context, res *store.Resource, keys []string) ([]proto.Message, error) {
 	if res == nil {
 		return nil, fmt.Errorf("arangodb: GetMany needs a resource")
 	}
@@ -124,7 +124,7 @@ func (d *Driver) GetMany(ctx context.Context, res *database.Resource, keys []str
 				_ = cur.Close()
 				return nil, merr
 			}
-			key, kerr := database.KeyOf(res, msg)
+			key, kerr := store.KeyOf(res, msg)
 			if kerr != nil {
 				_ = cur.Close()
 				return nil, kerr

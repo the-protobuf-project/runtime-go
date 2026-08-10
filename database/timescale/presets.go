@@ -3,7 +3,7 @@ package timescale
 import (
 	"time"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Chunk intervals worth starting from.
@@ -20,21 +20,21 @@ import (
 var (
 	// Hourly suits high-frequency data queried in minutes — device telemetry,
 	// request traces.
-	Hourly = database.HypertableOptions{ChunkInterval: time.Hour}
+	Hourly = store.HypertableOptions{ChunkInterval: time.Hour}
 
 	// Daily suits data queried in hours or days, which is most of it.
-	Daily = database.HypertableOptions{ChunkInterval: 24 * time.Hour}
+	Daily = store.HypertableOptions{ChunkInterval: 24 * time.Hour}
 
 	// Weekly suits sparse data queried in weeks or months — daily rollups,
 	// billing records.
-	Weekly = database.HypertableOptions{ChunkInterval: 7 * 24 * time.Hour}
+	Weekly = store.HypertableOptions{ChunkInterval: 7 * 24 * time.Hour}
 )
 
 // PartitionedBy returns a copy of opts partitioned on the given column.
 //
 //	db.Series.EnsureHypertable(ctx, res,
 //	    timescale.PartitionedBy(timescale.Daily, "observed_at"))
-func PartitionedBy(opts database.HypertableOptions, column string) database.HypertableOptions {
+func PartitionedBy(opts store.HypertableOptions, column string) store.HypertableOptions {
 	opts.TimeColumn = column
 	return opts
 }
@@ -43,7 +43,7 @@ func PartitionedBy(opts database.HypertableOptions, column string) database.Hype
 //
 // A standing instruction rather than a one-off: the policy runs on its own
 // afterwards, and shortening it later discards what no longer fits.
-func KeptFor(opts database.HypertableOptions, d time.Duration) database.HypertableOptions {
+func KeptFor(opts store.HypertableOptions, d time.Duration) store.HypertableOptions {
 	opts.Retention = d
 	return opts
 }

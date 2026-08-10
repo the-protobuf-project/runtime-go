@@ -5,14 +5,14 @@ import (
 
 	"github.com/arangodb/go-driver/v2/arangodb"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Registers the graph driver with the database registry, so
-// database.NewDriver(database.ArangoDB, client) works once this package is
+// store.NewDriver(store.ArangoDB, client) works once this package is
 // linked in — whether imported directly or for its side effect alone.
 func init() {
-	database.Register(database.ArangoDB, open)
+	store.Register(store.ArangoDB, open)
 }
 
 // open adapts the registry's untyped config to this driver's constructor.
@@ -20,10 +20,10 @@ func init() {
 // A driver built this way has no resource registry, so it stores and reads
 // records but refuses to walk edges — [WithRegistry] is how a program that
 // needs the graph half supplies one, and it goes through [NewProvider].
-func open(cfg any) (database.Driver, error) {
+func open(cfg any) (store.Driver, error) {
 	client, ok := cfg.(arangodb.Client)
 	if !ok {
-		return nil, fmt.Errorf("%w: arangodb driver needs an arangodb.Client, got %T", database.ErrBadConfig, cfg)
+		return nil, fmt.Errorf("%w: arangodb driver needs an arangodb.Client, got %T", store.ErrBadConfig, cfg)
 	}
 	return &Driver{client: client}, nil
 }

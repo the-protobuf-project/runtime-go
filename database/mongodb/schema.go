@@ -11,7 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Run executes fn inside a transaction, committing when it returns nil and
@@ -24,7 +24,7 @@ import (
 // rather than pretending. A single-node replica set is enough and is what the
 // compose file in this module runs, precisely so that a program tested here
 // behaves the same in production.
-func (d *Driver) Run(ctx context.Context, fn func(*database.DB) error) error {
+func (d *Driver) Run(ctx context.Context, fn func(*store.DB) error) error {
 	session, err := d.client.StartSession()
 	if err != nil {
 		return fmt.Errorf("mongodb: cannot start a session: %w", err)
@@ -37,7 +37,7 @@ func (d *Driver) Run(ctx context.Context, fn func(*database.DB) error) error {
 		// selection, so a call inside behaves exactly as it would outside except
 		// for when it becomes visible.
 		bound := &sessionDriver{Driver: d, ctx: sc}
-		return nil, fn(database.Build(bound, "mongodb", d.db, nil))
+		return nil, fn(store.Build(bound, "mongodb", d.db, nil))
 	})
 	if err != nil {
 		return err
@@ -56,31 +56,31 @@ type sessionDriver struct {
 	ctx context.Context
 }
 
-func (s *sessionDriver) Create(_ context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (s *sessionDriver) Create(_ context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	return s.Driver.Create(s.ctx, res, msg)
 }
 
-func (s *sessionDriver) Get(_ context.Context, res *database.Resource, key string) (proto.Message, error) {
+func (s *sessionDriver) Get(_ context.Context, res *store.Resource, key string) (proto.Message, error) {
 	return s.Driver.Get(s.ctx, res, key)
 }
 
-func (s *sessionDriver) Update(_ context.Context, res *database.Resource, msg proto.Message) (database.WriteResult, error) {
+func (s *sessionDriver) Update(_ context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
 	return s.Driver.Update(s.ctx, res, msg)
 }
 
-func (s *sessionDriver) Delete(_ context.Context, res *database.Resource, key string) error {
+func (s *sessionDriver) Delete(_ context.Context, res *store.Resource, key string) error {
 	return s.Driver.Delete(s.ctx, res, key)
 }
 
-func (s *sessionDriver) List(_ context.Context, res *database.Resource, opts database.ListOptions) (database.ListResult, error) {
+func (s *sessionDriver) List(_ context.Context, res *store.Resource, opts store.ListOptions) (store.ListResult, error) {
 	return s.Driver.List(s.ctx, res, opts)
 }
 
-func (s *sessionDriver) Count(_ context.Context, res *database.Resource, opts database.ListOptions) (int64, error) {
+func (s *sessionDriver) Count(_ context.Context, res *store.Resource, opts store.ListOptions) (int64, error) {
 	return s.Driver.Count(s.ctx, res, opts)
 }
 
-func (s *sessionDriver) Exists(_ context.Context, res *database.Resource, key string) (bool, error) {
+func (s *sessionDriver) Exists(_ context.Context, res *store.Resource, key string) (bool, error) {
 	return s.Driver.Exists(s.ctx, res, key)
 }
 
@@ -91,7 +91,7 @@ func (s *sessionDriver) Exists(_ context.Context, res *database.Resource, key st
 // deferred is the unique index. A column the descriptor marks Unique is only
 // unique if something enforces it, and a descriptor that claims a constraint the
 // store does not have is exactly the quiet lie this contract exists to avoid.
-func (d *Driver) EnsureSchema(ctx context.Context, res *database.Resource) error {
+func (d *Driver) EnsureSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("mongodb: EnsureSchema needs a resource")
 	}
@@ -122,7 +122,7 @@ func (d *Driver) EnsureSchema(ctx context.Context, res *database.Resource) error
 }
 
 // DropSchema removes the collection res describes, and everything in it.
-func (d *Driver) DropSchema(ctx context.Context, res *database.Resource) error {
+func (d *Driver) DropSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("mongodb: DropSchema needs a resource")
 	}
@@ -137,7 +137,7 @@ func (d *Driver) DropSchema(ctx context.Context, res *database.Resource) error {
 }
 
 // HasSchema reports whether the collection res describes is already there.
-func (d *Driver) HasSchema(ctx context.Context, res *database.Resource) (bool, error) {
+func (d *Driver) HasSchema(ctx context.Context, res *store.Resource) (bool, error) {
 	if res == nil {
 		return false, fmt.Errorf("mongodb: HasSchema needs a resource")
 	}

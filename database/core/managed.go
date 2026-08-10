@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // FillManaged supplies the values a driver provides rather than the message: a
@@ -19,9 +19,9 @@ import (
 //
 // It works on the column map rather than the message so the same code serves a
 // backend writing columns and one writing a document — and so a driver can pass
-// the filled map straight to [database.ColumnsToMessage] and hand the caller back
+// the filled map straight to [store.ColumnsToMessage] and hand the caller back
 // what was actually stored rather than what it was given.
-func FillManaged(res *database.Resource, cols map[string]any, onCreate bool) {
+func FillManaged(res *store.Resource, cols map[string]any, onCreate bool) {
 	now := time.Now().UTC()
 	for _, c := range res.Columns {
 		switch {
@@ -37,7 +37,7 @@ func FillManaged(res *database.Resource, cols map[string]any, onCreate bool) {
 
 // HasManaged reports whether a resource has any column a driver must fill,
 // so a backend can skip the round trip through the column map when none does.
-func HasManaged(res *database.Resource) bool {
+func HasManaged(res *store.Resource) bool {
 	for _, c := range res.Columns {
 		if c.Managed() {
 			return true

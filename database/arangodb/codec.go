@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // The system attributes ArangoDB owns. A stored document carries them and a
@@ -25,7 +25,7 @@ const (
 // The primary key moves to _key and every other column keeps its own name, so a
 // document written here is readable from arangosh and by anything else pointed
 // at the same collection.
-func toDocument(res *database.Resource, cols map[string]any) (map[string]any, error) {
+func toDocument(res *store.Resource, cols map[string]any) (map[string]any, error) {
 	doc := make(map[string]any, len(cols))
 	for name, value := range cols {
 		v := value
@@ -49,7 +49,7 @@ func toDocument(res *database.Resource, cols map[string]any) (map[string]any, er
 }
 
 // fromDocument turns a stored document back into a record.
-func fromDocument(res *database.Resource, doc map[string]any) (proto.Message, error) {
+func fromDocument(res *store.Resource, doc map[string]any) (proto.Message, error) {
 	cols := make(map[string]any, len(doc))
 	for name, value := range doc {
 		switch name {
@@ -62,7 +62,7 @@ func fromDocument(res *database.Resource, doc map[string]any) (proto.Message, er
 			cols[name] = fromStored(value)
 		}
 	}
-	return database.ColumnsToMessage(res, cols)
+	return store.ColumnsToMessage(res, cols)
 }
 
 // toStored narrows a bridge value to something the wire encoding carries.
@@ -72,19 +72,19 @@ func fromDocument(res *database.Resource, doc map[string]any) (proto.Message, er
 // bytes become base64, because JSON has no binary and the driver would
 // otherwise encode a []byte as an array of numbers that no other reader would
 // recognize as a blob.
-func toStored(res *database.Resource, column string, value any) any {
+func toStored(res *store.Resource, column string, value any) any {
 	col, ok := res.LookupColumn(column)
 	if !ok {
 		return value
 	}
 	switch col.Kind {
-	case database.KindTimestamp:
+	case store.KindTimestamp:
 		t, ok := value.(time.Time)
 		if !ok {
 			return value
 		}
 		return t.UTC().Format(time.RFC3339Nano)
-	case database.KindBytes:
+	case store.KindBytes:
 		b, ok := value.([]byte)
 		if !ok {
 			return value

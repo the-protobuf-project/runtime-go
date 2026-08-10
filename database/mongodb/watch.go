@@ -7,10 +7,10 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-var _ database.Watcher = (*Driver)(nil)
+var _ store.Watcher = (*Driver)(nil)
 
 // Watch delivers a change per event until ctx is done.
 //
@@ -26,12 +26,12 @@ var _ database.Watcher = (*Driver)(nil)
 //
 // # What a resume token is worth
 //
-// [database.WatchOptions.Resume] restarts just after a change already seen, so a
+// [store.WatchOptions.Resume] restarts just after a change already seen, so a
 // consumer that restarts does not miss what happened while it was gone — as long
 // as that point is still in the oplog. Past that the server refuses the token
 // and this reports it, rather than silently restarting from now and leaving a
 // gap nobody knows the size of.
-func (d *Driver) Watch(ctx context.Context, res *database.Resource, opts database.WatchOptions) (<-chan database.Change, error) {
+func (d *Driver) Watch(ctx context.Context, res *store.Resource, opts store.WatchOptions) (<-chan store.Change, error) {
 	if res == nil {
 		return nil, fmt.Errorf("mongodb: Watch needs a resource")
 	}
@@ -57,7 +57,7 @@ func (d *Driver) Watch(ctx context.Context, res *database.Resource, opts databas
 		return nil, fmt.Errorf("mongodb: cannot watch %s (change streams need a replica set): %w", res.Table, err)
 	}
 
-	out := make(chan database.Change)
+	out := make(chan store.Change)
 	go func() {
 		defer close(out)
 		defer func() { _ = cs.Close(context.WithoutCancel(ctx)) }()
@@ -88,32 +88,32 @@ type changeEvent struct {
 
 // decodeChange turns one change stream event into the contract's shape,
 // reporting whether it was one this contract can express.
-func decodeChange(res *database.Resource, raw bson.Raw) (database.Change, bool) {
+func decodeChange(res *store.Resource, raw bson.Raw) (store.Change, bool) {
 	var ev changeEvent
 	if err := bson.Unmarshal(raw, &ev); err != nil {
-		return database.Change{}, false
+		return store.Change{}, false
 	}
 
-	var kind database.ChangeKind
+	var kind store.ChangeKind
 	switch ev.OperationType {
 	case "insert":
-		kind = database.ChangeCreated
+		kind = store.ChangeCreated
 	case "update", "replace":
-		kind = database.ChangeUpdated
+		kind = store.ChangeUpdated
 	case "delete":
-		kind = database.ChangeDeleted
+		kind = store.ChangeDeleted
 	default:
 		// drop, rename, invalidate: real events, but not changes to a record,
 		// and inventing a Kind for them would make every consumer handle a case
 		// it has no answer for.
-		return database.Change{}, false
+		return store.Change{}, false
 	}
 
-	change := database.Change{Kind: kind, Resume: encodeResume(ev.ID)}
+	change := store.Change{Kind: kind, Resume: encodeResume(ev.ID)}
 	if id, ok := ev.DocumentKey["_id"]; ok {
 		change.Key = fmt.Sprint(id)
 	}
-	if kind != database.ChangeDeleted && len(ev.FullDocument) > 0 {
+	if kind != store.ChangeDeleted && len(ev.FullDocument) > 0 {
 		if msg, err := fromDocument(res, ev.FullDocument); err == nil {
 			change.Message = msg
 		}

@@ -26,8 +26,8 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/mongodb"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 const dialTimeout = 2 * time.Second
@@ -45,7 +45,7 @@ func testAddr() string {
 	return net.JoinHostPort(host, port)
 }
 
-func setup(t *testing.T) (*database.DB, *database.Resource, protoreflect.MessageDescriptor) {
+func setup(t *testing.T) (*store.DB, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	addr := testAddr()
 
@@ -107,16 +107,16 @@ func userMD(t *testing.T) protoreflect.MessageDescriptor {
 	return fd.Messages().Get(0)
 }
 
-func userRes(md protoreflect.MessageDescriptor) *database.Resource {
-	return &database.Resource{
+func userRes(md protoreflect.MessageDescriptor) *store.Resource {
+	return &store.Resource{
 		Name: "User", Table: "users", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "email", Field: "email", Kind: database.KindString, Unique: true},
-			{Name: "age", Field: "age", Kind: database.KindInt},
-			{Name: "avatar", Field: "avatar", Kind: database.KindBytes},
-			{Name: "credits", Field: "credits", Kind: database.KindUint},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "email", Field: "email", Kind: store.KindString, Unique: true},
+			{Name: "age", Field: "age", Kind: store.KindInt},
+			{Name: "avatar", Field: "avatar", Kind: store.KindBytes},
+			{Name: "credits", Field: "credits", Kind: store.KindUint},
 		},
 	}
 }
@@ -168,10 +168,10 @@ func TestCRUD(t *testing.T) {
 	if err := db.Delete(ctx, res, "users/ada"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := db.Get(ctx, res, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := db.Get(ctx, res, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get after delete = %v, want ErrNotFound", err)
 	}
-	if err := db.Delete(ctx, res, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if err := db.Delete(ctx, res, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Delete of a missing record = %v, want ErrNotFound", err)
 	}
 }
@@ -208,7 +208,7 @@ func TestCreateRefusesADuplicateKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.Create(ctx, res, newUser(md, "users/a", "b@example.com", 2, nil, 0))
-	if !errors.Is(err, database.ErrAlreadyExists) {
+	if !errors.Is(err, store.ErrAlreadyExists) {
 		t.Fatalf("second Create = %v, want ErrAlreadyExists", err)
 	}
 }
@@ -223,7 +223,7 @@ func TestUniqueColumnIsEnforced(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := db.Create(ctx, res, newUser(md, "users/b", "shared@example.com", 2, nil, 0))
-	if !errors.Is(err, database.ErrAlreadyExists) {
+	if !errors.Is(err, store.ErrAlreadyExists) {
 		t.Fatalf("duplicate email = %v, want ErrAlreadyExists", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestListPagesAndFilters(t *testing.T) {
 		}
 	}
 
-	total, err := db.Count(ctx, res, database.ListOptions{})
+	total, err := db.Count(ctx, res, store.ListOptions{})
 	if err != nil || total != n {
 		t.Fatalf("Count = %d, %v; want %d", total, err, n)
 	}
@@ -251,7 +251,7 @@ func TestListPagesAndFilters(t *testing.T) {
 		if pages > n {
 			t.Fatal("paging did not terminate")
 		}
-		out, lerr := db.List(ctx, res, database.ListOptions{PageSize: 10, PageToken: token})
+		out, lerr := db.List(ctx, res, store.ListOptions{PageSize: 10, PageToken: token})
 		if lerr != nil {
 			t.Fatal(lerr)
 		}
@@ -273,7 +273,7 @@ func TestListPagesAndFilters(t *testing.T) {
 	}
 
 	// The server does the filtering, so a page size means what it says.
-	out, err := db.List(ctx, res, database.ListOptions{Filter: "age >= 20"})
+	out, err := db.List(ctx, res, store.ListOptions{Filter: "age >= 20"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,10 +284,10 @@ func TestListPagesAndFilters(t *testing.T) {
 		t.Errorf("filtered Total = %d, want 5", out.Total)
 	}
 
-	if _, err := db.List(ctx, res, database.ListOptions{Filter: "nosuch = 1"}); err == nil {
+	if _, err := db.List(ctx, res, store.ListOptions{Filter: "nosuch = 1"}); err == nil {
 		t.Error("a filter naming an unknown column was accepted")
 	}
-	if _, err := db.List(ctx, res, database.ListOptions{Filter: "age LIKE 3"}); err == nil {
+	if _, err := db.List(ctx, res, store.ListOptions{Filter: "age LIKE 3"}); err == nil {
 		t.Error("a filter this backend cannot honor was accepted rather than refused")
 	}
 }
@@ -301,7 +301,7 @@ func TestListDescending(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	out, err := db.List(ctx, res, database.ListOptions{OrderBy: "id desc"})
+	out, err := db.List(ctx, res, store.ListOptions{OrderBy: "id desc"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	ctx := context.Background()
 	db, res, md := setup(t)
 
-	err := db.Tx.Run(ctx, func(tx *database.DB) error {
+	err := db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, res, newUser(md, "users/a", "a@x.com", 1, nil, 0)); cerr != nil {
 			return cerr
 		}
@@ -327,12 +327,12 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if n, _ := db.Count(ctx, res, database.ListOptions{}); n != 2 {
+	if n, _ := db.Count(ctx, res, store.ListOptions{}); n != 2 {
 		t.Errorf("committed %d records, want 2", n)
 	}
 
 	boom := errors.New("second write failed")
-	err = db.Tx.Run(ctx, func(tx *database.DB) error {
+	err = db.Tx.Run(ctx, func(tx *store.DB) error {
 		if _, cerr := tx.Create(ctx, res, newUser(md, "users/c", "c@x.com", 3, nil, 0)); cerr != nil {
 			return cerr
 		}
@@ -341,7 +341,7 @@ func TestTransactionCommitsAndRollsBack(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("Run error = %v, want the caller's error", err)
 	}
-	if n, _ := db.Count(ctx, res, database.ListOptions{}); n != 2 {
+	if n, _ := db.Count(ctx, res, store.ListOptions{}); n != 2 {
 		t.Errorf("%d records after a rollback, want 2 — the transaction leaked a write", n)
 	}
 }
@@ -371,7 +371,7 @@ func TestBulk(t *testing.T) {
 	ctx := context.Background()
 	db, res, md := setup(t)
 
-	batcher, ok := db.Driver.(database.Batcher)
+	batcher, ok := db.Driver.(store.Batcher)
 	if !ok {
 		t.Fatal("the mongodb driver does not implement Batcher")
 	}
@@ -412,7 +412,7 @@ func TestBulk(t *testing.T) {
 func TestWatchDeliversChanges(t *testing.T) {
 	db, res, md := setup(t)
 
-	watcher, ok := db.Driver.(database.Watcher)
+	watcher, ok := db.Driver.(store.Watcher)
 	if !ok {
 		t.Fatal("the mongodb driver does not implement Watcher")
 	}
@@ -420,7 +420,7 @@ func TestWatchDeliversChanges(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	changes, err := watcher.Watch(ctx, res, database.WatchOptions{})
+	changes, err := watcher.Watch(ctx, res, store.WatchOptions{})
 	if err != nil {
 		t.Skipf("change streams unavailable (needs a replica set): %v", err)
 	}
@@ -431,7 +431,7 @@ func TestWatchDeliversChanges(t *testing.T) {
 
 	select {
 	case c := <-changes:
-		if c.Kind != database.ChangeCreated {
+		if c.Kind != store.ChangeCreated {
 			t.Errorf("Kind = %v, want ChangeCreated", c.Kind)
 		}
 		if c.Key != "users/a" {
@@ -506,10 +506,10 @@ func TestDatabasesAreIsolated(t *testing.T) {
 	if _, err := a.Create(ctx, res, newUser(md, "users/ada", "ada@x.com", 1, nil, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Get(ctx, res, "users/ada"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := b.Get(ctx, res, "users/ada"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("tenant B sees tenant A's record: %v", err)
 	}
-	// The same unique value is free in the other database.
+	// The same unique value is free in the other store.
 	if _, err := b.Create(ctx, res, newUser(md, "users/ada", "ada@x.com", 1, nil, 0)); err != nil {
 		t.Errorf("tenant B could not use a value tenant A holds: %v", err)
 	}

@@ -14,8 +14,8 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 	"gorm.io/gorm"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/orm"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // bookMD builds a dynamic Book descriptor (id, title, published_year, genre) so
@@ -50,17 +50,17 @@ func bookMD(t *testing.T) protoreflect.MessageDescriptor {
 	return fd.Messages().Get(0)
 }
 
-func bookRes(md protoreflect.MessageDescriptor) *database.Resource {
-	return &database.Resource{
+func bookRes(md protoreflect.MessageDescriptor) *store.Resource {
+	return &store.Resource{
 		Name:     "Book",
 		Table:    "books",
 		PKColumn: "id",
 		New:      func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "id", Kind: database.KindString, PrimaryKey: true, NotNull: true},
-			{Name: "title", Field: "title", Kind: database.KindString, NotNull: true},
-			{Name: "published_year", Field: "published_year", Kind: database.KindInt},
-			{Name: "genre", Field: "genre", Kind: database.KindEnum, NotNull: true},
+		Columns: []store.Column{
+			{Name: "id", Field: "id", Kind: store.KindString, PrimaryKey: true, NotNull: true},
+			{Name: "title", Field: "title", Kind: store.KindString, NotNull: true},
+			{Name: "published_year", Field: "published_year", Kind: store.KindInt},
+			{Name: "genre", Field: "genre", Kind: store.KindEnum, NotNull: true},
 		},
 	}
 }
@@ -76,7 +76,7 @@ func newBook(md protoreflect.MessageDescriptor, id, title string, year int32, ge
 	return msg
 }
 
-func setup(t *testing.T) (*orm.Driver, *database.Resource, protoreflect.MessageDescriptor) {
+func setup(t *testing.T) (*orm.Driver, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -128,7 +128,7 @@ func TestDriverCRUD(t *testing.T) {
 	if _, err = d.Create(ctx, res, newBook(md, "books/hobbit", "The Hobbit", 1937, 1)); err != nil {
 		t.Fatalf("Create 2: %v", err)
 	}
-	lr, err := d.List(ctx, res, database.ListOptions{PageSize: 10, OrderBy: "id"})
+	lr, err := d.List(ctx, res, store.ListOptions{PageSize: 10, OrderBy: "id"})
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestDriverCRUD(t *testing.T) {
 	if err := d.Delete(ctx, res, "books/dune"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := d.Get(ctx, res, "books/dune"); !errors.Is(err, database.ErrNotFound) {
+	if _, err := d.Get(ctx, res, "books/dune"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Get after delete err = %v, want ErrNotFound", err)
 	}
 }
@@ -151,13 +151,13 @@ func TestDriverErrorMapping(t *testing.T) {
 	if _, err := d.Create(ctx, res, newBook(md, "books/dune", "Dune", 1965, 1)); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := d.Create(ctx, res, newBook(md, "books/dune", "Dup", 1965, 1)); !errors.Is(err, database.ErrAlreadyExists) {
+	if _, err := d.Create(ctx, res, newBook(md, "books/dune", "Dup", 1965, 1)); !errors.Is(err, store.ErrAlreadyExists) {
 		t.Fatalf("duplicate Create err = %v, want ErrAlreadyExists", err)
 	}
-	if _, err := d.Update(ctx, res, newBook(md, "books/missing", "X", 2000, 1)); !errors.Is(err, database.ErrNotFound) {
+	if _, err := d.Update(ctx, res, newBook(md, "books/missing", "X", 2000, 1)); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Update missing err = %v, want ErrNotFound", err)
 	}
-	if err := d.Delete(ctx, res, "books/missing"); !errors.Is(err, database.ErrNotFound) {
+	if err := d.Delete(ctx, res, "books/missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("Delete missing err = %v, want ErrNotFound", err)
 	}
 }
@@ -196,14 +196,14 @@ func TestDriverManagedColumns(t *testing.T) {
 		t.Fatalf("descriptor: %v", err)
 	}
 	md := fd.Messages().Get(0)
-	res := &database.Resource{
+	res := &store.Resource{
 		Name: "Note", Table: "notes", PKColumn: "id",
 		New: func() proto.Message { return dynamicpb.NewMessage(md) },
-		Columns: []database.Column{
-			{Name: "id", Field: "", Kind: database.KindString, PrimaryKey: true, NotNull: true, Generated: "ulid"},
-			{Name: "body", Field: "body", Kind: database.KindString, NotNull: true},
-			{Name: "created_at", Field: "", Kind: database.KindTimestamp, NotNull: true, AutoCreate: true},
-			{Name: "updated_at", Field: "", Kind: database.KindTimestamp, NotNull: true, AutoUpdate: true},
+		Columns: []store.Column{
+			{Name: "id", Field: "", Kind: store.KindString, PrimaryKey: true, NotNull: true, Generated: "ulid"},
+			{Name: "body", Field: "body", Kind: store.KindString, NotNull: true},
+			{Name: "created_at", Field: "", Kind: store.KindTimestamp, NotNull: true, AutoCreate: true},
+			{Name: "updated_at", Field: "", Kind: store.KindTimestamp, NotNull: true, AutoUpdate: true},
 		},
 	}
 
@@ -237,14 +237,14 @@ func TestDriverListPagination(t *testing.T) {
 			t.Fatalf("seed %s: %v", id, err)
 		}
 	}
-	first, err := d.List(ctx, res, database.ListOptions{PageSize: 2, OrderBy: "id"})
+	first, err := d.List(ctx, res, store.ListOptions{PageSize: 2, OrderBy: "id"})
 	if err != nil {
 		t.Fatalf("List page1: %v", err)
 	}
 	if len(first.Items) != 2 || first.NextPageToken == "" {
 		t.Fatalf("page1 items=%d next=%q, want 2 + token", len(first.Items), first.NextPageToken)
 	}
-	second, err := d.List(ctx, res, database.ListOptions{PageSize: 2, OrderBy: "id", PageToken: first.NextPageToken})
+	second, err := d.List(ctx, res, store.ListOptions{PageSize: 2, OrderBy: "id", PageToken: first.NextPageToken})
 	if err != nil {
 		t.Fatalf("List page2: %v", err)
 	}

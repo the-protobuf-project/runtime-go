@@ -6,7 +6,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // The unique-column bookkeeping, kept apart from the CRUD it serves.
@@ -35,12 +35,12 @@ type uniqueValue struct {
 // record has already proved. An empty value is skipped rather than reserved —
 // otherwise the first record with an unset optional column would lock every
 // other record out of leaving it unset.
-func uniqueValues(res *database.Resource, msg proto.Message) []uniqueValue {
+func uniqueValues(res *store.Resource, msg proto.Message) []uniqueValue {
 	var out []uniqueValue
 	if msg == nil {
 		return nil
 	}
-	cols, err := database.MessageToColumns(res, msg)
+	cols, err := store.MessageToColumns(res, msg)
 	if err != nil {
 		return nil
 	}
@@ -65,9 +65,9 @@ func uniqueValues(res *database.Resource, msg proto.Message) []uniqueValue {
 //
 // It reports the reservations it took so a caller can release them, and the
 // first value that was already held — a conflict rather than an error, because
-// it is an outcome the caller turns into [database.ErrAlreadyExists] with context
+// it is an outcome the caller turns into [store.ErrAlreadyExists] with context
 // only it has.
-func (d *Driver) claimUnique(ctx context.Context, res *database.Resource, msg proto.Message, key string) (claimed []claim, conflict string, err error) {
+func (d *Driver) claimUnique(ctx context.Context, res *store.Resource, msg proto.Message, key string) (claimed []claim, conflict string, err error) {
 	for _, u := range uniqueValues(res, msg) {
 		k := d.keys.unique(res, u.column, escape(u.value))
 		won, serr := d.rdb.SetNX(ctx, k, key, 0).Result()
@@ -93,7 +93,7 @@ func (d *Driver) claimUnique(ctx context.Context, res *database.Resource, msg pr
 //
 // The claim comes before the release, so a failure partway leaves the old
 // reservations intact rather than freeing a value the record still carries.
-func (d *Driver) moveUnique(ctx context.Context, res *database.Resource, old, next proto.Message, key string) (claimed []claim, conflict string, err error) {
+func (d *Driver) moveUnique(ctx context.Context, res *store.Resource, old, next proto.Message, key string) (claimed []claim, conflict string, err error) {
 	claimed, conflict, err = d.claimUnique(ctx, res, next, key)
 	if err != nil || conflict != "" {
 		return claimed, conflict, err

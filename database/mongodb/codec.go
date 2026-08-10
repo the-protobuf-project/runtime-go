@@ -11,7 +11,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/core"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // toDocument turns a column map into the BSON document stored on the server.
@@ -19,7 +20,7 @@ import (
 // The primary key moves to _id and every other column keeps its own name, so a
 // document written here is readable by anything that speaks MongoDB rather than
 // only by this program.
-func toDocument(res *database.Resource, cols map[string]any) (bson.M, error) {
+func toDocument(res *store.Resource, cols map[string]any) (bson.M, error) {
 	doc := make(bson.M, len(cols))
 	for name, value := range cols {
 		// An unset optional column is reported as nil by the bridge and stored
@@ -45,7 +46,7 @@ func toDocument(res *database.Resource, cols map[string]any) (bson.M, error) {
 }
 
 // fromDocument turns a stored document back into a column map for the bridge.
-func fromDocument(res *database.Resource, doc bson.M) (proto.Message, error) {
+func fromDocument(res *store.Resource, doc bson.M) (proto.Message, error) {
 	cols := make(map[string]any, len(doc))
 	for name, value := range doc {
 		if name == "_id" {
@@ -54,7 +55,7 @@ func fromDocument(res *database.Resource, doc bson.M) (proto.Message, error) {
 		}
 		cols[name] = fromBSON(value)
 	}
-	return database.ColumnsToMessage(res, cols)
+	return store.ColumnsToMessage(res, cols)
 }
 
 // toBSON narrows a bridge value to something BSON can carry.
@@ -65,13 +66,13 @@ func fromDocument(res *database.Resource, doc bson.M) (proto.Message, error) {
 // string instead — [fromBSON] reads it back — so a counter that runs past
 // 2^63 is slow to read rather than wrong.
 // The value is never nil: [toDocument] handles that before calling here.
-func toBSON(res *database.Resource, column string, value any) (any, error) {
+func toBSON(res *store.Resource, column string, value any) (any, error) {
 	col, ok := res.LookupColumn(column)
 	if !ok {
 		return value, nil
 	}
 	switch col.Kind {
-	case database.KindUint:
+	case store.KindUint:
 		u, ok := value.(uint64)
 		if !ok {
 			return value, nil
@@ -89,7 +90,7 @@ func toBSON(res *database.Resource, column string, value any) (any, error) {
 			return d, nil
 		}
 		return int64(u), nil
-	case database.KindTimestamp:
+	case store.KindTimestamp:
 		t, ok := value.(time.Time)
 		if !ok {
 			return value, nil
@@ -130,18 +131,19 @@ func fromBSON(value any) any {
 // backend that accepts the whole grammar and quietly honors half of it returns
 // the wrong records with no indication anything was ignored. An expression this
 // cannot parse is refused, naming what it did not understand.
-func parseFilter(res *database.Resource, expr string) (bson.M, error) {
+func parseFilter(res *store.Resource, expr string) (bson.M, error) {
 	filter := bson.M{}
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return filter, nil
 	}
 
-	for _, clause := range splitConjunction(expr) {
-		column, op, value, err := parseClause(clause)
-		if err != nil {
-			return nil, fmt.Errorf("mongodb: %w", err)
-		}
+	clauses, perr := core.ParseFilter(expr)
+	if perr != nil {
+		return nil, fmt.Errorf("mongodb: %w", perr)
+	}
+	for _, c := range clauses {
+		column, op, value := c.Column, c.Op, c.Value
 		col, ok := res.LookupColumn(column)
 		if !ok {
 			return nil, fmt.Errorf("mongodb: filter names %q, which resource %q has no column for", column, res.Name)

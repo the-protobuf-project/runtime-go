@@ -8,15 +8,15 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/the-protobuf-project/runtime-go/blockchain/evm"
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Importing this package must register the driver, since that is what makes
-// database.NewDriver(database.EVM, ...) work for anyone who imports it for effect
+// store.NewDriver(store.EVM, ...) work for anyone who imports it for effect
 // alone.
 func TestInitRegistersEVMBackend(t *testing.T) {
-	if !slices.Contains(database.Backends(), database.EVM) {
-		t.Fatalf("database.Backends() = %v, want it to contain %q", database.Backends(), database.EVM)
+	if !slices.Contains(store.Backends(), store.EVM) {
+		t.Fatalf("store.Backends() = %v, want it to contain %q", store.Backends(), store.EVM)
 	}
 }
 
@@ -35,12 +35,12 @@ func TestNewDriverAcceptsConfigByValueAndPointer(t *testing.T) {
 	cfg := validConfig()
 
 	t.Run("value", func(t *testing.T) {
-		if _, err := database.NewDriver(database.EVM, cfg); err != nil {
+		if _, err := store.NewDriver(store.EVM, cfg); err != nil {
 			t.Errorf("NewDriver with evm.Config: %v", err)
 		}
 	})
 	t.Run("pointer", func(t *testing.T) {
-		if _, err := database.NewDriver(database.EVM, &cfg); err != nil {
+		if _, err := store.NewDriver(store.EVM, &cfg); err != nil {
 			t.Errorf("NewDriver with *evm.Config: %v", err)
 		}
 	})
@@ -67,8 +67,8 @@ func TestNewDriverRejectsUnusableConfig(t *testing.T) {
 		{"no resources", noResources},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := database.NewDriver(database.EVM, tc.cfg); !errors.Is(err, database.ErrBadConfig) {
-				t.Errorf("NewDriver error = %v, want it to wrap database.ErrBadConfig", err)
+			if _, err := store.NewDriver(store.EVM, tc.cfg); !errors.Is(err, store.ErrBadConfig) {
+				t.Errorf("NewDriver error = %v, want it to wrap store.ErrBadConfig", err)
 			}
 		})
 	}

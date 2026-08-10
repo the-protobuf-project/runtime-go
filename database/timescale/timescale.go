@@ -6,21 +6,21 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/the-protobuf-project/runtime-go/database"
 	"github.com/the-protobuf-project/runtime-go/database/orm"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Driver is a database.Driver backed by TimescaleDB.
+// Driver is a store.Driver backed by TimescaleDB.
 //
 // It embeds the relational driver rather than reimplementing it. TimescaleDB is
 // PostgreSQL with an extension: a hypertable is a table, a row is a row, and
-// every method on [database.Driver] already works against one. Writing a second
+// every method on [store.Driver] already works against one. Writing a second
 // CRUD implementation would produce two ways for the same INSERT to behave and
 // no benefit at all.
 //
 // What this package adds is the part that is not SQL — partitioning a table by
 // time, reading a window of it, and reducing a window into buckets. That is
-// [database.TimeSeries], and it is the whole of what is here.
+// [store.TimeSeries], and it is the whole of what is here.
 type Driver struct {
 	*orm.Driver
 
@@ -29,8 +29,8 @@ type Driver struct {
 }
 
 var (
-	_ database.Driver     = (*Driver)(nil)
-	_ database.TimeSeries = (*Driver)(nil)
+	_ store.Driver     = (*Driver)(nil)
+	_ store.TimeSeries = (*Driver)(nil)
 )
 
 // New returns a driver over a *gorm.DB you own, connected to TimescaleDB.
@@ -47,7 +47,7 @@ type Provider struct {
 	orm *orm.Provider
 }
 
-var _ database.Provider = (*Provider)(nil)
+var _ store.Provider = (*Provider)(nil)
 
 // NewProvider returns a provider over db.
 func NewProvider(db *gorm.DB) *Provider {
@@ -63,9 +63,9 @@ func (p *Provider) Backend() string { return "timescaledb" }
 // one: on PostgreSQL a name is a schema and every resource driven through the
 // result is qualified with it. This wraps what it returns so the time-series
 // half is reachable too.
-func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, error) {
+func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, error) {
 	if p.db == nil {
-		return nil, fmt.Errorf("%w: timescale provider has no *gorm.DB", database.ErrBadConfig)
+		return nil, fmt.Errorf("%w: timescale provider has no *gorm.DB", store.ErrBadConfig)
 	}
 	inner, err := p.orm.SetDatabase(ctx, name)
 	if err != nil {
@@ -84,7 +84,7 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*database.DB, 
 	}
 
 	d := &Driver{Driver: relational, db: p.db, schema: name}
-	return database.Build(d, "timescaledb", name, inner.Release), nil
+	return store.Build(d, "timescaledb", name, inner.Release), nil
 }
 
 // verifyExtension reports whether the TimescaleDB extension is installed.
@@ -99,7 +99,7 @@ func verifyExtension(ctx context.Context, db *gorm.DB) error {
 	if version == "" {
 		return fmt.Errorf(
 			"%w: this PostgreSQL has no timescaledb extension; CREATE EXTENSION timescaledb, or use the orm package for plain SQL",
-			database.ErrBadConfig)
+			store.ErrBadConfig)
 	}
 	return nil
 }

@@ -1,5 +1,5 @@
 // Package adapter is the generic gRPC layer between a protorm-generated service
-// and a database.Driver. The generated per-service shims (target=grpc) are thin:
+// and a store.Driver. The generated per-service shims (target=grpc) are thin:
 // they decode the proto-specific request, call one of this Service's
 // resource-name-keyed helpers, and encode the response. Everything else —
 // resolving the resource descriptor, dispatching to the driver, and translating
@@ -15,7 +15,7 @@
 // Build a [Service] from any driver plus the resource registry; the generated
 // per-service shim calls its resource-name-keyed helpers:
 //
-//	reg := database.NewRegistry(grpcx.Resources...)
+//	reg := store.NewRegistry(grpcx.Resources...)
 //	svc := adapter.New(orm.New(db), reg) // or evm.New(cfg), fabric.New(), ...
 //
 //	book, err := svc.Get(ctx, "Book", "books/dune") // ErrNotFound -> codes.NotFound

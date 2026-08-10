@@ -3,13 +3,13 @@ package arangodb
 import (
 	"fmt"
 
-	"github.com/the-protobuf-project/runtime-go/database"
+	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
 // Resolving a resource name to a collection, which is what the graph half needs
 // and the record half does not.
 //
-// A [database.Ref] carries a resource name because that is the only identifier
+// A [store.Ref] carries a resource name because that is the only identifier
 // portable across backends — ArangoDB writes "collection/key" and Neo4j has no
 // such notion. Turning that name back into a collection means holding the same
 // registry the rest of the program uses, so a provider takes one.
@@ -20,7 +20,7 @@ import (
 // supply it.
 
 // resourceFor returns the descriptor registered under a resource name.
-func (d *Driver) resourceFor(name string) (*database.Resource, error) {
+func (d *Driver) resourceFor(name string) (*store.Resource, error) {
 	if d.registry == nil {
 		return nil, fmt.Errorf(
 			"arangodb: graph operations need a registry to turn a resource name into a collection; build the provider with WithRegistry")
@@ -50,10 +50,10 @@ func (d *Driver) resourceName(collection string) string {
 	return collection
 }
 
-// refFor turns a stored document id back into a [database.Ref].
-func (d *Driver) refFor(documentID string) database.Ref {
+// refFor turns a stored document id back into a [store.Ref].
+func (d *Driver) refFor(documentID string) store.Ref {
 	collection, key := splitDocumentID(documentID)
-	return database.Ref{Resource: d.resourceName(collection), Key: key}
+	return store.Ref{Resource: d.resourceName(collection), Key: key}
 }
 
 // tableNames maps resource names to the collections they live in.
