@@ -249,15 +249,18 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 		return database.ListResult{}, err
 	}
 
-	total, err := coll.CountDocuments(ctx, filter)
-	if err != nil {
-		return database.ListResult{}, fmt.Errorf("mongodb: cannot count %s: %w", res.Table, err)
+	total := core.NoTotal
+	if !opts.OmitTotal {
+		var cerr error
+		if total, cerr = coll.CountDocuments(ctx, filter); cerr != nil {
+			return database.ListResult{}, fmt.Errorf("mongodb: cannot count %s: %w", res.Table, cerr)
+		}
 	}
 
 	limit := core.PageSize(opts.PageSize)
 	offset := core.DecodeToken(opts.PageToken)
 
-	find := mongoFindPage(sortOf(res, opts.OrderBy), limit, offset)
+	find := mongoFindPage(sortOf(res, opts.OrderBy), core.FetchLimit(limit, opts.OmitTotal), offset)
 	cur, err := coll.Find(ctx, filter, find)
 	if err != nil {
 		return database.ListResult{}, fmt.Errorf("mongodb: cannot list %s: %w", res.Table, err)
@@ -280,11 +283,8 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 		return database.ListResult{}, fmt.Errorf("mongodb: cannot read the %s cursor: %w", res.Name, cerr)
 	}
 
-	return database.ListResult{
-		Items:         items,
-		NextPageToken: core.EncodeToken(offset, int64(len(items)), total),
-		Total:         total,
-	}, nil
+	items, next := core.TrimPage(items, offset, limit, total, opts.OmitTotal)
+	return database.ListResult{Items: items, NextPageToken: next, Total: total}, nil
 }
 
 // sortOf turns an AIP-132 order expression into a Mongo sort.

@@ -22,6 +22,20 @@ type ListOptions struct {
 	// Filter is an AIP-160 filter expression. Optional; backends that lack
 	// server-side filtering ignore it.
 	Filter string
+
+	// OmitTotal skips computing [ListResult.Total], which is then -1.
+	//
+	// It halves the cost of a listing. Every relational and document backend
+	// here answers a page with two queries — one to count the matching rows and
+	// one to read the page — and the count is the expensive half, because it
+	// touches every matching row while the page touches only the ones returned.
+	// A caller that renders "page 3 of 47" needs it; one that renders a feed
+	// with a Next button does not, and pays double for a number nobody reads.
+	//
+	// Paging still works: a backend that skips the count reads one row past the
+	// page to learn whether another exists, which costs a row rather than a
+	// scan.
+	OmitTotal bool
 }
 
 // ListResult is what a Driver.List returns: the page of records plus the

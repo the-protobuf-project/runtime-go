@@ -4,6 +4,7 @@ use (
 	./blockchain
 	./cache
 	./database
+	./database/examples
 	./grpc
 	./interfaces
 	./network

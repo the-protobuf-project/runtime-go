@@ -248,9 +248,12 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 	if res == nil {
 		return database.ListResult{}, fmt.Errorf("arangodb: List needs a resource")
 	}
-	total, err := d.Count(ctx, res, opts)
-	if err != nil {
-		return database.ListResult{}, err
+	total := core.NoTotal
+	if !opts.OmitTotal {
+		var cerr error
+		if total, cerr = d.Count(ctx, res, opts); cerr != nil {
+			return database.ListResult{}, cerr
+		}
 	}
 
 	where, binds, err := buildFilter(res, opts.Filter)
@@ -264,7 +267,7 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 		where, sortClause(res, opts.OrderBy))
 	binds["@coll"] = res.Table
 	binds["offset"] = offset
-	binds["limit"] = limit
+	binds["limit"] = core.FetchLimit(limit, opts.OmitTotal)
 
 	cur, err := d.query(ctx, res, query, binds)
 	if err != nil {
@@ -285,11 +288,8 @@ func (d *Driver) List(ctx context.Context, res *database.Resource, opts database
 		items = append(items, msg)
 	}
 
-	return database.ListResult{
-		Items:         items,
-		NextPageToken: core.EncodeToken(offset, int64(len(items)), total),
-		Total:         total,
-	}, nil
+	items, next := core.TrimPage(items, offset, limit, total, opts.OmitTotal)
+	return database.ListResult{Items: items, NextPageToken: next, Total: total}, nil
 }
 
 // queryOne runs a query expected to return a single value.

@@ -24,6 +24,33 @@ const (
 	KindEnum      // bridged as the enum's int32 number
 )
 
+// String names the kind, so a message about one reads as "a string" rather than
+// as "1". Errors carrying a Kind are read by someone deciding whether their
+// descriptor is wrong, and a number tells them nothing without this file open
+// beside it.
+func (k Kind) String() string {
+	switch k {
+	case KindString:
+		return "a string"
+	case KindInt:
+		return "a signed integer"
+	case KindUint:
+		return "an unsigned integer"
+	case KindBool:
+		return "a boolean"
+	case KindBytes:
+		return "bytes"
+	case KindFloat:
+		return "a float"
+	case KindTimestamp:
+		return "a timestamp"
+	case KindEnum:
+		return "an enum"
+	default:
+		return "of unknown kind"
+	}
+}
+
 // Column describes one field of a resource: how it appears in the proto message
 // (Field) and how it maps onto a backend column (Name, Kind, SQLType). The
 // bridge reads/writes the proto value through Field; drivers use Name/Kind to

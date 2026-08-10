@@ -115,29 +115,33 @@ func (d *Driver) Delete(ctx context.Context, res *database.Resource, key string)
 }
 
 func (d *Driver) List(ctx context.Context, res *database.Resource, opts database.ListOptions) (database.ListResult, error) {
-	total, err := d.Count(ctx, res, opts)
-	if err != nil {
-		return database.ListResult{}, err
+	total := core.NoTotal
+	if !opts.OmitTotal {
+		var cerr error
+		if total, cerr = d.Count(ctx, res, opts); cerr != nil {
+			return database.ListResult{}, cerr
+		}
 	}
 	limit := core.PageSize(opts.PageSize)
 	offset := core.DecodeToken(opts.PageToken)
-	rows, err := d.fetch(ctx, res, nil, opts.OrderBy, limit, offset)
+	rows, err := d.fetch(ctx, res, nil, opts.OrderBy, core.FetchLimit(limit, opts.OmitTotal), offset)
 	if err != nil {
 		return database.ListResult{}, err
 	}
+	// Trimmed before decoding, so the row read only to prove another page exists
+	// is dropped as a map rather than after being turned into a message nobody
+	// will see.
+	rows, next := core.TrimPage(rows, offset, limit, total, opts.OmitTotal)
+
 	items := make([]proto.Message, 0, len(rows))
 	for _, row := range rows {
-		m, err := database.ColumnsToMessage(res, row)
-		if err != nil {
-			return database.ListResult{}, err
+		m, merr := database.ColumnsToMessage(res, row)
+		if merr != nil {
+			return database.ListResult{}, merr
 		}
 		items = append(items, m)
 	}
-	return database.ListResult{
-		Items:         items,
-		NextPageToken: core.EncodeToken(offset, int64(len(rows)), total),
-		Total:         total,
-	}, nil
+	return database.ListResult{Items: items, NextPageToken: next, Total: total}, nil
 }
 
 func (d *Driver) Count(ctx context.Context, res *database.Resource, _ database.ListOptions) (int64, error) {

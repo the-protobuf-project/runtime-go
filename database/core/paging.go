@@ -46,3 +46,36 @@ func EncodeToken(offset, returned, total int64) string {
 	}
 	return strconv.FormatInt(next, 10)
 }
+
+// FetchLimit is how many rows to read for one page.
+//
+// One more than asked when no total is being computed. Without a count there is
+// no other way to know whether another page exists, and a caller that simply
+// stopped on a short page would drop the last page whenever it happened to come
+// out exactly full.
+func FetchLimit(limit int64, omitTotal bool) int64 {
+	if omitTotal {
+		return limit + 1
+	}
+	return limit
+}
+
+// TrimPage cuts an over-fetched page back to size and returns the token for the
+// next one.
+//
+// It takes the rows rather than just their count so the extra row read by
+// [FetchLimit] is dropped here, in one place, rather than in every driver — a
+// page that returned the probe row would be off by one in a way that only shows
+// up at a page boundary.
+func TrimPage[T any](rows []T, offset, limit, total int64, omitTotal bool) ([]T, string) {
+	if !omitTotal {
+		return rows, EncodeToken(offset, int64(len(rows)), total)
+	}
+	if int64(len(rows)) > limit {
+		return rows[:limit], strconv.FormatInt(offset+limit, 10)
+	}
+	return rows, ""
+}
+
+// NoTotal is what [ListResult.Total] carries when it was not computed.
+const NoTotal int64 = -1

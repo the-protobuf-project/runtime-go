@@ -3,8 +3,12 @@ package orm_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"gorm.io/gorm/logger"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"google.golang.org/protobuf/types/dynamicpb"
@@ -307,3 +311,137 @@ func TestTypedViewChecksTheDescriptorAgainstTheType(t *testing.T) {
 // bareDriver implements the CRUD contract and nothing else, standing in for a
 // backend with no transactions and no migrations.
 type bareDriver struct{ database.Driver }
+
+// countingDB wraps a *gorm.DB's logger to count the statements that reach the
+// server, so a test can assert what a listing costs rather than only what it
+// returns. Round trips are the thing being fixed.
+type stmtCounter struct {
+	logger.Interface
+	selects atomic.Int64
+	counts  atomic.Int64
+}
+
+func (c *stmtCounter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
+	sql, _ := fc()
+	if strings.Contains(sql, "count(") || strings.Contains(sql, "COUNT(") {
+		c.counts.Add(1)
+	} else if strings.HasPrefix(strings.TrimSpace(sql), "SELECT") {
+		c.selects.Add(1)
+	}
+}
+
+// Every listing used to cost two queries: one counting every matching row and
+// one reading the page. The count is the expensive half — it touches every
+// match, while the page touches only what it returns.
+func TestOmitTotalHalvesTheQueries(t *testing.T) {
+	ctx := context.Background()
+	counter := &stmtCounter{Interface: logger.Discard}
+
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+		TranslateError: true,
+		Logger:         counter,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := orm.NewProvider(gdb).SetDatabase(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	md := bookMD(t)
+	res := bookRes(md)
+	if serr := db.Schema.EnsureSchema(ctx, res); serr != nil {
+		t.Fatal(serr)
+	}
+	for i := range 30 {
+		if _, cerr := db.Create(ctx, res, newBook(md, fmt.Sprintf("books/%02d", i), fmt.Sprintf("t%02d", i), 2000, 1)); cerr != nil {
+			t.Fatal(cerr)
+		}
+	}
+
+	counter.counts.Store(0)
+	counter.selects.Store(0)
+	if _, lerr := db.List(ctx, res, database.ListOptions{PageSize: 10}); lerr != nil {
+		t.Fatal(lerr)
+	}
+	withTotal := counter.counts.Load()
+
+	counter.counts.Store(0)
+	out, err := db.List(ctx, res, database.ListOptions{PageSize: 10, OmitTotal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	withoutTotal := counter.counts.Load()
+
+	if withTotal == 0 {
+		t.Fatal("the counted listing ran no count query; the probe is not measuring anything")
+	}
+	if withoutTotal != 0 {
+		t.Errorf("OmitTotal still ran %d count quer(ies)", withoutTotal)
+	}
+	if out.Total != -1 {
+		t.Errorf("Total = %d with OmitTotal, want -1", out.Total)
+	}
+	if len(out.Items) != 10 {
+		t.Errorf("page returned %d items, want 10 — the probe row leaked into the page", len(out.Items))
+	}
+}
+
+// Paging without a count has to terminate on exactly the right page, including
+// when the last one comes out full — the case a naive "stop on a short page"
+// gets wrong.
+func TestOmitTotalPagesToTheEnd(t *testing.T) {
+	ctx := context.Background()
+	gdb := openDB(t)
+	db, err := orm.NewProvider(gdb).SetDatabase(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	md := bookMD(t)
+	res := bookRes(md)
+	if err := db.Schema.EnsureSchema(ctx, res); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exactly divisible by the page size, so the final page is full.
+	const total = 20
+	for i := range total {
+		if _, cerr := db.Create(ctx, res, newBook(md, fmt.Sprintf("books/%02d", i), fmt.Sprintf("t%02d", i), 2000, 1)); cerr != nil {
+			t.Fatal(cerr)
+		}
+	}
+
+	var seen []string
+	token := ""
+	for pages := 0; ; pages++ {
+		if pages > total {
+			t.Fatal("paging did not terminate")
+		}
+		out, lerr := db.List(ctx, res, database.ListOptions{
+			PageSize: 5, PageToken: token, OmitTotal: true,
+		})
+		if lerr != nil {
+			t.Fatal(lerr)
+		}
+		for _, m := range out.Items {
+			seen = append(seen, m.ProtoReflect().Get(md.Fields().ByName("id")).String())
+		}
+		if out.NextPageToken == "" {
+			break
+		}
+		token = out.NextPageToken
+	}
+
+	if len(seen) != total {
+		t.Fatalf("paged over %d records, want %d", len(seen), total)
+	}
+	for i := 1; i < len(seen); i++ {
+		if seen[i-1] >= seen[i] {
+			t.Fatalf("duplicate or out-of-order at %d: %v", i, seen[i-1:i+1])
+		}
+	}
+}
