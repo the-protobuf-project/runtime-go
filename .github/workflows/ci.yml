@@ -76,11 +76,20 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go test ./... -race -timeout 120s -coverprofile=coverage.out -covermode=atomic
 
+      # Artifact names may not contain "/", so flatten nested module paths
+      # (e.g. database/examples -> database-examples).
+      - name: Coverage artifact name
+        id: coverage-name
+        if: always()
+        env:
+          MODULE: ${{ matrix.module }}
+        run: echo "name=coverage-${MODULE//\//-}" >> "$GITHUB_OUTPUT"
+
       - name: Upload coverage
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: coverage-${{ matrix.module }}
+          name: ${{ steps.coverage-name.outputs.name }}
           path: ${{ matrix.module }}/coverage.out
           retention-days: 7
 
