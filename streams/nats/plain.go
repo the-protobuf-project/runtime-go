@@ -280,3 +280,14 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string) (<-chan st
 	}()
 	return out, nil
 }
+
+// PublishBatch sends several values on a subject.
+//
+// Core NATS publishes without waiting for the server, so publishing in turn is
+// already as batched as this gets.
+func (m *plainManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
+	}
+	return core.PublishEach(ctx, m, subject, values, opts...)
+}

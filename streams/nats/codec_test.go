@@ -100,3 +100,47 @@ func TestAProtobufProviderStillReadsJSON(t *testing.T) {
 		t.Fatal("a protobuf-configured provider did not read a JSON message")
 	}
 }
+
+// The batch fallback: NATS has no batch primitive, so this publishes in turn —
+// but the contract is uniform, so a caller writes one shape of code.
+func TestPublishBatchThroughTheFallback(t *testing.T) {
+	_, m := declare(t, jetStream(t), subject)
+
+	b, err := streams.AsBatch(m)
+	if err != nil {
+		t.Fatalf("AsBatch: %v", err)
+	}
+
+	values := []any{
+		event{User: "one", Action: "created"},
+		event{User: "two", Action: "created"},
+		event{User: "three", Action: "created"},
+	}
+	ids, err := b.PublishBatch(t.Context(), subject, values)
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+	if len(ids) != len(values) {
+		t.Fatalf("got %d ids, want %d", len(ids), len(values))
+	}
+	for i, id := range ids {
+		if id == "" {
+			t.Errorf("entry %d has no id", i)
+		}
+	}
+}
+
+// An undeclared subject fails every entry rather than some of them.
+func TestPublishBatchFallbackReportsFailures(t *testing.T) {
+	_, m := declare(t, jetStream(t), subject)
+	b, _ := streams.AsBatch(m)
+
+	ids, err := b.PublishBatch(t.Context(), "typo", []any{event{}, event{}})
+	if err == nil {
+		t.Fatal("PublishBatch accepted an undeclared subject")
+	}
+	// The slice is still one entry per value, so a caller can line them up.
+	if len(ids) != 2 {
+		t.Errorf("got %d ids, want one per value even on failure", len(ids))
+	}
+}

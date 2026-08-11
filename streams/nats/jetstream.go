@@ -470,3 +470,14 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 	}()
 	return out, nil
 }
+
+// PublishBatch sends several values on a subject.
+//
+// Each value is published in turn. JetStream acknowledges every message, so a
+// large batch is better served by several calls from several goroutines.
+func (m *jsManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
+	}
+	return core.PublishEach(ctx, m, subject, values, opts...)
+}

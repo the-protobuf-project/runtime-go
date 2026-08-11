@@ -456,3 +456,14 @@ func consumerName() string {
 func isBusyGroup(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "BUSYGROUP")
 }
+
+// PublishBatch sends several values on a subject.
+//
+// Each value is appended in turn. Redis can pipeline, but an append is already
+// a single round trip and the ids have to come back in order.
+func (m *durableManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
+	}
+	return core.PublishEach(ctx, m, subject, values, opts...)
+}

@@ -109,6 +109,42 @@ const (
 	FromEarliest
 )
 
+// Batch is implemented by a provider that can publish several values in one
+// go.
+//
+// Unlike [Durable] and [Positioned], every provider here implements this —
+// worst case by publishing each value in turn, which is what a caller would
+// otherwise write. It is a capability rather than a method on [Publisher] so
+// that a backend which genuinely cannot do it could refuse, and so the
+// decorators in this package keep a single method to wrap.
+//
+// Reaching for it is worth it where the backend has a real batch: on Kafka a
+// per-message publish waits for the broker to acknowledge that message, so a
+// thousand values are a thousand round trips, and a batch is a handful.
+type Batch interface {
+	// PublishBatch sends values on a subject and returns their ids, one per
+	// value and in the same order.
+	//
+	// Every value is assigned an id before anything is sent, so the returned
+	// slice is always the same length as values — including when the error is
+	// non-nil. On a partial failure the error names the entries that failed by
+	// index; the rest were published, and an entry that failed may still have
+	// landed, because that is what at-least-once means.
+	//
+	// [ID] is refused: one identifier cannot name several messages.
+	PublishBatch(ctx context.Context, subject string, values []any, opts ...Option) ([]string, error)
+}
+
+// AsBatch returns m's batch-publishing half, on the same terms as [AsDurable].
+func AsBatch(m Manager) (Batch, error) {
+	b, ok := m.(Batch)
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w: this provider publishes one value at a time", ErrUnsupported)
+	}
+	return b, nil
+}
+
 // AsDurable returns m's durable-consumer half.
 //
 // It exists so a provider that cannot do this fails with a sentence rather than

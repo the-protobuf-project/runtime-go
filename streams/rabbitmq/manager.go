@@ -297,3 +297,14 @@ func declares(declared []string, subject string) bool {
 	}
 	return false
 }
+
+// PublishBatch sends several values on a subject.
+//
+// AMQP publishes are already asynchronous on the channel, so publishing in turn
+// does not wait per message.
+func (m *manager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
+	}
+	return core.PublishEach(ctx, m, subject, values, opts...)
+}

@@ -204,6 +204,29 @@ Kafka, RabbitMQ and MQTT.
 provider that cannot count: Kafka redelivers the same bytes with no record of
 having done so. Redis and JetStream both count and report a real number.
 
+### Batches
+
+`Batch` publishes several values in one call. Every provider implements it, so
+a caller writes one shape of code; where the backend has a real batch primitive
+it is used, and where it does not the provider publishes in turn — which is
+what the caller would otherwise write.
+
+```go
+b, _ := streams.AsBatch(m)
+ids, err := b.PublishBatch(ctx, "order.placed", values)
+```
+
+It matters most on Kafka. A per-message `Publish` waits for the broker to
+acknowledge *that* message, so a thousand values are a thousand round trips;
+`PublishBatch` hands them over together and waits once, which is what lets the
+client build the batches the protocol was designed around. The saving scales
+with network latency, so it is far larger against a remote broker than a local
+one.
+
+Ids come back one per value and in order, including when the error is non-nil,
+so a partial failure can be lined up against the input. `ID` is refused — one
+identifier cannot name several messages.
+
 ### Ordering
 
 `streams.PartitionKey` decides which messages are ordered relative to each

@@ -22,7 +22,7 @@ type event struct {
 const subject = "user.created"
 
 // testStreams starts a cluster and returns a provider pointed at it.
-func testStreams(t *testing.T, opts ...streamskafka.Option) streams.Streams {
+func testStreams(t testing.TB, opts ...streamskafka.Option) streams.Streams {
 	t.Helper()
 
 	cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
@@ -44,7 +44,7 @@ func testStreams(t *testing.T, opts ...streamskafka.Option) streams.Streams {
 }
 
 // declare creates a stream and binds a manager to it.
-func declare(t *testing.T, s streams.Streams, subjects ...string) (streams.Stream, streams.Manager) {
+func declare(t testing.TB, s streams.Streams, subjects ...string) (streams.Stream, streams.Manager) {
 	t.Helper()
 
 	stream, err := s.Create(t.Context(), streams.Stream{Name: "test", Subjects: subjects})
@@ -58,7 +58,7 @@ func declare(t *testing.T, s streams.Streams, subjects ...string) (streams.Strea
 	return stream, m
 }
 
-func recvDelivery(t *testing.T, ch <-chan streams.Delivery, within time.Duration) streams.Delivery {
+func recvDelivery(t testing.TB, ch <-chan streams.Delivery, within time.Duration) streams.Delivery {
 	t.Helper()
 
 	select {

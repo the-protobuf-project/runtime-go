@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
@@ -76,6 +77,74 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		"subject": subject, "id": id, "partition_key": o.PartitionKey, "bytes": len(body),
 	})
 	return id, nil
+}
+
+// PublishBatch appends several values to the subject's topic in one go.
+//
+// This is where Kafka is worth reaching for. [manager.Publish] waits for the
+// broker to acknowledge each message before returning, so a thousand values
+// published one at a time are a thousand round trips. Here the records are
+// handed to the client together and awaited once, which is what lets franz-go
+// accumulate them into the batches the protocol was designed around.
+func (m *manager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := m.checkSubject(ctx, subject); err != nil {
+		return nil, err
+	}
+
+	o := streams.NewOptions(opts...)
+	if err := core.CheckBatch(o); err != nil {
+		return nil, err
+	}
+	if o.TTL > 0 {
+		return nil, fmt.Errorf("%w: Kafka delivers when it is read, not on a timer", streams.ErrUnsupported)
+	}
+
+	ids := make([]string, len(values))
+	failures := make([]error, len(values))
+
+	var wg sync.WaitGroup
+	for i, value := range values {
+		id := core.NewID()
+		ids[i] = id
+
+		body, err := core.Pack(m.store.codec, id, value)
+		if err != nil {
+			failures[i] = fmt.Errorf("entry %d: %w", i, err)
+			ids[i] = ""
+			continue
+		}
+
+		rec := &kgo.Record{Topic: m.store.topic(m.stream.ID, subject), Value: body}
+		if o.PartitionKey != "" {
+			rec.Key = []byte(o.PartitionKey)
+		}
+
+		wg.Add(1)
+		m.store.cl.Produce(ctx, rec, func(_ *kgo.Record, perr error) {
+			defer wg.Done()
+			if perr != nil {
+				failures[i] = fmt.Errorf("entry %d: %w", i, perr)
+				ids[i] = ""
+			}
+		})
+	}
+	wg.Wait()
+
+	m.store.log.Debug(ctx, "published a batch", telemetry.Fields{
+		"subject": subject, "entries": len(values), "partition_key": o.PartitionKey,
+	})
+	return ids, core.BatchError(subject, len(values), compact(failures))
+}
+
+// compact drops the nil entries, so BatchError counts only real failures.
+func compact(errs []error) []error {
+	var out []error
+	for _, err := range errs {
+		if err != nil {
+			out = append(out, err)
+		}
+	}
+	return out
 }
 
 // Subscribe returns a channel of messages for a subject, starting at the end of

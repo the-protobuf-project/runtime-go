@@ -315,3 +315,13 @@ func declares(declared []string, subject string) bool {
 	}
 	return false
 }
+
+// PublishBatch sends several values on a subject.
+//
+// MQTT has no batch primitive; at QoS 1 each message is acknowledged on its own.
+func (m *manager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
+	}
+	return core.PublishEach(ctx, m, subject, values, opts...)
+}
