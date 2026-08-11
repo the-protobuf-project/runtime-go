@@ -1,12 +1,17 @@
 # Streams
 
 The backend-agnostic contract for messaging. This module holds the interfaces
-and their decorators — no backend. Providers implement it in their own modules:
+and their decorators — no backend, and no client library. Providers implement it
+in their own modules, so a program that reaches for one does not pull in the
+other:
 
-| Provider | Module | Status |
+| Provider | Module | Delivery |
 | --- | --- | --- |
-| Redis | [`runtime-go/redis`](../redis) | implemented |
-| NATS | `streams/nats` | not yet implemented |
+| Redis pub/sub | [`streams/redis`](./redis) | immediate, nothing kept |
+| Redis scheduled | [`streams/redis`](./redis) | on TTL expiry |
+| Redis Streams | [`streams/redis`](./redis) | durable, redelivered until acknowledged |
+| Core NATS | [`streams/nats`](./nats) | immediate, nothing kept |
+| NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
 
 For storage see [`cache`](../cache) and [`database`](../database).
 
@@ -14,26 +19,34 @@ For storage see [`cache`](../cache) and [`database`](../database).
 
 ```bash
 go get github.com/the-protobuf-project/runtime-go/streams
+go get github.com/the-protobuf-project/runtime-go/streams/redis   # or .../streams/nats
 ```
 
 ## Usage
 
-You reach streams through a provider's manager:
+You own the client; a provider is built around one and never dials or closes it.
 
 ```go
 import (
+    goredis "github.com/redis/go-redis/v9"
     "github.com/the-protobuf-project/runtime-go/streams"
-    "github.com/the-protobuf-project/runtime-go/redis"
+    streamsredis "github.com/the-protobuf-project/runtime-go/streams/redis"
 )
 
-c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
-defer c.Close()
+rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+defer rdb.Close()
 
-_ = c.CreateDatabase(ctx, "events")
-mgr, _ := c.SetDatabase(ctx, "events")
-defer mgr.Close()
+events := streamsredis.Connect(rdb)   // a streams.Streams
+```
 
-events := mgr.Channel.Stream   // a streams.Streams
+Everything after that line is the interface, so pointing this at NATS means
+changing the import and the constructor and nothing else:
+
+```go
+nc, _ := gonats.Connect(gonats.DefaultURL)
+defer nc.Close()
+
+events, _ := streamsnats.ConnectJetStream(nc)
 ```
 
 ### Streams and subjects
@@ -50,6 +63,9 @@ s, _ := events.Create(ctx, streams.Stream{
 
 m, _ := events.Bind(ctx, s.ID)   // a streams.Manager
 ```
+
+Redis reads those subjects as literal names. NATS reads them as patterns, so a
+stream declaring `user.*` accepts `user.created`.
 
 ### Publish and subscribe
 
@@ -95,14 +111,72 @@ for u := range msgs { … }   // u is a User
 A message that fails to decode as `T` is skipped rather than delivered as a zero
 value. Use the untyped `Manager` when you need to see those.
 
-### Scheduled delivery
+## Capabilities
 
-Some providers can deliver when a TTL expires rather than on publish — a
-reminder, a lease timeout, a delayed retry. On the Redis provider that is a
-second handler with its own namespace:
+`Publisher` and `Subscriber` are the honest intersection — send a value, receive
+it, no promise it survives a restart — because that is what Redis pub/sub and
+core NATS actually do. Anything past that is a capability a provider has or does
+not, and asking for one it lacks returns `ErrUnsupported` naming the provider
+rather than silently downgrading to weaker delivery than you asked for.
+
+### Durable delivery
+
+`Durable` is the difference between a message being handed over and a message
+being *lent*. A named consumer's position lives on the server, so it outlives
+the process reading it, and a delivered message stays deliverable until someone
+acknowledges it.
 
 ```go
-notify := mgr.Channel.Notify
+d, err := streams.AsDurable(m)   // fails, by name, on pub/sub providers
+if err != nil {
+    return err
+}
+
+deliveries, _ := d.Consume(ctx, "order.placed", "billing")
+for msg := range deliveries {
+    if err := handle(msg); err != nil {
+        msg.Nak(ctx)   // hand it back
+        continue
+    }
+    msg.Ack(ctx)       // after the work, not on receipt
+}
+```
+
+Acknowledge **after** the work. Acknowledging on receipt turns at-least-once
+into at-most-once, which is the guarantee you were avoiding by reaching for
+`Durable` in the first place.
+
+The consumer name is the identity that survives a restart. Two processes under
+one name share its position and split the work; a process that dies and comes
+back resumes where the name left off. `Delivery.Attempt` counts how many times
+the message has been delivered — it is the one signal for breaking a redelivery
+loop, since the same bytes arriving for the fifth time look exactly like the
+first.
+
+Backed by Redis Streams (`ConnectDurable`) and JetStream (`ConnectJetStream`).
+
+### Replay
+
+`Positioned` reads a stored log from somewhere other than now:
+
+```go
+p, _ := streams.AsPositioned(m)
+deliveries, _ := p.ConsumeFrom(ctx, "order.placed", "audit", streams.FromEarliest)
+```
+
+The position applies when the consumer is created and not after. A consumer that
+already exists keeps the position it has — resetting on every attach would
+replay the log on every restart, which is the opposite of what a durable
+consumer is for.
+
+### Scheduled delivery
+
+Some providers deliver when a TTL expires rather than on publish — a reminder, a
+lease timeout, a delayed retry. On Redis that is a separate constructor with its
+own key namespace:
+
+```go
+notify := streamsredis.ConnectScheduled(rdb)
 
 n, _ := notify.Create(ctx, streams.Stream{Name: "reminders", Subjects: []string{"pill"}})
 nm, _ := notify.Bind(ctx, n.ID)
@@ -113,11 +187,11 @@ _, err := nm.Publish(ctx, "pill", Reminder{Body: "take a pill"},
 ```
 
 A TTL is **required** there — delivery is the expiry, so a message without one
-could never fire. Conversely an immediate stream **rejects** a TTL rather than
+could never fire. Conversely every other provider **rejects** a TTL rather than
 publishing now and letting you believe it was scheduled.
 
 Redis delivers these through keyspace notifications, so the server must run with
-`--notify-keyspace-events Ex`. See the [provider README](../redis).
+`--notify-keyspace-events Ex`. NATS has no scheduled delivery at all and says so.
 
 ## Middleware
 
@@ -131,7 +205,11 @@ pub := streams.ChainPublisher(m,
 
 Retrying a publish is safe in a way a store write is not: a redelivered message
 is a duplicate the consumer can dedupe, whereas a dropped one is simply lost.
-`ErrUnknownSubject` is never retried.
+`ErrUnknownSubject` and `ErrUnsupported` are never retried — neither answer
+changes on a second attempt.
+
+On JetStream the message id is also sent as the JetStream message id, so a retry
+after an ambiguous failure is collapsed by the server rather than appended twice.
 
 `WithSubscriberLogging` records when a subscription opens, each delivery, and
 when it closes — the close record carries the delivered count, and its absence
@@ -139,10 +217,27 @@ is how you spot a consumer that leaked.
 
 ## Tests
 
-This module's tests are pure unit tests over the contract and decorators and
-need no server. The provider's integration tests live in
-[`runtime-go/redis`](../redis).
+This module's tests are unit tests over the contract, its decorators and
+`core`, and need no server.
 
 ```bash
 go test ./...
 ```
+
+The provider suites are integration tests. NATS starts a server in-process, so
+it needs nothing installed:
+
+```bash
+cd nats && go test ./...
+```
+
+Redis needs a live server and skips without one — including the keyspace events
+the scheduled tests rely on:
+
+```bash
+docker compose -f docker/compose.yaml up -d
+cd redis && go test ./...
+```
+
+Runnable demonstrations of every delivery mode live in
+[`examples`](./examples).

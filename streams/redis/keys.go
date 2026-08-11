@@ -7,13 +7,21 @@ import "strings"
 type kind string
 
 const (
-	kindStream kind = "stream"
-	kindNotify kind = "notify"
+	kindStream  kind = "stream"
+	kindNotify  kind = "notify"
+	kindDurable kind = "durable"
 )
 
 // metadataField is the field a stream's metadata is stored under, inside the
 // Redis stream key that represents it.
 const metadataField = "meta"
+
+// payloadField is the field a durable message's body is stored under.
+//
+// One field rather than a flat map of the caller's values: the body is an
+// envelope this package framed, and spreading it across Redis fields would make
+// the entry's shape depend on the payload's.
+const payloadField = "msg"
 
 // keys builds every Redis key one handler uses. The prefix and kind are baked
 // in at construction, so an operation asks for "the key for this id" and cannot
@@ -43,6 +51,15 @@ func (k keys) idFromStream(key string) string {
 // channel is the pub/sub channel a subject's messages travel on.
 func (k keys) channel(streamID, subject string) string {
 	return k.base + "ch:" + streamID + ":" + subject
+}
+
+// subject is the Redis stream key a durable subject's messages are appended to.
+//
+// One key per subject rather than one per stream: a consumer group's position
+// is a property of the key, so sharing a key across subjects would make a group
+// that only wants one subject read — and acknowledge — all of them.
+func (k keys) subject(streamID, subject string) string {
+	return k.base + "s:" + streamID + ":" + subject
 }
 
 // pending carries the TTL whose expiry is the delivery.

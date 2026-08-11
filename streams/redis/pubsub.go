@@ -2,15 +2,13 @@ package redis
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
 // streamManager publishes to and subscribes from one stream.
@@ -24,26 +22,12 @@ type streamManager struct {
 
 var _ streams.Manager = (*streamManager)(nil)
 
-// envelope is the wire form: the id travels with the payload so a subscriber
-// reports the same id the publisher assigned.
-type envelope struct {
-	ID   string          `json:"id"`
-	Data json.RawMessage `json:"data"`
-}
-
 // checkSubject rejects a subject the stream does not declare.
 //
 // Publishing to an undeclared subject would create a channel nobody reads, and
 // subscribing to one would wait forever — both silent failures.
 func (m *streamManager) checkSubject(ctx context.Context, subject string) error {
-	if slices.Contains(m.stream.Subjects, subject) {
-		return nil
-	}
-	m.handler.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
-		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
-	})
-	return fmt.Errorf("%w: %q (stream %s declares %v)",
-		streams.ErrUnknownSubject, subject, m.stream.ID, m.stream.Subjects)
+	return m.handler.declares(ctx, m.stream, subject)
 }
 
 // Publish sends a value on a subject.
@@ -58,18 +42,14 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 
 	id := o.ID
 	if id == "" {
-		id = ulid.Generate().GetTimeCode()
+		id = core.NewID()
 	}
 
-	data, err := streams.Encode(value)
+	body, err := core.Pack(id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
 			telemetry.Fields{"subject": subject, "id": id})
 		return "", err
-	}
-	body, err := json.Marshal(envelope{ID: id, Data: data})
-	if err != nil {
-		return "", fmt.Errorf("redis: cannot encode message: %w", err)
 	}
 
 	if m.handler.scheduled() {
@@ -186,7 +166,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 				if !ok {
 					return
 				}
-				msg, err := decodeEnvelope(subject, []byte(raw.Payload))
+				msg, err := core.Unpack(subject, []byte(raw.Payload))
 				if err != nil {
 					// A malformed payload is one bad message, not a reason to
 					// tear down a healthy subscription.
@@ -281,14 +261,5 @@ func (m *streamManager) claim(ctx context.Context, subject, id string) (streams.
 	if err != nil {
 		return streams.Message{}, err
 	}
-	return decodeEnvelope(subject, raw)
-}
-
-// decodeEnvelope turns a wire payload back into a Message.
-func decodeEnvelope(subject string, payload []byte) (streams.Message, error) {
-	var e envelope
-	if err := json.Unmarshal(payload, &e); err != nil {
-		return streams.Message{}, fmt.Errorf("redis: malformed message: %w", err)
-	}
-	return streams.Message{ID: e.ID, Subject: subject, Data: e.Data}, nil
+	return core.Unpack(subject, raw)
 }

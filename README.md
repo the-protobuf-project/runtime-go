@@ -54,7 +54,10 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
 | [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
-| [`streams/example`](streams/example) | `github.com/the-protobuf-project/runtime-go/streams/example` | Command example demonstrates the streams contract, in both delivery modes against a live Redis. |
+| [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
+| [`streams/examples/nats`](streams/examples/nats) | `github.com/the-protobuf-project/runtime-go/streams/examples/nats` | Command nats demonstrates the streams contract over NATS, in both forms, against a live server. |
+| [`streams/examples/redis`](streams/examples/redis) | `github.com/the-protobuf-project/runtime-go/streams/examples/redis` | Command redis demonstrates the streams contract in all three of the Redis provider's delivery modes, against a live Redis. |
+| [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |

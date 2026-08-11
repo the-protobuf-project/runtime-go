@@ -43,8 +43,97 @@ func main() {
 
 	runImmediate(ctx, rdb, logger)
 	runScheduled(ctx, rdb, logger)
+	runDurable(ctx, rdb, logger)
 
 	log.Println("done")
+}
+
+// runDurable shows delivery that survives a consumer dying, over Redis Streams.
+func runDurable(ctx context.Context, rdb goredis.UniversalClient, logger telemetry.Logger) {
+	log.Println("--- durable ---")
+
+	const subject = "order.placed"
+
+	// A third constructor, because this one keeps a log where the other two
+	// keep nothing: a named consumer's position lives on the server, and a
+	// delivered message stays pending until it is acknowledged.
+	s := streamsredis.ConnectDurable(rdb,
+		streamsredis.WithPrefix("example"),
+		streamsredis.WithLogger(logger),
+		// Short so this demo does not wait thirty seconds to show a redelivery.
+		// In a real program this belongs above your slowest handler.
+		streamsredis.WithReclaimAfter(2*time.Second),
+	)
+
+	stream, err := s.Create(ctx, streams.Stream{
+		Name:     "orders",
+		Subjects: []string{subject},
+	})
+	if err != nil {
+		log.Fatalf("Create: %v", err)
+	}
+	defer func() { _ = s.Delete(context.Background(), stream.ID) }()
+
+	m, err := s.Bind(ctx, stream.ID)
+	if err != nil {
+		log.Fatalf("Bind: %v", err)
+	}
+
+	// This is what the durable provider adds. On the other two it fails with a
+	// sentence explaining why, rather than a bare false.
+	d, err := streams.AsDurable(m)
+	if err != nil {
+		log.Fatalf("AsDurable: %v", err)
+	}
+
+	// The first consumer takes the message and then dies without
+	// acknowledging, which is the case the whole capability exists for.
+	first, cancelFirst := context.WithCancel(ctx)
+	deliveries, err := d.Consume(first, subject, "billing")
+	if err != nil {
+		log.Fatalf("Consume: %v", err)
+	}
+
+	if _, perr := m.Publish(ctx, subject, event{User: "alice", Action: "ordered"}); perr != nil {
+		log.Fatalf("Publish: %v", perr)
+	}
+
+	select {
+	case msg := <-deliveries:
+		log.Printf("consumer one took %s on attempt %d, then died without acknowledging",
+			msg.ID, msg.Attempt)
+	case <-time.After(5 * time.Second):
+		log.Fatal("timed out waiting for the first delivery")
+	}
+	cancelFirst()
+
+	// A second consumer under the same name picks up what the first never
+	// finished. Nothing was republished; the message was still outstanding.
+	second, cancelSecond := context.WithCancel(ctx)
+	defer cancelSecond()
+
+	again, err := d.Consume(second, subject, "billing")
+	if err != nil {
+		log.Fatalf("Consume (second): %v", err)
+	}
+
+	select {
+	case msg := <-again:
+		var got event
+		if derr := msg.Decode(&got); derr != nil {
+			log.Fatalf("Decode: %v", derr)
+		}
+		log.Printf("consumer two was handed it back on attempt %d -> %+v", msg.Attempt, got)
+
+		// Acknowledge after the work, not on receipt: acknowledging first turns
+		// at-least-once into at-most-once.
+		if aerr := msg.Ack(second); aerr != nil {
+			log.Fatalf("Ack: %v", aerr)
+		}
+		log.Println("acknowledged; it will not be delivered again")
+	case <-time.After(15 * time.Second):
+		log.Fatal("the unacknowledged message was never redelivered")
+	}
 }
 
 // runImmediate shows delivery at publish time, over pub/sub.
