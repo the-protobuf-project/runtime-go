@@ -15,7 +15,7 @@ require (
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.44.0
+	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.45.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d
 	google.golang.org/grpc v1.83.0
@@ -92,7 +92,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.20.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260709172345-9ea1abe57597 // indirect
