@@ -57,6 +57,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
 | [`streams/examples/nats`](streams/examples/nats) | `github.com/the-protobuf-project/runtime-go/streams/examples/nats` | Command nats demonstrates the streams contract over NATS, in both forms, against a live server. |
 | [`streams/examples/redis`](streams/examples/redis) | `github.com/the-protobuf-project/runtime-go/streams/examples/redis` | Command redis demonstrates the streams contract in all three of the Redis provider's delivery modes, against a live Redis. |
+| [`streams/kafka`](streams/kafka) | `github.com/the-protobuf-project/runtime-go/streams/kafka` | Package kafka delivers streams over Apache Kafka. |
 | [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |

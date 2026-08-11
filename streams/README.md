@@ -11,7 +11,7 @@ backend can do and says so where it cannot.
 | Redis Streams | [`streams/redis`](./redis) | durable, redelivered until acknowledged |
 | Core NATS | [`streams/nats`](./nats) | immediate, nothing kept |
 | NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
-| Kafka | `streams/kafka` | next |
+| Kafka | [`streams/kafka`](./kafka) | durable, partitioned, replayable by offset |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
 [`database`](../database).
@@ -153,7 +153,33 @@ the message has been delivered — it is the one signal for breaking a redeliver
 loop, since the same bytes arriving for the fifth time look exactly like the
 first.
 
-Backed by Redis Streams (`ConnectDurable`) and JetStream (`ConnectJetStream`).
+Backed by Redis Streams (`ConnectDurable`), JetStream (`ConnectJetStream`) and
+Kafka (`kafka.Connect`).
+
+`Delivery.Attempt` is zero on Kafka, which is the contract's answer for a
+provider that cannot count: Kafka redelivers the same bytes with no record of
+having done so. Redis and JetStream both count and report a real number.
+
+### Ordering
+
+`streams.PartitionKey` decides which messages are ordered relative to each
+other. It means something only on Kafka, which orders within a partition and
+nowhere else:
+
+```go
+// Both land on one partition, so they are seen in the order they were sent.
+m.Publish(ctx, "order.placed", a, streams.PartitionKey(accountID))
+m.Publish(ctx, "order.shipped", b, streams.PartitionKey(accountID))
+```
+
+Redis and NATS order everything in one place and have no partition to choose, so
+they ignore it — which is safe, and is what the contract permits: a backend that
+orders everything loses nothing by being told what could have shared an order.
+
+Kafka also acknowledges **sequentially**. It tracks one offset per partition
+rather than one per message, so acknowledging a delivery marks everything before
+it in that partition as handled too. Handlers that acknowledge out of order will
+mark messages they never finished.
 
 ### Replay
 
