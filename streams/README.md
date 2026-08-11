@@ -27,30 +27,51 @@ go get github.com/the-protobuf-project/runtime-go/streams
 
 ## Usage
 
-You own the client; a provider is built around one and never dials or closes it.
+`Connect` dials, so nothing but this module is imported and the package name is
+the backend's:
 
 ```go
 import (
-    goredis "github.com/redis/go-redis/v9"
     "github.com/the-protobuf-project/runtime-go/streams"
-    streamsredis "github.com/the-protobuf-project/runtime-go/streams/redis"
+    "github.com/the-protobuf-project/runtime-go/streams/redis"
 )
 
-rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-defer rdb.Close()
-
-events := streamsredis.Connect(rdb)   // a streams.Streams
+events, err := redis.Connect(ctx, "localhost:6379")   // a streams.Streams
+defer events.(streams.Closer).Close()
 ```
 
-Everything after that line is the interface, so pointing this at NATS means
-changing the import and the constructor and nothing else:
+Everything after that line is the interface, so pointing this at another backend
+means changing the import and the constructor and nothing else:
 
 ```go
-nc, _ := gonats.Connect(gonats.DefaultURL)
-defer nc.Close()
+import "github.com/the-protobuf-project/runtime-go/streams/nats"
 
-events, _ := streamsnats.ConnectJetStream(nc)
+events, err := nats.ConnectJetStream(ctx, "nats://localhost:4222")
 ```
+
+**`Connect` dials and owns; `Use` takes a client you built.** Every provider has
+`Connect`; the two whose client is worth sharing with the rest of a program also
+have `Use`:
+
+```go
+rdb := goredis.NewClient(&goredis.Options{ /* TLS, cluster, pooling */ })
+defer rdb.Close()
+
+events := redis.Use(rdb)   // this package will not close what it did not open
+```
+
+A provider that dialed implements `streams.Closer`; one built by `Use` also
+implements it, as a no-op, so a caller may close either without knowing which it
+has.
+
+| | Dials | Takes a client |
+| --- | --- | --- |
+| Redis | `Connect`, `ConnectScheduled`, `ConnectDurable` | `Use`, `UseScheduled`, `UseDurable` |
+| NATS | `Connect`, `ConnectJetStream` | `Use`, `UseJetStream` |
+| Kafka | `Connect` | — |
+| RabbitMQ | `Connect` | — |
+| MQTT | `Connect` | — |
+| ZeroMQ | `Publish`, `Subscribe` | — |
 
 ### Streams and subjects
 
@@ -156,8 +177,8 @@ the message has been delivered — it is the one signal for breaking a redeliver
 loop, since the same bytes arriving for the fifth time look exactly like the
 first.
 
-Backed by Redis Streams (`ConnectDurable`), JetStream (`ConnectJetStream`) and
-Kafka (`kafka.Connect`).
+Backed by Redis Streams (`ConnectDurable`), JetStream (`ConnectJetStream`),
+Kafka, RabbitMQ and MQTT.
 
 `Delivery.Attempt` is zero on Kafka, which is the contract's answer for a
 provider that cannot count: Kafka redelivers the same bytes with no record of
@@ -289,5 +310,6 @@ run covered those two:
 go test ./... -v | grep -c -- '--- SKIP'
 ```
 
-Runnable demonstrations of every delivery mode live in
-[`examples`](./examples).
+A runnable demonstration of every provider lives in [`examples`](./examples) —
+one directory each, showing what that backend does that the others cannot. The
+ZeroMQ one needs nothing running at all.

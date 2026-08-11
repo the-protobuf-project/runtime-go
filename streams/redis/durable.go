@@ -55,7 +55,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 		// beats appending now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "a durable stream cannot schedule a delivery", nil,
 			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
-		return "", fmt.Errorf("%w: a durable stream delivers when it is read, not on a timer; use ConnectScheduled for a TTL", streams.ErrUnsupported)
+		return "", fmt.Errorf("%w: a durable stream delivers when it is read, not on a timer; use ConnectScheduled or UseScheduled for a TTL", streams.ErrUnsupported)
 	}
 
 	id := o.ID

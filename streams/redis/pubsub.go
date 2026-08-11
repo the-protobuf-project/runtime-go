@@ -61,7 +61,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 		// now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "this stream delivers immediately and cannot schedule", nil,
 			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
-		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
+		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled or UseScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)

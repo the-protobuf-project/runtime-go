@@ -55,8 +55,12 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
+| [`streams/examples/kafka`](streams/examples/kafka) | `github.com/the-protobuf-project/runtime-go/streams/examples/kafka` | Command kafka demonstrates the streams contract over Apache Kafka. |
+| [`streams/examples/mqtt`](streams/examples/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/examples/mqtt` | Command mqtt demonstrates the streams contract over MQTT 5. |
 | [`streams/examples/nats`](streams/examples/nats) | `github.com/the-protobuf-project/runtime-go/streams/examples/nats` | Command nats demonstrates the streams contract over NATS, in both forms, against a live server. |
+| [`streams/examples/rabbitmq`](streams/examples/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/examples/rabbitmq` | Command rabbitmq demonstrates the streams contract over RabbitMQ. |
 | [`streams/examples/redis`](streams/examples/redis) | `github.com/the-protobuf-project/runtime-go/streams/examples/redis` | Command redis demonstrates the streams contract in all three of the Redis provider's delivery modes, against a live Redis. |
+| [`streams/examples/zeromq`](streams/examples/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/examples/zeromq` | Command zeromq demonstrates the streams contract over ZeroMQ PUB/SUB. |
 | [`streams/kafka`](streams/kafka) | `github.com/the-protobuf-project/runtime-go/streams/kafka` | Package kafka delivers streams over Apache Kafka. |
 | [`streams/mqtt`](streams/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/mqtt` | Package mqtt delivers streams over MQTT 5. |
 | [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
