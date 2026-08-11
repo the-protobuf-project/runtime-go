@@ -25,8 +25,10 @@ const (
 
 // jsStreams is JetStream: the same subjects as core NATS, backed by a log.
 type jsStreams struct {
-	js  jetstream.JetStream
-	log telemetry.Logger
+	js       jetstream.JetStream
+	codec    streams.Codec
+	registry *streams.Registry
+	log      telemetry.Logger
 
 	// owned is the connection this package dialed, if it did. One handed in
 	// through UseJetStream belongs to the caller and is left alone.
@@ -266,7 +268,7 @@ func (m *jsManager) Publish(ctx context.Context, subject string, value any, opts
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.p.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -333,7 +335,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string) (<-chan strea
 				return
 			}
 
-			msg, derr := core.Unpack(raw.Subject(), raw.Data())
+			msg, derr := core.Unpack(m.p.registry, raw.Subject(), raw.Data())
 			if derr != nil {
 				m.p.log.Warn(ctx, "dropping a malformed message",
 					telemetry.Fields{"subject": raw.Subject(), "error": derr.Error()})
@@ -436,7 +438,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 				return
 			}
 
-			msg, derr := core.Unpack(raw.Subject(), raw.Data())
+			msg, derr := core.Unpack(m.p.registry, raw.Subject(), raw.Data())
 			if derr != nil {
 				// Nothing will ever decode this, so a handler will never
 				// acknowledge it and it would redeliver forever. Terminate it:

@@ -84,7 +84,7 @@ func (p *NotifyPublisher) Publish(subject string, doc Document) error {
 
 		// use per-message key so multiple messages don't overwrite each other
 		ttlKey := doc.ID()
-		persistKey := "doc:"+ ttlKey + ":data"
+		persistKey := "doc:" + ttlKey + ":data"
 
 		shared.Pulse.Logger.Debugf("Publishing message with key: %s", ttlKey)
 

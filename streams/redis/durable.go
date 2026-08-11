@@ -63,7 +63,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.handler.codec, id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
 			telemetry.Fields{"subject": subject, "id": id})
@@ -152,7 +152,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string) (<-chan 
 			for _, stream := range res {
 				for _, entry := range stream.Messages {
 					last = entry.ID
-					msg, derr := decodeEntry(subject, entry)
+					msg, derr := decodeEntry(m.handler.registry, subject, entry)
 					if derr != nil {
 						m.handler.log.Warn(ctx, "dropping a malformed message",
 							telemetry.Fields{"subject": subject, "entry": entry.ID, "error": derr.Error()})
@@ -374,7 +374,7 @@ func (m *durableManager) attempts(ctx context.Context, key, group, name string) 
 // deliver decodes an entry and hands it over, reporting whether the loop should
 // keep going.
 func (m *durableManager) deliver(ctx context.Context, key, subject, group string, entry goredis.XMessage, attempt int, out chan<- streams.Delivery) bool {
-	msg, err := decodeEntry(subject, entry)
+	msg, err := decodeEntry(m.handler.registry, subject, entry)
 	if err != nil {
 		// A message nobody can decode will never be acknowledged by a handler,
 		// so it would be reclaimed forever. Acknowledge it here and say so.
@@ -429,12 +429,12 @@ func (m *durableManager) lastID(ctx context.Context, key string) (string, error)
 }
 
 // decodeEntry turns a Redis stream entry back into a message.
-func decodeEntry(subject string, entry goredis.XMessage) (streams.Message, error) {
+func decodeEntry(reg *streams.Registry, subject string, entry goredis.XMessage) (streams.Message, error) {
 	raw, ok := entry.Values[payloadField].(string)
 	if !ok {
 		return streams.Message{}, fmt.Errorf("redis: entry %s carries no %q field", entry.ID, payloadField)
 	}
-	return core.Unpack(subject, []byte(raw))
+	return core.Unpack(reg, subject, []byte(raw))
 }
 
 // consumerName is this process's identity within a consumer group.

@@ -18,6 +18,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec  streams.Codec
 	log    telemetry.Logger
 	meter  telemetry.Meter
 	settle time.Duration
@@ -50,6 +51,16 @@ func WithMeter(m telemetry.Meter) Option {
 // subscription; raising it narrows the window and never closes it.
 func WithSettle(d time.Duration) Option {
 	return func(c *config) { c.settle = d }
+}
+
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
 }
 
 func newConfig(opts ...Option) config {
@@ -85,7 +96,9 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	}
 
 	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
-	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock, declared: map[string]streams.Stream{}}, nil
+	codec, registry := core.Resolve(cfg.codec)
+	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
+		codec: codec, registry: registry, declared: map[string]streams.Stream{}}, nil
 }
 
 // Subscribe returns a [streams.Streams] that connects to endpoint and receives
@@ -100,7 +113,9 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	cfg := newConfig(opts...)
 
 	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
-	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, declared: map[string]streams.Stream{}}, nil
+	codec, registry := core.Resolve(cfg.codec)
+	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
+		codec: codec, registry: registry, declared: map[string]streams.Stream{}}, nil
 }
 
 // store holds the declarations and, for a publisher, the bound socket.
@@ -111,6 +126,8 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 // buys is the subject check, which catches a typo at the call that made it.
 type store struct {
 	endpoint string
+	codec    streams.Codec
+	registry *streams.Registry
 	cfg      config
 	log      telemetry.Logger
 

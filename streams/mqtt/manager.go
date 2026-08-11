@@ -57,7 +57,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.store.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -222,7 +222,7 @@ func (m *manager) attach(ctx context.Context, subject, group, clientID string, d
 	raw := make(chan received, 64)
 
 	client, resumed, err := m.store.dial(ctx, clientID, durable, func(pr paho.PublishReceived) (bool, error) {
-		msg, derr := core.Unpack(subject, pr.Packet.Payload)
+		msg, derr := core.Unpack(m.store.registry, subject, pr.Packet.Payload)
 		if derr != nil {
 			// One bad message is not a reason to tear down a healthy
 			// subscription, but it must be acknowledged or a durable session

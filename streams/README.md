@@ -121,6 +121,26 @@ done, and canceling is the only way to stop delivery. Walk away without
 canceling and the delivery goroutine and its server-side subscription live as
 long as the process.
 
+### Codecs
+
+Payloads are JSON by default and the codec is pluggable. Since this runtime is
+built on protobuf, that is the one to reach for when volume matters:
+
+```go
+import "github.com/the-protobuf-project/runtime-go/streams/codec/protobuf"
+
+events, err := redis.Connect(ctx, addr, redis.WithCodec(protobuf.Codec))
+```
+
+The codec's name travels in the frame, so **a message decodes the way it was
+written, not the way the reader is configured**. A provider always understands
+JSON as well as whatever it is set to, so one side of a deployment can switch
+before the other. A payload written by a codec the reader does not have is
+refused by name rather than decoded into a zero value.
+
+The protobuf codec requires every published value to be a `proto.Message`, and
+says so at the publish that broke it.
+
 ### Typed views
 
 ```go

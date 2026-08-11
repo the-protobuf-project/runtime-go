@@ -3,10 +3,10 @@ package redis
 import (
 	"context"
 	"fmt"
-	"log"
-	"github.com/machanirobotics/loom/go/ulid"
 	"github.com/machanirobotics/loom/go/redis/options"
 	"github.com/machanirobotics/loom/go/redis/shared"
+	"github.com/machanirobotics/loom/go/ulid"
+	"log"
 )
 
 // NotifyHandler manages the creation and lifecycle of notification streams.
@@ -122,23 +122,22 @@ func (s *NotifyHandler) Update(id string, stream Stream) (*Stream, error) {
 	// First verify the stream exists
 	_, err := s.Get(id)
 	if err != nil {
-		_=shared.Pulse.Logger.Errorf("Error getting stream info for update: %v", err)
+		_ = shared.Pulse.Logger.Errorf("Error getting stream info for update: %v", err)
 		return nil, fmt.Errorf("stream with ID %s not found", id)
 	}
 	if err := s.Delete(id); err != nil { // Delete the existing stream
-		_=shared.Pulse.Logger.Errorf("Error deleting stream during update: %v", err)
+		_ = shared.Pulse.Logger.Errorf("Error deleting stream during update: %v", err)
 		return nil, fmt.Errorf("failed to delete existing stream: %w", err)
 	}
 	stream.SetID(id)
 	// Create new stream with the provided data
 	if _, err := s.Create(stream); err != nil {
-		_=shared.Pulse.Logger.Errorf("Error creating new stream during update: %v", err)
+		_ = shared.Pulse.Logger.Errorf("Error creating new stream during update: %v", err)
 		return nil, fmt.Errorf("failed to create new stream: %w", err)
 	}
 	shared.Pulse.Logger.Debugf("Updated stream: %s", id)
 	return &stream, nil
 }
-
 
 // List returns all available notification streams.
 // Returns a slice of Stream objects or an error if the operation fails.

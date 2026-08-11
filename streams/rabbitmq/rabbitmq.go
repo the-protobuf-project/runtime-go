@@ -19,6 +19,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec    streams.Codec
 	log      telemetry.Logger
 	meter    telemetry.Meter
 	prefix   string
@@ -65,6 +66,16 @@ func WithPrefetch(n int) Option {
 	return func(c *config) { c.prefetch = n }
 }
 
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
+}
+
 // Connect returns a [streams.Streams] backed by RabbitMQ at url, which is an
 // AMQP URL such as "amqp://guest:guest@localhost:5672/".
 //
@@ -108,8 +119,11 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 		return nil, fmt.Errorf("rabbitmq: cannot open a channel: %w", err)
 	}
 
+	codec, registry := core.Resolve(cfg.codec)
+
 	return &store{
 		url: url, cfg: cfg, log: cfg.log,
+		codec: codec, registry: registry,
 		conn: conn, ch: ch,
 		declared: map[string]streams.Stream{},
 	}, nil
@@ -121,10 +135,12 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 // and survives, but AMQP has nowhere to hang a description or a user id, so a
 // stream's own metadata does not outlive the program that declared it.
 type store struct {
-	url  string
-	cfg  config
-	log  telemetry.Logger
-	conn *amqp.Connection
+	url      string
+	codec    streams.Codec
+	registry *streams.Registry
+	cfg      config
+	log      telemetry.Logger
+	conn     *amqp.Connection
 
 	// mu guards ch as well as declared: an amqp.Channel is not safe for
 	// concurrent use, and Publish and Create both reach for this one.

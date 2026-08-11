@@ -7,6 +7,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -14,6 +15,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec    streams.Codec
 	prefix   string
 	db       int
 	username string
@@ -97,6 +99,16 @@ func WithReclaimAfter(d time.Duration) Option {
 	return func(c *config) { c.reclaim = d }
 }
 
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
+}
+
 // Use returns a [streams.Streams] backed by rdb, delivering immediately over
 // pub/sub.
 //
@@ -158,15 +170,19 @@ func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) st
 		}
 	}
 
+	codec, registry := core.Resolve(cfg.codec)
+
 	return &streamHandler{
-		rdb:     rdb,
-		keys:    newKeys(cfg.prefix, k),
-		kind:    k,
-		db:      db,
-		log:     cfg.log,
-		maxLen:  cfg.maxLen,
-		reclaim: cfg.reclaim,
-		owned:   owned,
+		rdb:      rdb,
+		codec:    codec,
+		registry: registry,
+		keys:     newKeys(cfg.prefix, k),
+		kind:     k,
+		db:       db,
+		log:      cfg.log,
+		maxLen:   cfg.maxLen,
+		reclaim:  cfg.reclaim,
+		owned:    owned,
 	}
 }
 

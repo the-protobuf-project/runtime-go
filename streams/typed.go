@@ -2,33 +2,7 @@ package streams
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 )
-
-// encode turns a published value into bytes. Providers use it so every backend
-// puts the same shape on the wire.
-func encode(value any) ([]byte, error) {
-	b, err := json.Marshal(value)
-	if err != nil {
-		return nil, fmt.Errorf("streams: failed to encode value: %w", err)
-	}
-	return b, nil
-}
-
-// decode unmarshals a payload into dest.
-func decode(data []byte, dest any) error {
-	if dest == nil {
-		return fmt.Errorf("streams: decode destination is nil")
-	}
-	if err := json.Unmarshal(data, dest); err != nil {
-		return fmt.Errorf("streams: failed to decode message: %w", err)
-	}
-	return nil
-}
-
-// Encode is [encode] exported for providers in other modules.
-func Encode(value any) ([]byte, error) { return encode(value) }
 
 // Typed is a view over a [Manager] bound to one model.
 //

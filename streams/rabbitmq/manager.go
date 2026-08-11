@@ -61,7 +61,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.store.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +115,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 		}()
 
 		for d := range deliveries {
-			msg, derr := core.Unpack(d.RoutingKey, d.Body)
+			msg, derr := core.Unpack(m.store.registry, d.RoutingKey, d.Body)
 			if derr != nil {
 				m.store.log.Warn(ctx, "dropping a malformed message",
 					telemetry.Fields{"subject": subject, "error": derr.Error()})
@@ -182,7 +182,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		}()
 
 		for d := range deliveries {
-			msg, derr := core.Unpack(d.RoutingKey, d.Body)
+			msg, derr := core.Unpack(m.store.registry, d.RoutingKey, d.Body)
 			if derr != nil {
 				// Nothing will ever decode this, so no handler will ever
 				// acknowledge it. Reject it without requeueing, which is the

@@ -19,6 +19,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec    streams.Codec
 	log      telemetry.Logger
 	meter    telemetry.Meter
 	prefix   string
@@ -91,6 +92,16 @@ func WithClientID(id string) Option {
 	return func(c *config) { c.clientID = id }
 }
 
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
+}
+
 // Connect returns a [streams.Streams] backed by an MQTT 5 broker at address.
 //
 // Unlike most providers this one dials, for the reason given in the package
@@ -122,7 +133,9 @@ func Connect(ctx context.Context, address string, opts ...Option) (streams.Strea
 		return nil, fmt.Errorf("mqtt: no broker address given")
 	}
 
-	s := &store{address: address, cfg: cfg, log: cfg.log, declared: map[string]streams.Stream{}}
+	codec, registry := core.Resolve(cfg.codec)
+	s := &store{address: address, cfg: cfg, log: cfg.log,
+		codec: codec, registry: registry, declared: map[string]streams.Stream{}}
 
 	// One connection for publishing and for undurable subscriptions. Durable
 	// consumers get their own, because their session is their identity.
@@ -136,10 +149,12 @@ func Connect(ctx context.Context, address string, opts ...Option) (streams.Strea
 
 // store holds the declarations and the publishing connection.
 type store struct {
-	address string
-	cfg     config
-	log     telemetry.Logger
-	client  *paho.Client
+	address  string
+	codec    streams.Codec
+	registry *streams.Registry
+	cfg      config
+	log      telemetry.Logger
+	client   *paho.Client
 
 	mu       sync.RWMutex
 	declared map[string]streams.Stream

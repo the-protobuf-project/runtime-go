@@ -54,6 +54,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
 | [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
+| [`streams/codec/protobuf`](streams/codec/protobuf) | `github.com/the-protobuf-project/runtime-go/streams/codec/protobuf` | Package protobuf encodes stream payloads as protocol buffers. |
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
 | [`streams/examples/kafka`](streams/examples/kafka) | `github.com/the-protobuf-project/runtime-go/streams/examples/kafka` | Command kafka demonstrates the streams contract over Apache Kafka. |
 | [`streams/examples/mqtt`](streams/examples/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/examples/mqtt` | Command mqtt demonstrates the streams contract over MQTT 5. |

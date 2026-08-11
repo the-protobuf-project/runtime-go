@@ -20,9 +20,11 @@ import (
 // over — the alternative would be inventing a registry subject and pretending
 // this provider has storage it does not.
 type plainStreams struct {
-	nc    *gonats.Conn
-	log   telemetry.Logger
-	queue string
+	nc       *gonats.Conn
+	codec    streams.Codec
+	registry *streams.Registry
+	log      telemetry.Logger
+	queue    string
 
 	// owned says this package dialed the connection and must close it. One
 	// handed in through Use belongs to the caller.
@@ -185,7 +187,7 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.p.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -259,7 +261,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string) (<-chan st
 				if !ok {
 					return
 				}
-				msg, derr := core.Unpack(raw.Subject, raw.Data)
+				msg, derr := core.Unpack(m.p.registry, raw.Subject, raw.Data)
 				if derr != nil {
 					// One bad message is not a reason to tear down a healthy
 					// subscription.

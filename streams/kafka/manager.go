@@ -57,7 +57,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.store.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +121,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 			iter := fetches.RecordIter()
 			for !iter.Done() {
 				rec := iter.Next()
-				msg, derr := core.Unpack(subject, rec.Value)
+				msg, derr := core.Unpack(m.store.registry, subject, rec.Value)
 				if derr != nil {
 					m.store.log.Warn(ctx, "dropping a malformed message",
 						telemetry.Fields{"subject": subject, "offset": rec.Offset, "error": derr.Error()})
@@ -239,7 +239,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 			for !iter.Done() {
 				rec := iter.Next()
 
-				msg, derr := core.Unpack(subject, rec.Value)
+				msg, derr := core.Unpack(m.store.registry, subject, rec.Value)
 				if derr != nil {
 					// Nothing will ever decode this, so no handler will ever
 					// acknowledge it and the group would stall on it forever.

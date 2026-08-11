@@ -8,6 +8,7 @@ import (
 	gonats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -15,6 +16,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec streams.Codec
 	log   telemetry.Logger
 	meter telemetry.Meter
 	queue string
@@ -49,6 +51,16 @@ func WithQueueGroup(name string) Option {
 	return func(c *config) { c.queue = name }
 }
 
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
+}
+
 func newConfig(opts ...Option) config {
 	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter}
 	for _, opt := range opts {
@@ -80,8 +92,11 @@ func newConfig(opts ...Option) config {
 // and does not drain it.
 func Use(nc *gonats.Conn, opts ...Option) streams.Streams {
 	cfg := newConfig(opts...)
+	codec, registry := core.Resolve(cfg.codec)
 	return &plainStreams{
 		nc:       nc,
+		codec:    codec,
+		registry: registry,
 		log:      cfg.log,
 		queue:    cfg.queue,
 		declared: make(map[string]streams.Stream),
@@ -111,7 +126,8 @@ func UseJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: cannot reach JetStream: %w", err)
 	}
-	return &jsStreams{js: js, log: cfg.log}, nil
+	codec, registry := core.Resolve(cfg.codec)
+	return &jsStreams{js: js, log: cfg.log, codec: codec, registry: registry}, nil
 }
 
 // Connect dials url and returns a [streams.Streams] backed by core NATS.

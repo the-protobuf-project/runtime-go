@@ -23,13 +23,15 @@ import (
 // delivery. They share every other behavior — subject validation, metadata,
 // listing — so they share an implementation and differ only where it matters.
 type streamHandler struct {
-	rdb     goredis.UniversalClient
-	keys    keys
-	kind    kind
-	db      int
-	log     telemetry.Logger
-	maxLen  int64
-	reclaim time.Duration
+	rdb      goredis.UniversalClient
+	codec    streams.Codec
+	registry *streams.Registry
+	keys     keys
+	kind     kind
+	db       int
+	log      telemetry.Logger
+	maxLen   int64
+	reclaim  time.Duration
 
 	// owned says this package dialed the client and must close it. A client
 	// handed in through Use belongs to the caller, and closing it here would

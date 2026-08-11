@@ -45,7 +45,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.handler.codec, id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
 			telemetry.Fields{"subject": subject, "id": id})
@@ -166,7 +166,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 				if !ok {
 					return
 				}
-				msg, err := core.Unpack(subject, []byte(raw.Payload))
+				msg, err := core.Unpack(m.handler.registry, subject, []byte(raw.Payload))
 				if err != nil {
 					// A malformed payload is one bad message, not a reason to
 					// tear down a healthy subscription.
@@ -261,5 +261,5 @@ func (m *streamManager) claim(ctx context.Context, subject, id string) (streams.
 	if err != nil {
 		return streams.Message{}, err
 	}
-	return core.Unpack(subject, raw)
+	return core.Unpack(m.handler.registry, subject, raw)
 }

@@ -81,7 +81,7 @@ func main() {
 	} else {
 		log.Printf("Available streams: %+v\n", streams)
 	}
-	
+
 	//GET STREAM MANAGER
 	//The stream manager provides methods for publishing and subscribing
 	mgr, err := manager.Channel.Stream.Set(s.ID())

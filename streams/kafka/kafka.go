@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -15,6 +16,7 @@ import (
 type Option func(*config)
 
 type config struct {
+	codec      streams.Codec
 	log        telemetry.Logger
 	meter      telemetry.Meter
 	prefix     string
@@ -71,6 +73,16 @@ func WithClientOptions(opts ...kgo.Opt) Option {
 	return func(c *config) { c.client = append(c.client, opts...) }
 }
 
+// WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
+//
+// It changes what is published; what is *read* is decided by the message, which
+// carries the name of the codec that wrote it. A provider always understands
+// JSON as well as whatever is set here, so switching does not orphan a peer
+// that has not switched yet.
+func WithCodec(c streams.Codec) Option {
+	return func(cfg *config) { cfg.codec = c }
+}
+
 // Connect returns a [streams.Streams] backed by Kafka.
 //
 // Unlike the other providers this one dials, for the reason given in the
@@ -97,12 +109,16 @@ func Connect(ctx context.Context, seeds []string, opts ...Option) (streams.Strea
 		return nil, fmt.Errorf("kafka: cannot build the client: %w", err)
 	}
 
+	codec, registry := core.Resolve(cfg.codec)
+
 	s := &streamStore{
-		seeds: seeds,
-		cfg:   cfg,
-		cl:    client,
-		admin: kadm.NewClient(client),
-		log:   cfg.log,
+		seeds:    seeds,
+		codec:    codec,
+		registry: registry,
+		cfg:      cfg,
+		cl:       client,
+		admin:    kadm.NewClient(client),
+		log:      cfg.log,
 	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, dialTimeout)

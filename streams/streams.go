@@ -58,11 +58,31 @@ type Message struct {
 
 	// Data is the encoded payload. Prefer [Message.Decode] over reading it.
 	Data []byte
+
+	// codec is the one the publisher encoded with, read off the wire. It is
+	// unexported because a caller decodes through [Message.Decode] and should
+	// not have to know: a message decodes the way it was written, not the way
+	// this program happens to be configured.
+	codec Codec
+}
+
+// NewMessage assembles a delivered message. Providers build one through
+// runtime-go/streams/core rather than calling this directly.
+func NewMessage(id, subject string, data []byte, codec Codec) Message {
+	return Message{ID: id, Subject: subject, Data: data, codec: codec}
 }
 
 // Decode unmarshals the payload into dest, which must be a non-nil pointer.
+//
+// It decodes with the codec the publisher used, which travels with the message.
 func (m Message) Decode(dest any) error {
-	return decode(m.Data, dest)
+	codec := m.codec
+	if codec == nil {
+		// A message assembled by hand rather than read off the wire — a test
+		// fake, most often. JSON is what it would have been before codecs.
+		codec = JSON
+	}
+	return codec.Unmarshal(m.Data, dest)
 }
 
 // Options are the per-operation settings a provider understands. A provider

@@ -31,11 +31,13 @@ const (
 
 // streamStore manages stream lifecycle and hands out managers.
 type streamStore struct {
-	seeds []string
-	cfg   config
-	cl    *kgo.Client
-	admin *kadm.Client
-	log   telemetry.Logger
+	seeds    []string
+	codec    streams.Codec
+	registry *streams.Registry
+	cfg      config
+	cl       *kgo.Client
+	admin    *kadm.Client
+	log      telemetry.Logger
 }
 
 var (

@@ -73,7 +73,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		id = core.NewID()
 	}
 
-	body, err := core.Pack(id, value)
+	body, err := core.Pack(m.store.codec, id, value)
 	if err != nil {
 		return "", err
 	}
@@ -156,7 +156,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 				continue
 			}
 
-			decoded, derr := core.Unpack(subject, msg.Frames[1])
+			decoded, derr := core.Unpack(m.store.registry, subject, msg.Frames[1])
 			if derr != nil {
 				// One bad message is not a reason to tear down a healthy
 				// subscription.
