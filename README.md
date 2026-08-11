@@ -60,8 +60,10 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`streams/kafka`](streams/kafka) | `github.com/the-protobuf-project/runtime-go/streams/kafka` | Package kafka delivers streams over Apache Kafka. |
 | [`streams/mqtt`](streams/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/mqtt` | Package mqtt delivers streams over MQTT 5. |
 | [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
+| [`streams/rabbitmq`](streams/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/rabbitmq` | Package rabbitmq delivers streams over RabbitMQ. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
+| [`streams/zeromq`](streams/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/zeromq` | Package zeromq delivers streams over ZeroMQ PUB/SUB. |
 | [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |
 | [`ulid`](ulid) | `github.com/the-protobuf-project/runtime-go/ulid` | Package ulid generates sortable, collision-resistant identifiers for runtime-go modules. |
 | [`network/examples/graphql/server`](network/examples/graphql/server) | `server` | Command server is a minimal GraphQL server used by the GraphQL client example; it serves a generated schema so the example queries, mutations, and subscriptions have a live endpoint to run against. |

@@ -13,6 +13,8 @@ backend can do and says so where it cannot.
 | NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
 | Kafka | [`streams/kafka`](./kafka) | durable, partitioned, replayable by offset |
 | MQTT 5 | [`streams/mqtt`](./mqtt) | durable by session, not replayable |
+| RabbitMQ | [`streams/rabbitmq`](./rabbitmq) | durable by queue, true negative acknowledgement |
+| ZeroMQ | [`streams/zeromq`](./zeromq) | brokerless, immediate, nothing kept |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
 [`database`](../database).
@@ -204,13 +206,19 @@ behind it to seek, so `AsPositioned` refuses by name. A contract that had fused
 the two would have had to either lie about replay or throw away durability MQTT
 genuinely has.
 
-| Provider | Durable | Positioned | `Attempt` |
-| --- | --- | --- | --- |
-| Redis Streams | ✓ | ✓ | counted |
-| NATS JetStream | ✓ | ✓ | counted |
-| Kafka | ✓ | ✓ | 0 — cannot count |
-| MQTT 5 | ✓ | ✗ | 0 — cannot count |
-| Redis pub/sub, core NATS | ✗ | ✗ | — |
+| Provider | Durable | Positioned | `Attempt` | `Nak` returns it |
+| --- | --- | --- | --- | --- |
+| Redis Streams | ✓ | ✓ | counted | after the reclaim interval |
+| NATS JetStream | ✓ | ✓ | counted | immediately |
+| Kafka | ✓ | ✓ | 0 — cannot count | on partition reassignment |
+| RabbitMQ | ✓ | ✗ | counted | immediately |
+| MQTT 5 | ✓ | ✗ | 0 — cannot count | on reconnect |
+| Redis pub/sub, core NATS, ZeroMQ | ✗ | ✗ | — | — |
+
+RabbitMQ and MQTT are durable without being replayable — a queue and a session
+both hold what a consumer has not handled, but neither is a log you can seek in.
+Kafka cannot count redeliveries; RabbitMQ counts them on quorum queues and
+otherwise reports at least the second attempt from the redelivered flag.
 
 ### Scheduled delivery
 
@@ -261,15 +269,24 @@ is how you spot a consumer that leaked.
 ## Tests
 
 The contract, its decorators and `core` are covered by unit tests that need no
-server. The provider suites are integration tests.
+server. Most provider suites start their broker in-process and need nothing
+installed either: Kafka via `kfake`, NATS via its embedded server, MQTT via
+`mochi-mqtt`. ZeroMQ is brokerless, so it needs nothing at all.
 
-NATS starts a server in-process, so it needs nothing installed. Redis needs a
-live one and skips without it — including the keyspace events the scheduled
-tests rely on:
+Redis and RabbitMQ are the exceptions. Both skip without a live server — Redis
+also needs the keyspace events the scheduled tests rely on, which is why the
+compose file sets `--notify-keyspace-events Ex`:
 
 ```bash
 docker compose -f docker/compose.yaml up -d
 go test ./...
+```
+
+A suite that skips reports `ok`, so check for `SKIP` before believing a green
+run covered those two:
+
+```bash
+go test ./... -v | grep -c -- '--- SKIP'
 ```
 
 Runnable demonstrations of every delivery mode live in
