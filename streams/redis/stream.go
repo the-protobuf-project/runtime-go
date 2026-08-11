@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
 // streamHandler manages stream lifecycle and hands out publishers and
@@ -22,14 +23,58 @@ import (
 // delivery. They share every other behavior — subject validation, metadata,
 // listing — so they share an implementation and differ only where it matters.
 type streamHandler struct {
-	rdb  goredis.UniversalClient
-	keys keys
-	kind kind
-	db   int
-	log  telemetry.Logger
+	rdb      goredis.UniversalClient
+	codec    streams.Codec
+	registry *streams.Registry
+	metrics  *core.Metrics
+	keys     keys
+	kind     kind
+	db       int
+	log      telemetry.Logger
+	maxLen   int64
+	reclaim  time.Duration
+
+	// owned says this package dialed the client and must close it. A client
+	// handed in through Use belongs to the caller, and closing it here would
+	// take down connections this package never made.
+	owned bool
 }
 
-var _ streams.Streams = (*streamHandler)(nil)
+// Close releases the connection, if this package made it.
+//
+// It is a no-op on a provider built by [Use], which does not own its client —
+// so a caller may close either kind without having to remember which it has.
+func (s *streamHandler) Close() error {
+	if !s.owned {
+		return nil
+	}
+	if err := s.rdb.Close(); err != nil {
+		return fmt.Errorf("redis: cannot close: %w", err)
+	}
+	return nil
+}
+
+// declares rejects a subject the stream does not declare.
+//
+// Both managers use it, so an undeclared subject fails the same way whichever
+// delivery mode is in play. Publishing to one would write to a key nobody
+// reads, and consuming from one would wait forever — both silent.
+func (s *streamHandler) declares(ctx context.Context, stream streams.Stream, subject string) error {
+	// A Redis key is a literal name, so a declared "orders.*" is a subject
+	// called that and not a pattern — matched with Declares, not DeclaresPattern.
+	if core.Declares(stream.Subjects, subject) {
+		return nil
+	}
+	s.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+		"subject": subject, "stream": stream.ID, "declared": stream.Subjects,
+	})
+	return core.ErrSubject(stream.ID, subject, stream.Subjects)
+}
+
+var (
+	_ streams.Streams = (*streamHandler)(nil)
+	_ streams.Closer  = (*streamHandler)(nil)
+)
 
 // scheduled reports whether this handler delivers on expiry rather than on
 // publish.
@@ -39,12 +84,7 @@ func (s *streamHandler) scheduled() bool { return s.kind == kindNotify }
 func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
 	id := in.ID
 	if id == "" {
-		// A time-ordered id so listings sort chronologically, suffixed with the
-		// name to stay readable in redis-cli.
-		id = ulid.Generate().GetTimeCode()
-		if in.Name != "" {
-			id += ":" + in.Name
-		}
+		id = core.NewStreamID(in.Name)
 		s.log.Debug(ctx, "generated a stream id", telemetry.Fields{"id": id})
 	}
 
@@ -124,6 +164,15 @@ func (s *streamHandler) Bind(ctx context.Context, id string) (streams.Manager, e
 		return nil, err
 	}
 	s.log.Debug(ctx, "bound to stream", telemetry.Fields{"id": id, "subjects": stream.Subjects})
+
+	// The two managers are separate types rather than one type with a mode
+	// flag, because the difference is visible through the contract:
+	// [streams.AsDurable] has to succeed on one and fail on the other, and a
+	// single type carrying Consume would make it succeed on both and hand a
+	// pub/sub caller a consumer that cannot redeliver.
+	if s.kind == kindDurable {
+		return &durableManager{handler: s, stream: stream}, nil
+	}
 	return &streamManager{handler: s, stream: stream}, nil
 }
 

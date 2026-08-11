@@ -2,15 +2,13 @@ package redis
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/ulid"
 )
 
 // streamManager publishes to and subscribes from one stream.
@@ -24,26 +22,12 @@ type streamManager struct {
 
 var _ streams.Manager = (*streamManager)(nil)
 
-// envelope is the wire form: the id travels with the payload so a subscriber
-// reports the same id the publisher assigned.
-type envelope struct {
-	ID   string          `json:"id"`
-	Data json.RawMessage `json:"data"`
-}
-
 // checkSubject rejects a subject the stream does not declare.
 //
 // Publishing to an undeclared subject would create a channel nobody reads, and
 // subscribing to one would wait forever — both silent failures.
 func (m *streamManager) checkSubject(ctx context.Context, subject string) error {
-	if slices.Contains(m.stream.Subjects, subject) {
-		return nil
-	}
-	m.handler.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
-		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
-	})
-	return fmt.Errorf("%w: %q (stream %s declares %v)",
-		streams.ErrUnknownSubject, subject, m.stream.ID, m.stream.Subjects)
+	return m.handler.declares(ctx, m.stream, subject)
 }
 
 // Publish sends a value on a subject.
@@ -58,18 +42,14 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 
 	id := o.ID
 	if id == "" {
-		id = ulid.Generate().GetTimeCode()
+		id = core.NewID()
 	}
 
-	data, err := streams.Encode(value)
+	body, err := core.Pack(m.handler.codec, id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
 			telemetry.Fields{"subject": subject, "id": id})
 		return "", err
-	}
-	body, err := json.Marshal(envelope{ID: id, Data: data})
-	if err != nil {
-		return "", fmt.Errorf("redis: cannot encode message: %w", err)
 	}
 
 	if m.handler.scheduled() {
@@ -81,7 +61,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 		// now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "this stream delivers immediately and cannot schedule", nil,
 			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
-		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
+		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled or UseScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
@@ -145,12 +125,12 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 // The channel is closed when ctx is done. That is the only way to stop the
 // subscription, and it is what keeps the delivery goroutine and the server-side
 // subscription from outliving the caller.
-func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
 	if m.handler.scheduled() {
-		return m.subscribeScheduled(ctx, subject)
+		return m.subscribeScheduled(ctx, subject, opts...)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
@@ -167,7 +147,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 
 	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject, "channel": channel})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
@@ -186,7 +166,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 				if !ok {
 					return
 				}
-				msg, err := decodeEnvelope(subject, []byte(raw.Payload))
+				msg, err := core.Unpack(m.handler.registry, subject, []byte(raw.Payload))
 				if err != nil {
 					// A malformed payload is one bad message, not a reason to
 					// tear down a healthy subscription.
@@ -213,7 +193,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 //
 // Redis publishes one keyspace event per expired key across the whole database,
 // so this filters by key prefix down to the stream and subject asked for.
-func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	channel := "__keyevent@" + strconv.Itoa(m.handler.db) + "__:expired"
 	sub := m.handler.rdb.Subscribe(ctx, channel)
 
@@ -229,7 +209,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) 
 		"subject": subject, "channel": channel, "prefix": want,
 	})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
@@ -281,14 +261,16 @@ func (m *streamManager) claim(ctx context.Context, subject, id string) (streams.
 	if err != nil {
 		return streams.Message{}, err
 	}
-	return decodeEnvelope(subject, raw)
+	return core.Unpack(m.handler.registry, subject, raw)
 }
 
-// decodeEnvelope turns a wire payload back into a Message.
-func decodeEnvelope(subject string, payload []byte) (streams.Message, error) {
-	var e envelope
-	if err := json.Unmarshal(payload, &e); err != nil {
-		return streams.Message{}, fmt.Errorf("redis: malformed message: %w", err)
+// PublishBatch sends several values on a subject.
+//
+// Redis pub/sub has no batch primitive, so this publishes each value in turn
+// — which is what a caller would otherwise write.
+func (m *streamManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
+	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+		return nil, err
 	}
-	return streams.Message{ID: e.ID, Subject: subject, Data: e.Data}, nil
+	return core.PublishEach(ctx, m, subject, values, opts...)
 }

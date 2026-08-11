@@ -54,9 +54,21 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
 | [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
-| [`streams/example`](streams/example) | `github.com/the-protobuf-project/runtime-go/streams/example` | Command example demonstrates the streams contract, in both delivery modes against a live Redis. |
+| [`streams/codec/protobuf`](streams/codec/protobuf) | `github.com/the-protobuf-project/runtime-go/streams/codec/protobuf` | Package protobuf encodes stream payloads as protocol buffers. |
+| [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
+| [`streams/examples/kafka`](streams/examples/kafka) | `github.com/the-protobuf-project/runtime-go/streams/examples/kafka` | Command kafka demonstrates the streams contract over Apache Kafka. |
+| [`streams/examples/mqtt`](streams/examples/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/examples/mqtt` | Command mqtt demonstrates the streams contract over MQTT 5. |
+| [`streams/examples/nats`](streams/examples/nats) | `github.com/the-protobuf-project/runtime-go/streams/examples/nats` | Command nats demonstrates the streams contract over NATS, in both forms, against a live server. |
+| [`streams/examples/rabbitmq`](streams/examples/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/examples/rabbitmq` | Command rabbitmq demonstrates the streams contract over RabbitMQ. |
+| [`streams/examples/redis`](streams/examples/redis) | `github.com/the-protobuf-project/runtime-go/streams/examples/redis` | Command redis demonstrates the streams contract in all three of the Redis provider's delivery modes, against a live Redis. |
+| [`streams/examples/zeromq`](streams/examples/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/examples/zeromq` | Command zeromq demonstrates the streams contract over ZeroMQ PUB/SUB. |
+| [`streams/kafka`](streams/kafka) | `github.com/the-protobuf-project/runtime-go/streams/kafka` | Package kafka delivers streams over Apache Kafka. |
+| [`streams/mqtt`](streams/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/mqtt` | Package mqtt delivers streams over MQTT 5. |
+| [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
+| [`streams/rabbitmq`](streams/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/rabbitmq` | Package rabbitmq delivers streams over RabbitMQ. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
+| [`streams/zeromq`](streams/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/zeromq` | Package zeromq delivers streams over ZeroMQ PUB/SUB. |
 | [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |
 | [`ulid`](ulid) | `github.com/the-protobuf-project/runtime-go/ulid` | Package ulid generates sortable, collision-resistant identifiers for runtime-go modules. |
 | [`network/examples/graphql/server`](network/examples/graphql/server) | `server` | Command server is a minimal GraphQL server used by the GraphQL client example; it serves a generated schema so the example queries, mutations, and subscriptions have a live endpoint to run against. |

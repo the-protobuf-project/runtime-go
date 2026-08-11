@@ -58,11 +58,31 @@ type Message struct {
 
 	// Data is the encoded payload. Prefer [Message.Decode] over reading it.
 	Data []byte
+
+	// codec is the one the publisher encoded with, read off the wire. It is
+	// unexported because a caller decodes through [Message.Decode] and should
+	// not have to know: a message decodes the way it was written, not the way
+	// this program happens to be configured.
+	codec Codec
+}
+
+// NewMessage assembles a delivered message. Providers build one through
+// runtime-go/streams/core rather than calling this directly.
+func NewMessage(id, subject string, data []byte, codec Codec) Message {
+	return Message{ID: id, Subject: subject, Data: data, codec: codec}
 }
 
 // Decode unmarshals the payload into dest, which must be a non-nil pointer.
+//
+// It decodes with the codec the publisher used, which travels with the message.
 func (m Message) Decode(dest any) error {
-	return decode(m.Data, dest)
+	codec := m.codec
+	if codec == nil {
+		// A message assembled by hand rather than read off the wire — a test
+		// fake, most often. JSON is what it would have been before codecs.
+		codec = JSON
+	}
+	return codec.Unmarshal(m.Data, dest)
 }
 
 // Options are the per-operation settings a provider understands. A provider
@@ -85,6 +105,16 @@ type Options struct {
 	// and adding a second consumer halves the time. A provider with no group
 	// support rejects a non-empty Group rather than silently fanning out.
 	Group string
+
+	// Prefetch is how many messages a provider may hold ahead of the reader.
+	//
+	// It is the throughput/loss trade in one number. Zero, the default, lets
+	// the provider choose. A larger number keeps a fast consumer fed and stops
+	// a slow one from stalling the connection its subscription shares; it also
+	// means more messages are held unacknowledged, and every one of those is
+	// redelivered if the process dies — which is at-least-once behaving as
+	// promised, and still work done twice.
+	Prefetch int
 
 	// PartitionKey decides which partition a message lands on, and so which
 	// messages are ordered relative to each other.
@@ -116,6 +146,12 @@ func ID(id string) Option {
 // every message. See [Options.Group].
 func Group(name string) Option {
 	return func(o *Options) { o.Group = name }
+}
+
+// Prefetch sets how many messages a provider may hold ahead of the reader. See
+// [Options.Prefetch].
+func Prefetch(n int) Option {
+	return func(o *Options) { o.Prefetch = n }
 }
 
 // PartitionKey decides which messages are ordered relative to each other. See
@@ -150,7 +186,12 @@ type Subscriber interface {
 	// afterwards is delivered rather than raced. The channel is closed when ctx
 	// is done — cancel it to stop delivery and release the server-side
 	// subscription.
-	Subscribe(ctx context.Context, subject string) (<-chan Message, error)
+	//
+	// [Prefetch] sets how many messages may be held ahead of the reader, and
+	// [Group] shares the subject among several subscribers where the provider
+	// can. Options a provider cannot honor are refused by name rather than
+	// ignored.
+	Subscribe(ctx context.Context, subject string, opts ...Option) (<-chan Message, error)
 }
 
 // Manager is a publisher and subscriber bound to one stream.

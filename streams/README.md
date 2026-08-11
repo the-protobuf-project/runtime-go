@@ -1,14 +1,23 @@
 # Streams
 
-The backend-agnostic contract for messaging. This module holds the interfaces
-and their decorators — no backend. Providers implement it in their own modules:
+Messaging with a backend-agnostic contract. One publish/subscribe interface over
+pub/sub, stored logs and scheduled delivery; a provider implements what its
+backend can do and says so where it cannot.
 
-| Provider | Module | Status |
+| Backend | Package | Delivery |
 | --- | --- | --- |
-| Redis | [`runtime-go/redis`](../redis) | implemented |
-| NATS | `streams/nats` | not yet implemented |
+| Redis pub/sub | [`streams/redis`](./redis) | immediate, nothing kept |
+| Redis scheduled | [`streams/redis`](./redis) | on TTL expiry |
+| Redis Streams | [`streams/redis`](./redis) | durable, redelivered until acknowledged |
+| Core NATS | [`streams/nats`](./nats) | immediate, nothing kept |
+| NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
+| Kafka | [`streams/kafka`](./kafka) | durable, partitioned, replayable by offset |
+| MQTT 5 | [`streams/mqtt`](./mqtt) | durable by session, not replayable |
+| RabbitMQ | [`streams/rabbitmq`](./rabbitmq) | durable by queue, true negative acknowledgement |
+| ZeroMQ | [`streams/zeromq`](./zeromq) | brokerless, immediate, nothing kept |
 
-For storage see [`cache`](../cache) and [`database`](../database).
+For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
+[`database`](../database).
 
 ## Installation
 
@@ -18,23 +27,51 @@ go get github.com/the-protobuf-project/runtime-go/streams
 
 ## Usage
 
-You reach streams through a provider's manager:
+`Connect` dials, so nothing but this module is imported and the package name is
+the backend's:
 
 ```go
 import (
     "github.com/the-protobuf-project/runtime-go/streams"
-    "github.com/the-protobuf-project/runtime-go/redis"
+    "github.com/the-protobuf-project/runtime-go/streams/redis"
 )
 
-c, _ := redis.New(ctx, redis.Config{Address: "localhost", Port: "6379"})
-defer c.Close()
-
-_ = c.CreateDatabase(ctx, "events")
-mgr, _ := c.SetDatabase(ctx, "events")
-defer mgr.Close()
-
-events := mgr.Channel.Stream   // a streams.Streams
+events, err := redis.Connect(ctx, "localhost:6379")   // a streams.Streams
+defer events.(streams.Closer).Close()
 ```
+
+Everything after that line is the interface, so pointing this at another backend
+means changing the import and the constructor and nothing else:
+
+```go
+import "github.com/the-protobuf-project/runtime-go/streams/nats"
+
+events, err := nats.ConnectJetStream(ctx, "nats://localhost:4222")
+```
+
+**`Connect` dials and owns; `Use` takes a client you built.** Every provider has
+`Connect`; the two whose client is worth sharing with the rest of a program also
+have `Use`:
+
+```go
+rdb := goredis.NewClient(&goredis.Options{ /* TLS, cluster, pooling */ })
+defer rdb.Close()
+
+events := redis.Use(rdb)   // this package will not close what it did not open
+```
+
+A provider that dialed implements `streams.Closer`; one built by `Use` also
+implements it, as a no-op, so a caller may close either without knowing which it
+has.
+
+| | Dials | Takes a client |
+| --- | --- | --- |
+| Redis | `Connect`, `ConnectScheduled`, `ConnectDurable` | `Use`, `UseScheduled`, `UseDurable` |
+| NATS | `Connect`, `ConnectJetStream` | `Use`, `UseJetStream` |
+| Kafka | `Connect` | — |
+| RabbitMQ | `Connect` | — |
+| MQTT | `Connect` | — |
+| ZeroMQ | `Publish`, `Subscribe` | — |
 
 ### Streams and subjects
 
@@ -50,6 +87,9 @@ s, _ := events.Create(ctx, streams.Stream{
 
 m, _ := events.Bind(ctx, s.ID)   // a streams.Manager
 ```
+
+Redis reads those subjects as literal names. NATS reads them as patterns, so a
+stream declaring `user.*` accepts `user.created`.
 
 ### Publish and subscribe
 
@@ -81,6 +121,26 @@ done, and canceling is the only way to stop delivery. Walk away without
 canceling and the delivery goroutine and its server-side subscription live as
 long as the process.
 
+### Codecs
+
+Payloads are JSON by default and the codec is pluggable. Since this runtime is
+built on protobuf, that is the one to reach for when volume matters:
+
+```go
+import "github.com/the-protobuf-project/runtime-go/streams/codec/protobuf"
+
+events, err := redis.Connect(ctx, addr, redis.WithCodec(protobuf.Codec))
+```
+
+The codec's name travels in the frame, so **a message decodes the way it was
+written, not the way the reader is configured**. A provider always understands
+JSON as well as whatever it is set to, so one side of a deployment can switch
+before the other. A payload written by a codec the reader does not have is
+refused by name rather than decoded into a zero value.
+
+The protobuf codec requires every published value to be a `proto.Message`, and
+says so at the publish that broke it.
+
 ### Typed views
 
 ```go
@@ -95,14 +155,179 @@ for u := range msgs { … }   // u is a User
 A message that fails to decode as `T` is skipped rather than delivered as a zero
 value. Use the untyped `Manager` when you need to see those.
 
-### Scheduled delivery
+## Capabilities
 
-Some providers can deliver when a TTL expires rather than on publish — a
-reminder, a lease timeout, a delayed retry. On the Redis provider that is a
-second handler with its own namespace:
+`Publisher` and `Subscriber` are the honest intersection — send a value, receive
+it, no promise it survives a restart — because that is what Redis pub/sub and
+core NATS actually do. Anything past that is a capability a provider has or does
+not, and asking for one it lacks returns `ErrUnsupported` naming the provider
+rather than silently downgrading to weaker delivery than you asked for.
+
+### Durable delivery
+
+`Durable` is the difference between a message being handed over and a message
+being *lent*. A named consumer's position lives on the server, so it outlives
+the process reading it, and a delivered message stays deliverable until someone
+acknowledges it.
 
 ```go
-notify := mgr.Channel.Notify
+d, err := streams.AsDurable(m)   // fails, by name, on pub/sub providers
+if err != nil {
+    return err
+}
+
+deliveries, _ := d.Consume(ctx, "order.placed", "billing")
+for msg := range deliveries {
+    if err := handle(msg); err != nil {
+        msg.Nak(ctx)   // hand it back
+        continue
+    }
+    msg.Ack(ctx)       // after the work, not on receipt
+}
+```
+
+Acknowledge **after** the work. Acknowledging on receipt turns at-least-once
+into at-most-once, which is the guarantee you were avoiding by reaching for
+`Durable` in the first place.
+
+The consumer name is the identity that survives a restart. Two processes under
+one name share its position and split the work; a process that dies and comes
+back resumes where the name left off. `Delivery.Attempt` counts how many times
+the message has been delivered — it is the one signal for breaking a redelivery
+loop, since the same bytes arriving for the fifth time look exactly like the
+first.
+
+Backed by Redis Streams (`ConnectDurable`), JetStream (`ConnectJetStream`),
+Kafka, RabbitMQ and MQTT.
+
+`Delivery.Attempt` is zero on Kafka, which is the contract's answer for a
+provider that cannot count: Kafka redelivers the same bytes with no record of
+having done so. Redis and JetStream both count and report a real number.
+
+### Flow control
+
+`Subscribe` and `Consume` take options. `Prefetch` sets how many messages a
+provider may hold ahead of the reader:
+
+```go
+msgs, _ := m.Subscribe(ctx, "user.created", streams.Prefetch(256))
+```
+
+It is the throughput/loss trade in one number. More keeps a fast consumer fed
+and stops a slow one from blocking the goroutine feeding it; it also means more
+messages held unacknowledged, and every one of those is redelivered if the
+process dies. Zero lets the provider choose; a negative value asks for a
+synchronous hand-off, which is what you want when ordering matters more than
+throughput.
+
+`Group` now works on `Subscribe` too, where the provider can share a subject —
+on NATS it becomes a queue group, and a group named at the call wins over one
+named at the constructor.
+
+### Metrics
+
+Every provider reports through the `telemetry.Meter` it was given:
+
+| Metric | Kind | Meaning |
+| --- | --- | --- |
+| `streams_delivered_total` | counter | messages handed to a consumer |
+| `streams_settled_total` | counter | acknowledged or returned, labelled `outcome` |
+| `streams_inflight` | up/down counter | delivered and not yet settled |
+| `streams_consumer_lag` | gauge | how far behind a named consumer is |
+
+Lag is reported only where the backend can answer the question — Redis from its
+pending list today. Where it cannot, the series is **absent rather than zero**: a
+consumer that looks caught up because nothing can measure it is worse than one
+that does not appear at all.
+
+### Batches
+
+`Batch` publishes several values in one call. Every provider implements it, so
+a caller writes one shape of code; where the backend has a real batch primitive
+it is used, and where it does not the provider publishes in turn — which is
+what the caller would otherwise write.
+
+```go
+b, _ := streams.AsBatch(m)
+ids, err := b.PublishBatch(ctx, "order.placed", values)
+```
+
+It matters most on Kafka. A per-message `Publish` waits for the broker to
+acknowledge *that* message, so a thousand values are a thousand round trips;
+`PublishBatch` hands them over together and waits once, which is what lets the
+client build the batches the protocol was designed around. The saving scales
+with network latency, so it is far larger against a remote broker than a local
+one.
+
+Ids come back one per value and in order, including when the error is non-nil,
+so a partial failure can be lined up against the input. `ID` is refused — one
+identifier cannot name several messages.
+
+### Ordering
+
+`streams.PartitionKey` decides which messages are ordered relative to each
+other. It means something only on Kafka, which orders within a partition and
+nowhere else:
+
+```go
+// Both land on one partition, so they are seen in the order they were sent.
+m.Publish(ctx, "order.placed", a, streams.PartitionKey(accountID))
+m.Publish(ctx, "order.shipped", b, streams.PartitionKey(accountID))
+```
+
+Redis and NATS order everything in one place and have no partition to choose, so
+they ignore it — which is safe, and is what the contract permits: a backend that
+orders everything loses nothing by being told what could have shared an order.
+
+Kafka also acknowledges **sequentially**. It tracks one offset per partition
+rather than one per message, so acknowledging a delivery marks everything before
+it in that partition as handled too. Handlers that acknowledge out of order will
+mark messages they never finished.
+
+### Replay
+
+`Positioned` reads a stored log from somewhere other than now:
+
+```go
+p, _ := streams.AsPositioned(m)
+deliveries, _ := p.ConsumeFrom(ctx, "order.placed", "audit", streams.FromEarliest)
+```
+
+The position applies when the consumer is created and not after. A consumer that
+already exists keeps the position it has — resetting on every attach would
+replay the log on every restart, which is the opposite of what a durable
+consumer is for.
+
+**MQTT is durable but not positioned**, which is the clearest argument for
+keeping the two capabilities apart. An MQTT session really does hold a
+consumer's subscriptions and its unacknowledged messages while it is away, so
+`Durable` is honest there. But a session is a queue, not a log: there is nothing
+behind it to seek, so `AsPositioned` refuses by name. A contract that had fused
+the two would have had to either lie about replay or throw away durability MQTT
+genuinely has.
+
+| Provider | Durable | Positioned | `Attempt` | `Nak` returns it |
+| --- | --- | --- | --- | --- |
+| Redis Streams | ✓ | ✓ | counted | after the reclaim interval |
+| NATS JetStream | ✓ | ✓ | counted | immediately |
+| Kafka | ✓ | ✓ | 0 — cannot count | on partition reassignment |
+| RabbitMQ | ✓ | ✗ | counted | immediately |
+| MQTT 5 | ✓ | ✗ | 0 — cannot count | on reconnect |
+| Redis pub/sub, core NATS, ZeroMQ | ✗ | ✗ | — | — |
+
+RabbitMQ and MQTT are durable without being replayable — a queue and a session
+both hold what a consumer has not handled, but neither is a log you can seek in.
+Kafka cannot count redeliveries; RabbitMQ counts them on quorum queues and
+otherwise reports at least the second attempt from the redelivered flag.
+
+### Scheduled delivery
+
+Some providers deliver when a TTL expires rather than on publish — a reminder, a
+lease timeout, a delayed retry. On Redis that is a separate constructor with its
+own key namespace:
+
+```go
+notify := streamsredis.ConnectScheduled(rdb)
 
 n, _ := notify.Create(ctx, streams.Stream{Name: "reminders", Subjects: []string{"pill"}})
 nm, _ := notify.Bind(ctx, n.ID)
@@ -113,11 +338,11 @@ _, err := nm.Publish(ctx, "pill", Reminder{Body: "take a pill"},
 ```
 
 A TTL is **required** there — delivery is the expiry, so a message without one
-could never fire. Conversely an immediate stream **rejects** a TTL rather than
+could never fire. Conversely every other provider **rejects** a TTL rather than
 publishing now and letting you believe it was scheduled.
 
 Redis delivers these through keyspace notifications, so the server must run with
-`--notify-keyspace-events Ex`. See the [provider README](../redis).
+`--notify-keyspace-events Ex`. NATS has no scheduled delivery at all and says so.
 
 ## Middleware
 
@@ -131,7 +356,11 @@ pub := streams.ChainPublisher(m,
 
 Retrying a publish is safe in a way a store write is not: a redelivered message
 is a duplicate the consumer can dedupe, whereas a dropped one is simply lost.
-`ErrUnknownSubject` is never retried.
+`ErrUnknownSubject` and `ErrUnsupported` are never retried — neither answer
+changes on a second attempt.
+
+On JetStream the message id is also sent as the JetStream message id, so a retry
+after an ambiguous failure is collapsed by the server rather than appended twice.
 
 `WithSubscriberLogging` records when a subscription opens, each delivery, and
 when it closes — the close record carries the delivered count, and its absence
@@ -139,10 +368,27 @@ is how you spot a consumer that leaked.
 
 ## Tests
 
-This module's tests are pure unit tests over the contract and decorators and
-need no server. The provider's integration tests live in
-[`runtime-go/redis`](../redis).
+The contract, its decorators and `core` are covered by unit tests that need no
+server. Most provider suites start their broker in-process and need nothing
+installed either: Kafka via `kfake`, NATS via its embedded server, MQTT via
+`mochi-mqtt`. ZeroMQ is brokerless, so it needs nothing at all.
+
+Redis and RabbitMQ are the exceptions. Both skip without a live server — Redis
+also needs the keyspace events the scheduled tests rely on, which is why the
+compose file sets `--notify-keyspace-events Ex`:
 
 ```bash
+docker compose -f docker/compose.yaml up -d
 go test ./...
 ```
+
+A suite that skips reports `ok`, so check for `SKIP` before believing a green
+run covered those two:
+
+```bash
+go test ./... -v | grep -c -- '--- SKIP'
+```
+
+A runnable demonstration of every provider lives in [`examples`](./examples) —
+one directory each, showing what that backend does that the others cannot. The
+ZeroMQ one needs nothing running at all.

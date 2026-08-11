@@ -1,0 +1,25 @@
+services:
+  nats:
+    image: nats:latest
+    container_name: nats-local
+    ports:
+      - "4222:4222" # clients
+      - "8222:8222" # monitoring
+    # JetStream is off by default, and without it ConnectJetStream fails at
+    # startup and Durable and Positioned have nothing behind them.
+    command:
+      - "--jetstream"
+      - "--store_dir=/data"
+      - "--http_port=8222"
+    volumes:
+      - nats-data:/data
+    restart: unless-stopped
+    healthcheck:
+      # The monitoring endpoint answers only once the server is serving.
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  nats-data:

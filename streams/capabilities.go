@@ -56,21 +56,13 @@ type Durable interface {
 type Delivery struct {
 	Message
 
-	// Ack reports the message as handled, so it is not delivered again.
+	// acker settles this delivery against the backend that lent it.
 	//
-	// Call it after the work is done rather than on receipt: acknowledging
-	// first turns at-least-once into at-most-once, which is the guarantee a
-	// caller was avoiding by reaching for [Durable].
-	Ack func(ctx context.Context) error
-
-	// Nak returns the message for redelivery, for work that failed in a way a
-	// retry could fix.
-	//
-	// A message naked forever is a poison message, and neither backend here
-	// decides on its own when to stop trying. A consumer that cannot make
-	// progress on a message should Ack it and record the failure somewhere it
-	// will be seen.
-	Nak func(ctx context.Context) error
+	// It is one interface value rather than the two closures this used to be:
+	// a closure per delivery per method is two allocations on a path that runs
+	// once per message, and capturing a loop variable in one is a bug this
+	// shape cannot express.
+	acker Acker
 
 	// Attempt is how many times this message has been delivered, starting at 1.
 	//
@@ -78,6 +70,48 @@ type Delivery struct {
 	// otherwise detect: the same bytes arriving for the fifth time look exactly
 	// like the first. Zero where a provider cannot count.
 	Attempt int
+}
+
+// Acker settles a lent message. Providers implement it; callers reach it
+// through [Delivery.Ack] and [Delivery.Nak].
+type Acker interface {
+	// Ack reports the message as handled, so it is not delivered again.
+	Ack(ctx context.Context) error
+
+	// Nak returns the message for redelivery.
+	Nak(ctx context.Context) error
+}
+
+// NewDelivery assembles a lent message. Providers build one rather than filling
+// the struct, because what settles it is deliberately not part of the shape a
+// caller sees.
+func NewDelivery(msg Message, attempt int, acker Acker) Delivery {
+	return Delivery{Message: msg, Attempt: attempt, acker: acker}
+}
+
+// Ack reports the message as handled, so it is not delivered again.
+//
+// Call it after the work is done rather than on receipt: acknowledging first
+// turns at-least-once into at-most-once, which is the guarantee a caller was
+// avoiding by reaching for [Durable].
+func (d Delivery) Ack(ctx context.Context) error {
+	if d.acker == nil {
+		return nil
+	}
+	return d.acker.Ack(ctx)
+}
+
+// Nak returns the message for redelivery, for work that failed in a way a retry
+// could fix.
+//
+// A message naked forever is a poison message, and no backend here decides on
+// its own when to stop trying. A consumer that cannot make progress on a
+// message should Ack it and record the failure somewhere it will be seen.
+func (d Delivery) Nak(ctx context.Context) error {
+	if d.acker == nil {
+		return nil
+	}
+	return d.acker.Nak(ctx)
 }
 
 // Positioned is implemented by a provider whose stored log can be read from
@@ -108,6 +142,42 @@ const (
 	// the difference is not something a provider can report.
 	FromEarliest
 )
+
+// Batch is implemented by a provider that can publish several values in one
+// go.
+//
+// Unlike [Durable] and [Positioned], every provider here implements this —
+// worst case by publishing each value in turn, which is what a caller would
+// otherwise write. It is a capability rather than a method on [Publisher] so
+// that a backend which genuinely cannot do it could refuse, and so the
+// decorators in this package keep a single method to wrap.
+//
+// Reaching for it is worth it where the backend has a real batch: on Kafka a
+// per-message publish waits for the broker to acknowledge that message, so a
+// thousand values are a thousand round trips, and a batch is a handful.
+type Batch interface {
+	// PublishBatch sends values on a subject and returns their ids, one per
+	// value and in the same order.
+	//
+	// Every value is assigned an id before anything is sent, so the returned
+	// slice is always the same length as values — including when the error is
+	// non-nil. On a partial failure the error names the entries that failed by
+	// index; the rest were published, and an entry that failed may still have
+	// landed, because that is what at-least-once means.
+	//
+	// [ID] is refused: one identifier cannot name several messages.
+	PublishBatch(ctx context.Context, subject string, values []any, opts ...Option) ([]string, error)
+}
+
+// AsBatch returns m's batch-publishing half, on the same terms as [AsDurable].
+func AsBatch(m Manager) (Batch, error) {
+	b, ok := m.(Batch)
+	if !ok {
+		return nil, fmt.Errorf(
+			"%w: this provider publishes one value at a time", ErrUnsupported)
+	}
+	return b, nil
+}
 
 // AsDurable returns m's durable-consumer half.
 //
