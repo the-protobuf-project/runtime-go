@@ -20,6 +20,11 @@ services:
   rabbitmq:
     image: rabbitmq:4-management
     container_name: rabbitmq-local
+    # See the note in .github/workflows/ci.yml: with an empty data directory the
+    # entrypoint runs as root and leaves a root-owned .erlang.cookie the server
+    # cannot read once it drops privileges. Running as the rabbitmq user
+    # throughout makes the writer and the reader the same.
+    user: rabbitmq
     ports:
       - "5672:5672"   # AMQP
       - "15672:15672" # management UI

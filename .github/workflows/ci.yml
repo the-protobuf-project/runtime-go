@@ -87,12 +87,15 @@ jobs:
           docker run -d --name redis -p 6379:6379 redis:latest \
             redis-server --notify-keyspace-events Ex
 
-          # A stable hostname and an explicit cookie: without them the image
-          # lets Erlang create its own auth cookie, which on this runner comes
-          # out unreadable by the user the broker runs as and the node dies at
-          # prelaunch with "Error when reading .erlang.cookie: eacces".
-          docker run -d --name rabbitmq --hostname rabbitmq-ci -p 5672:5672 \
-            -e RABBITMQ_ERLANG_COOKIE=streams-ci rabbitmq:4
+          # --user rabbitmq is load-bearing. The image declares
+          # VOLUME /var/lib/rabbitmq; where that mount comes up empty rather
+          # than populated from the image, the entrypoint runs as root, Erlang
+          # creates a root-owned 0400 .erlang.cookie, and the server then drops
+          # to the rabbitmq user and cannot read its own cookie — the node dies
+          # at prelaunch with "Error when reading .erlang.cookie: eacces".
+          # Running as that user throughout makes the writer and the reader the
+          # same. Reproduced locally with --tmpfs on the same path.
+          docker run -d --name rabbitmq --user rabbitmq -p 5672:5672 rabbitmq:4
 
           ready() {
             docker exec redis redis-cli ping >/dev/null 2>&1 &&
