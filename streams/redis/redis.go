@@ -1,6 +1,8 @@
 package redis
 
 import (
+	"context"
+	"fmt"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -12,12 +14,14 @@ import (
 type Option func(*config)
 
 type config struct {
-	prefix  string
-	db      int
-	log     telemetry.Logger
-	meter   telemetry.Meter
-	maxLen  int64
-	reclaim time.Duration
+	prefix   string
+	db       int
+	username string
+	password string
+	log      telemetry.Logger
+	meter    telemetry.Meter
+	maxLen   int64
+	reclaim  time.Duration
 }
 
 // defaultReclaim is how long a delivered-but-unacknowledged message sits with
@@ -62,6 +66,12 @@ func WithMeter(m telemetry.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
+// WithAuth sets the credentials [Connect] dials with. It has no effect on
+// [Use], where the client you built already carries its own.
+func WithAuth(username, password string) Option {
+	return func(c *config) { c.username, c.password = username, password }
+}
+
 // WithMaxLen caps how many messages a durable subject retains, discarding the
 // oldest beyond it. Zero, the default, retains everything.
 //
@@ -87,34 +97,34 @@ func WithReclaimAfter(d time.Duration) Option {
 	return func(c *config) { c.reclaim = d }
 }
 
-// Connect returns a [streams.Streams] backed by rdb, delivering immediately
-// over pub/sub.
+// Use returns a [streams.Streams] backed by rdb, delivering immediately over
+// pub/sub.
 //
 // The client is yours: this package does not dial it, does not close it, and
 // does not cache it anywhere.
-func Connect(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
-	return connect(rdb, kindStream, opts...)
+func Use(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
+	return connect(rdb, kindStream, false, opts...)
 }
 
-// ConnectScheduled returns a [streams.Streams] backed by rdb that delivers a
+// UseScheduled returns a [streams.Streams] backed by rdb that delivers a
 // message when its TTL expires rather than when it is published — a reminder, a
 // lease timeout, a delayed retry.
 //
 // It is a separate constructor rather than an option because the two behave
 // differently enough to be worth naming: a scheduled publish requires a TTL and
 // an immediate one rejects it. Streams created through it live in their own key
-// namespace, so they never appear in an immediate [Connect]'s List.
+// namespace, so they never appear in an immediate [Use]'s List.
 //
 // This relies on Redis keyspace notifications, so the server must run with
 // `--notify-keyspace-events Ex`; without it, scheduled messages never fire.
-func ConnectScheduled(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
-	return connect(rdb, kindNotify, opts...)
+func UseScheduled(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
+	return connect(rdb, kindNotify, false, opts...)
 }
 
-// ConnectDurable returns a [streams.Streams] backed by Redis Streams, which
+// UseDurable returns a [streams.Streams] backed by Redis Streams, which
 // remembers what each consumer has handled and redelivers what it has not.
 //
-// This is the constructor to reach for when losing a message matters. [Connect]
+// This is the constructor to reach for when losing a message matters. [Use]
 // hands a message to whoever is listening at that moment and forgets it;
 // this one appends to a log, tracks each named consumer's position server-side,
 // and keeps a delivered message pending until it is acknowledged. The manager it
@@ -123,11 +133,11 @@ func ConnectScheduled(rdb goredis.UniversalClient, opts ...Option) streams.Strea
 //
 // The client is yours: this package does not dial it, does not close it, and
 // does not cache it anywhere.
-func ConnectDurable(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
-	return connect(rdb, kindDurable, opts...)
+func UseDurable(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
+	return connect(rdb, kindDurable, false, opts...)
 }
 
-func connect(rdb goredis.UniversalClient, k kind, opts ...Option) streams.Streams {
+func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) streams.Streams {
 	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, reclaim: defaultReclaim}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -156,5 +166,55 @@ func connect(rdb goredis.UniversalClient, k kind, opts ...Option) streams.Stream
 		log:     cfg.log,
 		maxLen:  cfg.maxLen,
 		reclaim: cfg.reclaim,
+		owned:   owned,
 	}
+}
+
+// dial builds a client for address and hands it to connect, which then owns it.
+func dial(ctx context.Context, address string, k kind, opts ...Option) (streams.Streams, error) {
+	if address == "" {
+		return nil, fmt.Errorf("redis: no address given")
+	}
+
+	var cfg config
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	rdb := goredis.NewClient(&goredis.Options{
+		Addr:     address,
+		DB:       cfg.db,
+		Username: cfg.username,
+		Password: cfg.password,
+	})
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		_ = rdb.Close()
+		return nil, fmt.Errorf("redis: cannot reach %s: %w", address, err)
+	}
+	return connect(rdb, k, true, opts...), nil
+}
+
+// Connect dials address and returns immediate streams over pub/sub.
+//
+// The provider owns the connection it made, so it implements [streams.Closer]
+// and closing it closes the connection. Use [Use] to supply a client of your
+// own — a cluster client, one with TLS, or one shared with the rest of a
+// program.
+//
+//	s, err := redis.Connect(ctx, "localhost:6379")
+//	defer s.(streams.Closer).Close()
+func Connect(ctx context.Context, address string, opts ...Option) (streams.Streams, error) {
+	return dial(ctx, address, kindStream, opts...)
+}
+
+// ConnectScheduled dials address and returns streams that deliver on TTL
+// expiry. See [UseScheduled] for what that means and what the server needs.
+func ConnectScheduled(ctx context.Context, address string, opts ...Option) (streams.Streams, error) {
+	return dial(ctx, address, kindNotify, opts...)
+}
+
+// ConnectDurable dials address and returns durable streams over Redis Streams.
+// See [UseDurable].
+func ConnectDurable(ctx context.Context, address string, opts ...Option) (streams.Streams, error) {
+	return dial(ctx, address, kindDurable, opts...)
 }

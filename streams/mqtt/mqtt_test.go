@@ -63,7 +63,7 @@ func testBroker(t *testing.T) string {
 func testStreams(t *testing.T, opts ...streamsmqtt.Option) streams.Streams {
 	t.Helper()
 
-	s, err := streamsmqtt.Connect(testBroker(t), opts...)
+	s, err := streamsmqtt.Connect(t.Context(), testBroker(t), opts...)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -370,7 +370,7 @@ func TestConsumeRequiresAConsumerName(t *testing.T) {
 }
 
 func TestConnectRejectsAnEmptyAddress(t *testing.T) {
-	if _, err := streamsmqtt.Connect(""); err == nil {
+	if _, err := streamsmqtt.Connect(t.Context(), ""); err == nil {
 		t.Error("Connect accepted an empty address")
 	}
 }

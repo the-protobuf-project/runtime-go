@@ -1,7 +1,9 @@
 package nats
 
 import (
+	"context"
 	"fmt"
+	"time"
 
 	gonats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -61,12 +63,12 @@ func newConfig(opts ...Option) config {
 	return cfg
 }
 
-// Connect returns a [streams.Streams] backed by core NATS, delivering to
+// Use returns a [streams.Streams] backed by core NATS, delivering to
 // whoever is listening at the time.
 //
 // Nothing is stored: a subscriber that is not attached when a message is
 // published never sees it, and a subscriber that dies holding one loses it.
-// Reach for [ConnectJetStream] when either of those matters.
+// Reach for [UseJetStream] or [ConnectJetStream] when either of those matters.
 //
 // A stream declared through this provider is a declaration this process is
 // holding, not a server-side object — core NATS has no registry to keep it in.
@@ -76,7 +78,7 @@ func newConfig(opts ...Option) config {
 //
 // The connection is yours: this package does not dial it, does not close it,
 // and does not drain it.
-func Connect(nc *gonats.Conn, opts ...Option) streams.Streams {
+func Use(nc *gonats.Conn, opts ...Option) streams.Streams {
 	cfg := newConfig(opts...)
 	return &plainStreams{
 		nc:       nc,
@@ -86,11 +88,11 @@ func Connect(nc *gonats.Conn, opts ...Option) streams.Streams {
 	}
 }
 
-// ConnectJetStream returns a [streams.Streams] backed by JetStream, which keeps
+// UseJetStream returns a [streams.Streams] backed by JetStream, which keeps
 // a log and remembers what each named consumer has handled.
 //
 // The manager it binds satisfies [streams.Durable] and [streams.Positioned], so
-// [streams.AsDurable] succeeds on it and fails on [Connect]'s.
+// [streams.AsDurable] succeeds on it and fails on [Use]'s.
 //
 // It returns an error rather than a provider when JetStream is unreachable —
 // asking a server without it enabled is a misconfiguration worth hearing about
@@ -98,7 +100,7 @@ func Connect(nc *gonats.Conn, opts ...Option) streams.Streams {
 //
 // The connection is yours: this package does not dial it, does not close it,
 // and does not drain it.
-func ConnectJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
+func UseJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
 	cfg := newConfig(opts...)
 
 	if cfg.queue != "" {
@@ -110,4 +112,67 @@ func ConnectJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) 
 		return nil, fmt.Errorf("nats: cannot reach JetStream: %w", err)
 	}
 	return &jsStreams{js: js, log: cfg.log}, nil
+}
+
+// Connect dials url and returns a [streams.Streams] backed by core NATS.
+//
+// The provider owns the connection it made, so it implements [streams.Closer]
+// and closing it closes the connection. Use [Use] to supply a connection of
+// your own — one with credentials, TLS, or reconnect handlers.
+//
+//	s, err := nats.Connect(ctx, nats.DefaultURL)
+//	defer s.(streams.Closer).Close()
+func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, error) {
+	nc, err := dial(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	s, ok := Use(nc, opts...).(*plainStreams)
+	if !ok {
+		nc.Close()
+		return nil, fmt.Errorf("nats: unexpected provider type")
+	}
+	s.owned = true
+	return s, nil
+}
+
+// ConnectJetStream dials url and returns a [streams.Streams] backed by
+// JetStream. See [UseJetStream].
+func ConnectJetStream(ctx context.Context, url string, opts ...Option) (streams.Streams, error) {
+	nc, err := dial(ctx, url)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := UseJetStream(nc, opts...)
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+	s, ok := provider.(*jsStreams)
+	if !ok {
+		nc.Close()
+		return nil, fmt.Errorf("nats: unexpected provider type")
+	}
+	s.owned = nc
+	return s, nil
+}
+
+// dial opens a connection, honoring ctx as a deadline for doing so.
+func dial(ctx context.Context, url string) (*gonats.Conn, error) {
+	if url == "" {
+		return nil, fmt.Errorf("nats: no URL given")
+	}
+
+	deadline := gonats.DefaultTimeout
+	if d, ok := ctx.Deadline(); ok {
+		if remaining := time.Until(d); remaining > 0 {
+			deadline = remaining
+		}
+	}
+
+	nc, err := gonats.Connect(url, gonats.Timeout(deadline))
+	if err != nil {
+		return nil, fmt.Errorf("nats: cannot reach %s: %w", url, err)
+	}
+	return nc, nil
 }

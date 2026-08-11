@@ -62,7 +62,7 @@ func prefix() string {
 // newStreams returns immediate streams under a prefix unique to this test.
 func newStreams(t *testing.T) streams.Streams {
 	t.Helper()
-	return streamsredis.Connect(testClient(t), streamsredis.WithPrefix(prefix()))
+	return streamsredis.Use(testClient(t), streamsredis.WithPrefix(prefix()))
 }
 
 // bind creates a stream and binds a manager to it.
@@ -383,7 +383,7 @@ func TestTypedViewDecodesDeliveries(t *testing.T) {
 // Delivery happens on expiry, and the payload survives the TTL key announcing
 // it.
 func TestScheduledDeliversOnExpiry(t *testing.T) {
-	n := streamsredis.ConnectScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
+	n := streamsredis.UseScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -416,7 +416,7 @@ func TestScheduledDeliversOnExpiry(t *testing.T) {
 // A zero TTL could never fire; accepting it silently would strand the
 // subscriber.
 func TestScheduledRequiresATTL(t *testing.T) {
-	n := streamsredis.ConnectScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
+	n := streamsredis.UseScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
 	_, m := bind(t, n, "reminder")
 
 	_, err := m.Publish(t.Context(), "reminder", event{})
@@ -428,7 +428,7 @@ func TestScheduledRequiresATTL(t *testing.T) {
 // Each message needs its own pending key, or two scheduled messages overwrite
 // each other and only one fires.
 func TestTwoScheduledMessagesBothFire(t *testing.T) {
-	n := streamsredis.ConnectScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
+	n := streamsredis.UseScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -467,7 +467,7 @@ func TestTwoScheduledMessagesBothFire(t *testing.T) {
 // Keyspace events fire for every expired key in the database, so a subscriber
 // must filter to its own stream and subject.
 func TestScheduledSubjectIsHonored(t *testing.T) {
-	n := streamsredis.ConnectScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
+	n := streamsredis.UseScheduled(testClient(t), streamsredis.WithPrefix(prefix()))
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
@@ -497,8 +497,8 @@ func TestImmediateAndScheduledAreIsolated(t *testing.T) {
 	rdb := testClient(t)
 
 	p := prefix()
-	immediate := streamsredis.Connect(rdb, streamsredis.WithPrefix(p))
-	scheduled := streamsredis.ConnectScheduled(rdb, streamsredis.WithPrefix(p))
+	immediate := streamsredis.Use(rdb, streamsredis.WithPrefix(p))
+	scheduled := streamsredis.UseScheduled(rdb, streamsredis.WithPrefix(p))
 
 	if _, err := immediate.Create(ctx, streams.Stream{Name: "plain", Subjects: []string{"s"}}); err != nil {
 		t.Fatalf("immediate Create: %v", err)

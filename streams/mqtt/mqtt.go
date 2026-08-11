@@ -101,7 +101,7 @@ func WithClientID(id string) Option {
 // declare their own, and a restart forgets. What it buys is the subject check:
 // publishing to a topic the stream never declared fails at the call that made
 // the typo rather than landing somewhere nobody subscribes.
-func Connect(address string, opts ...Option) (streams.Streams, error) {
+func Connect(ctx context.Context, address string, opts ...Option) (streams.Streams, error) {
 	cfg := config{
 		log: telemetry.NoopLogger, meter: telemetry.NoopMeter,
 		qos: defaultQoS, expiry: defaultExpiry, dial: defaultDial,
@@ -126,7 +126,7 @@ func Connect(address string, opts ...Option) (streams.Streams, error) {
 
 	// One connection for publishing and for undurable subscriptions. Durable
 	// consumers get their own, because their session is their identity.
-	client, _, err := s.dial(context.Background(), cfg.clientID, false, nil)
+	client, _, err := s.dial(ctx, cfg.clientID, false, nil)
 	if err != nil {
 		return nil, err
 	}

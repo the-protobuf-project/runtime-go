@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/twmb/franz-go/pkg/kadm"
-	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Option configures a [Connect].
@@ -77,7 +77,7 @@ func WithClientOptions(opts ...kgo.Opt) Option {
 // package documentation, and so must be closed. It returns an error rather than
 // a provider when the cluster is unreachable — a misconfigured broker list is
 // worth hearing about at startup rather than at the first publish.
-func Connect(seeds []string, opts ...Option) (streams.Streams, error) {
+func Connect(ctx context.Context, seeds []string, opts ...Option) (streams.Streams, error) {
 	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, partitions: 1, replicas: 1}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -105,13 +105,13 @@ func Connect(seeds []string, opts ...Option) (streams.Streams, error) {
 		log:   cfg.log,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	pingCtx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
-	if err := client.Ping(ctx); err != nil {
+	if err := client.Ping(pingCtx); err != nil {
 		client.Close()
 		return nil, fmt.Errorf("kafka: cannot reach %s: %w", strings.Join(seeds, ","), err)
 	}
-	if err := s.ensureMeta(ctx); err != nil {
+	if err := s.ensureMeta(pingCtx); err != nil {
 		client.Close()
 		return nil, err
 	}

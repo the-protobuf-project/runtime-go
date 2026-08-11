@@ -30,6 +30,25 @@ type streamHandler struct {
 	log     telemetry.Logger
 	maxLen  int64
 	reclaim time.Duration
+
+	// owned says this package dialed the client and must close it. A client
+	// handed in through Use belongs to the caller, and closing it here would
+	// take down connections this package never made.
+	owned bool
+}
+
+// Close releases the connection, if this package made it.
+//
+// It is a no-op on a provider built by [Use], which does not own its client —
+// so a caller may close either kind without having to remember which it has.
+func (s *streamHandler) Close() error {
+	if !s.owned {
+		return nil
+	}
+	if err := s.rdb.Close(); err != nil {
+		return fmt.Errorf("redis: cannot close: %w", err)
+	}
+	return nil
 }
 
 // declares rejects a subject the stream does not declare.
@@ -49,7 +68,10 @@ func (s *streamHandler) declares(ctx context.Context, stream streams.Stream, sub
 	return core.ErrSubject(stream.ID, subject, stream.Subjects)
 }
 
-var _ streams.Streams = (*streamHandler)(nil)
+var (
+	_ streams.Streams = (*streamHandler)(nil)
+	_ streams.Closer  = (*streamHandler)(nil)
+)
 
 // scheduled reports whether this handler delivers on expiry rather than on
 // publish.

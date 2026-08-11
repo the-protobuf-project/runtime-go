@@ -3,9 +3,11 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
@@ -29,6 +31,10 @@ type config struct {
 // single consumer take the whole queue and starve its peers, which is the
 // failure that makes people think round-robin is broken.
 const defaultPrefetch = 32
+
+// dialTimeout bounds opening the connection, so an unreachable broker fails
+// Connect rather than hanging it.
+const dialTimeout = 10 * time.Second
 
 // WithLogger sets where these streams write their own records. Defaults to
 // [telemetry.NoopLogger].
@@ -66,7 +72,7 @@ func WithPrefetch(n int) Option {
 // documentation, and so must be closed. It returns an error rather than a
 // provider when the broker is unreachable — worth hearing at startup rather
 // than at the first publish.
-func Connect(url string, opts ...Option) (streams.Streams, error) {
+func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, error) {
 	if url == "" {
 		return nil, fmt.Errorf("rabbitmq: no broker URL given")
 	}
@@ -82,7 +88,14 @@ func Connect(url string, opts ...Option) (streams.Streams, error) {
 		cfg.meter = telemetry.NoopMeter
 	}
 
-	conn, err := amqp.Dial(url)
+	// amqp.Dial has no context form, so the deadline is applied to the dialer
+	// it uses rather than to the handshake as a whole.
+	conn, err := amqp.DialConfig(url, amqp.Config{
+		Dial: func(network, addr string) (net.Conn, error) {
+			d := net.Dialer{Timeout: dialTimeout}
+			return d.DialContext(ctx, network, addr)
+		},
+	})
 	if err != nil {
 		return nil, fmt.Errorf("rabbitmq: cannot reach the broker: %w", err)
 	}

@@ -62,7 +62,7 @@ func testStreams(t *testing.T, opts ...streamsrabbit.Option) streams.Streams {
 	_ = conn.Close()
 
 	opts = append([]streamsrabbit.Option{streamsrabbit.WithPrefix(prefix())}, opts...)
-	s, err := streamsrabbit.Connect(testURL(), opts...)
+	s, err := streamsrabbit.Connect(t.Context(), testURL(), opts...)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -419,7 +419,7 @@ func TestConsumeRequiresAConsumerName(t *testing.T) {
 }
 
 func TestConnectRejectsAnEmptyURL(t *testing.T) {
-	if _, err := streamsrabbit.Connect(""); err == nil {
+	if _, err := streamsrabbit.Connect(t.Context(), ""); err == nil {
 		t.Error("Connect accepted an empty URL")
 	}
 }

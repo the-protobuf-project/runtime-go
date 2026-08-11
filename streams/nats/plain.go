@@ -24,11 +24,29 @@ type plainStreams struct {
 	log   telemetry.Logger
 	queue string
 
+	// owned says this package dialed the connection and must close it. One
+	// handed in through Use belongs to the caller.
+	owned bool
+
 	mu       sync.RWMutex
 	declared map[string]streams.Stream
 }
 
-var _ streams.Streams = (*plainStreams)(nil)
+var (
+	_ streams.Streams = (*plainStreams)(nil)
+	_ streams.Closer  = (*plainStreams)(nil)
+)
+
+// Close releases the connection, if this package made it.
+//
+// It is a no-op on a provider built by [Use], so a caller may close either kind
+// without having to remember which it has.
+func (p *plainStreams) Close() error {
+	if p.owned {
+		p.nc.Close()
+	}
+	return nil
+}
 
 // Create declares a stream, generating an id when one is not supplied.
 func (p *plainStreams) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {

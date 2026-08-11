@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	streamskafka "github.com/the-protobuf-project/runtime-go/streams/kafka"
+	"github.com/twmb/franz-go/pkg/kfake"
 )
 
 type event struct {
@@ -31,7 +31,7 @@ func testStreams(t *testing.T, opts ...streamskafka.Option) streams.Streams {
 	}
 	t.Cleanup(cluster.Close)
 
-	s, err := streamskafka.Connect(cluster.ListenAddrs(), opts...)
+	s, err := streamskafka.Connect(t.Context(), cluster.ListenAddrs(), opts...)
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestConsumeRequiresAConsumerName(t *testing.T) {
 }
 
 func TestConnectRejectsNoSeeds(t *testing.T) {
-	if _, err := streamskafka.Connect(nil); err == nil {
+	if _, err := streamskafka.Connect(t.Context(), nil); err == nil {
 		t.Error("Connect accepted an empty broker list")
 	}
 }

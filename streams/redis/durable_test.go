@@ -25,7 +25,7 @@ func newDurable(t *testing.T, opts ...streamsredis.Option) streams.Streams {
 		streamsredis.WithPrefix(prefix()),
 		streamsredis.WithReclaimAfter(quickReclaim),
 	}, opts...)
-	return streamsredis.ConnectDurable(testClient(t), opts...)
+	return streamsredis.UseDurable(testClient(t), opts...)
 }
 
 // bindDurable creates a stream and returns its durable half.

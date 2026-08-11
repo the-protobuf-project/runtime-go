@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	gonats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
@@ -26,9 +27,27 @@ const (
 type jsStreams struct {
 	js  jetstream.JetStream
 	log telemetry.Logger
+
+	// owned is the connection this package dialed, if it did. One handed in
+	// through UseJetStream belongs to the caller and is left alone.
+	owned *gonats.Conn
 }
 
-var _ streams.Streams = (*jsStreams)(nil)
+var (
+	_ streams.Streams = (*jsStreams)(nil)
+	_ streams.Closer  = (*jsStreams)(nil)
+)
+
+// Close releases the connection, if this package made it.
+//
+// It is a no-op on a provider built by [UseJetStream], so a caller may close
+// either kind without having to remember which it has.
+func (p *jsStreams) Close() error {
+	if p.owned != nil {
+		p.owned.Close()
+	}
+	return nil
+}
 
 // Create declares a stream, generating an id when one is not supplied.
 func (p *jsStreams) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {

@@ -8,47 +8,44 @@ import (
 	"os"
 	"time"
 
-	gonats "github.com/nats-io/nats.go"
 	"github.com/the-protobuf-project/runtime-go/streams"
-	streamsnats "github.com/the-protobuf-project/runtime-go/streams/nats"
+	"github.com/the-protobuf-project/runtime-go/streams/nats"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
-// event is this program's model.
 type event struct {
 	User   string `json:"user"`
 	Action string `json:"action"`
 }
 
+const url = "nats://localhost:4222"
+
 func main() {
-	// Everything is scoped to this context. Canceling it closes every
-	// subscription and consumer and releases their goroutines.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelDebug)})))
+		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelInfo)})))
 
-	// You own the connection.
-	nc, err := gonats.Connect(gonats.DefaultURL)
-	if err != nil {
-		log.Fatalf("NATS is not reachable: %v", err)
-	}
-	defer nc.Close()
-
-	runCore(ctx, nc, logger)
-	runJetStream(ctx, nc, logger)
+	runCore(ctx, logger)
+	runJetStream(ctx, logger)
 
 	log.Println("done")
 }
 
 // runCore shows core NATS: delivery to whoever is listening, and nothing kept.
-func runCore(ctx context.Context, nc *gonats.Conn, logger telemetry.Logger) {
+func runCore(ctx context.Context, logger telemetry.Logger) {
 	log.Println("--- core NATS ---")
 
 	const subject = "user.created"
 
-	s := streamsnats.Connect(nc, streamsnats.WithLogger(logger))
+	// Connect dials and owns the connection. Pass nats.Use(conn) instead to
+	// supply one of your own — with credentials, TLS, or reconnect handlers.
+	s, err := nats.Connect(ctx, url, nats.WithLogger(logger))
+	if err != nil {
+		log.Fatalf("NATS is not reachable: %v", err)
+	}
+	defer closeProvider(s)
 
 	stream, err := s.Create(ctx, streams.Stream{
 		Name:        "users",
@@ -83,7 +80,7 @@ func runCore(ctx context.Context, nc *gonats.Conn, logger telemetry.Logger) {
 			log.Fatalf("Decode: %v", derr)
 		}
 		log.Printf("received %s -> %+v", msg.ID, got)
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		log.Fatal("timed out")
 	}
 
@@ -101,20 +98,18 @@ func runCore(ctx context.Context, nc *gonats.Conn, logger telemetry.Logger) {
 }
 
 // runJetStream shows the same contract backed by a stored log.
-func runJetStream(ctx context.Context, nc *gonats.Conn, logger telemetry.Logger) {
+func runJetStream(ctx context.Context, logger telemetry.Logger) {
 	log.Println("--- JetStream ---")
 
 	const subject = "order.placed"
 
-	s, err := streamsnats.ConnectJetStream(nc, streamsnats.WithLogger(logger))
+	s, err := nats.ConnectJetStream(ctx, url, nats.WithLogger(logger))
 	if err != nil {
 		log.Fatalf("ConnectJetStream: %v (is the server running with JetStream enabled?)", err)
 	}
+	defer closeProvider(s)
 
-	stream, err := s.Create(ctx, streams.Stream{
-		Name:     "orders",
-		Subjects: []string{"order.*"},
-	})
+	stream, err := s.Create(ctx, streams.Stream{Name: "orders", Subjects: []string{"order.*"}})
 	if err != nil {
 		log.Fatalf("Create: %v", err)
 	}
@@ -134,9 +129,7 @@ func runJetStream(ctx context.Context, nc *gonats.Conn, logger telemetry.Logger)
 	}
 
 	// The consumer gets a context of its own so it can be wound down before the
-	// deferred Delete removes the stream underneath it. Deleting a stream while
-	// something is still consuming from it is a real error and the provider
-	// reports it as one — it just should not be how a program exits normally.
+	// deferred Delete removes the stream underneath it.
 	consuming, stopConsuming := context.WithCancel(ctx)
 
 	deliveries, err := d.Consume(consuming, subject, "billing")
@@ -189,5 +182,12 @@ func receive(ch <-chan streams.Delivery, what string) streams.Delivery {
 	case <-time.After(10 * time.Second):
 		log.Fatalf("timed out waiting for %s", what)
 		return streams.Delivery{}
+	}
+}
+
+// closeProvider releases a provider that dialed its own connection.
+func closeProvider(s streams.Streams) {
+	if c, ok := s.(streams.Closer); ok {
+		_ = c.Close()
 	}
 }

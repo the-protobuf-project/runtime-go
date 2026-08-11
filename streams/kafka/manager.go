@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // manager publishes to and consumes from one stream.

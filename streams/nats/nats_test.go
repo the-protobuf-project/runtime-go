@@ -66,7 +66,7 @@ func declare(t *testing.T, s streams.Streams, subjects ...string) (streams.Strea
 func jetStream(t *testing.T) streams.Streams {
 	t.Helper()
 
-	s, err := streamsnats.ConnectJetStream(testConn(t))
+	s, err := streamsnats.UseJetStream(testConn(t))
 	if err != nil {
 		t.Fatalf("ConnectJetStream: %v", err)
 	}
@@ -91,7 +91,7 @@ func recvDelivery(t *testing.T, ch <-chan streams.Delivery, within time.Duration
 // ---------------------------------------------------------------- core NATS
 
 func TestPlainLifecycle(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	ctx := t.Context()
 
 	created, err := s.Create(ctx, streams.Stream{
@@ -135,7 +135,7 @@ func TestPlainLifecycle(t *testing.T) {
 }
 
 func TestPlainPublishAndSubscribe(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	_, m := declare(t, s, subject)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -172,7 +172,7 @@ func TestPlainPublishAndSubscribe(t *testing.T) {
 // A stream may declare a wildcard; a message still has to land somewhere
 // specific.
 func TestPlainWildcardSubjects(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	_, m := declare(t, s, "orders.*")
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -201,7 +201,7 @@ func TestPlainWildcardSubjects(t *testing.T) {
 }
 
 func TestPlainRejectsAnUndeclaredSubject(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	_, m := declare(t, s, subject)
 
 	if _, err := m.Publish(t.Context(), "typo", event{}); !errors.Is(err, streams.ErrUnknownSubject) {
@@ -210,7 +210,7 @@ func TestPlainRejectsAnUndeclaredSubject(t *testing.T) {
 }
 
 func TestPlainRejectsATTL(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	_, m := declare(t, s, subject)
 
 	_, err := m.Publish(t.Context(), subject, event{}, streams.TTL(time.Second))
@@ -222,7 +222,7 @@ func TestPlainRejectsATTL(t *testing.T) {
 // Core NATS keeps no log, so it must refuse the durable half by name rather
 // than pretend.
 func TestPlainIsNotDurable(t *testing.T) {
-	s := streamsnats.Connect(testConn(t))
+	s := streamsnats.Use(testConn(t))
 	_, m := declare(t, s, subject)
 
 	if _, err := streams.AsDurable(m); !errors.Is(err, streams.ErrUnsupported) {
@@ -236,7 +236,7 @@ func TestPlainIsNotDurable(t *testing.T) {
 // A queue group makes several subscribers share a subject instead of each
 // receiving everything.
 func TestPlainQueueGroupSharesTheSubject(t *testing.T) {
-	s := streamsnats.Connect(testConn(t), streamsnats.WithQueueGroup("workers"))
+	s := streamsnats.Use(testConn(t), streamsnats.WithQueueGroup("workers"))
 	_, m := declare(t, s, subject)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -283,7 +283,7 @@ func TestPlainQueueGroupSharesTheSubject(t *testing.T) {
 }
 
 func TestJetStreamRejectsAQueueGroup(t *testing.T) {
-	_, err := streamsnats.ConnectJetStream(testConn(t), streamsnats.WithQueueGroup("workers"))
+	_, err := streamsnats.UseJetStream(testConn(t), streamsnats.WithQueueGroup("workers"))
 	if !errors.Is(err, streams.ErrUnsupported) {
 		t.Errorf("ConnectJetStream with a queue group = %v, want ErrUnsupported", err)
 	}
