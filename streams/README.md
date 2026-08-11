@@ -204,6 +204,42 @@ Kafka, RabbitMQ and MQTT.
 provider that cannot count: Kafka redelivers the same bytes with no record of
 having done so. Redis and JetStream both count and report a real number.
 
+### Flow control
+
+`Subscribe` and `Consume` take options. `Prefetch` sets how many messages a
+provider may hold ahead of the reader:
+
+```go
+msgs, _ := m.Subscribe(ctx, "user.created", streams.Prefetch(256))
+```
+
+It is the throughput/loss trade in one number. More keeps a fast consumer fed
+and stops a slow one from blocking the goroutine feeding it; it also means more
+messages held unacknowledged, and every one of those is redelivered if the
+process dies. Zero lets the provider choose; a negative value asks for a
+synchronous hand-off, which is what you want when ordering matters more than
+throughput.
+
+`Group` now works on `Subscribe` too, where the provider can share a subject —
+on NATS it becomes a queue group, and a group named at the call wins over one
+named at the constructor.
+
+### Metrics
+
+Every provider reports through the `telemetry.Meter` it was given:
+
+| Metric | Kind | Meaning |
+| --- | --- | --- |
+| `streams_delivered_total` | counter | messages handed to a consumer |
+| `streams_settled_total` | counter | acknowledged or returned, labelled `outcome` |
+| `streams_inflight` | up/down counter | delivered and not yet settled |
+| `streams_consumer_lag` | gauge | how far behind a named consumer is |
+
+Lag is reported only where the backend can answer the question — Redis from its
+pending list today. Where it cannot, the series is **absent rather than zero**: a
+consumer that looks caught up because nothing can measure it is worse than one
+that does not appear at all.
+
 ### Batches
 
 `Batch` publishes several values in one call. Every provider implements it, so
