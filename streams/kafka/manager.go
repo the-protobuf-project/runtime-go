@@ -321,26 +321,10 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 
 				delivered++
 				select {
-				case out <- streams.Delivery{
-					Message: msg,
-					// Kafka redelivers the same bytes with no record of having
-					// done so, so there is nothing honest to count here. The
-					// contract asks for zero where a provider cannot.
-					Attempt: 0,
-					Ack: func(ctx context.Context) error {
-						if err := cl.CommitRecords(ctx, rec); err != nil {
-							return fmt.Errorf("kafka: cannot acknowledge offset %d on %q: %w", rec.Offset, subject, err)
-						}
-						return nil
-					},
-					Nak: func(context.Context) error {
-						// Leaving the offset uncommitted is the return: the
-						// group reads this record again when the partition is
-						// next assigned. Kafka has no per-message redelivery,
-						// so there is nothing more truthful to do here.
-						return nil
-					},
-				}:
+				// Kafka redelivers the same bytes with no record of having done
+				// so, so there is nothing honest to count: the contract asks for
+				// zero where a provider cannot.
+				case out <- streams.NewDelivery(msg, 0, &kafkaAck{cl: cl, rec: rec, subject: subject}):
 				case <-ctx.Done():
 					return
 				}
@@ -349,3 +333,22 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 	}()
 	return out, nil
 }
+
+// kafkaAck settles one delivery by committing its offset.
+type kafkaAck struct {
+	cl      *kgo.Client
+	rec     *kgo.Record
+	subject string
+}
+
+func (a *kafkaAck) Ack(ctx context.Context) error {
+	if err := a.cl.CommitRecords(ctx, a.rec); err != nil {
+		return fmt.Errorf("kafka: cannot acknowledge offset %d on %q: %w", a.rec.Offset, a.subject, err)
+	}
+	return nil
+}
+
+// Nak leaves the offset uncommitted, so the group reads this record again when
+// the partition is next assigned. Kafka has no per-message redelivery, so there
+// is nothing more truthful to do here.
+func (a *kafkaAck) Nak(context.Context) error { return nil }

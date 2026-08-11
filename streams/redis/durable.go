@@ -384,28 +384,9 @@ func (m *durableManager) deliver(ctx context.Context, key, subject, group string
 		return true
 	}
 
-	entryID := entry.ID
-	d := streams.Delivery{
-		Message: msg,
-		Attempt: attempt,
-		Ack: func(ctx context.Context) error {
-			if err := m.handler.rdb.XAck(ctx, key, group, entryID).Err(); err != nil {
-				return fmt.Errorf("redis: cannot acknowledge %s on %q: %w", entryID, subject, err)
-			}
-			return nil
-		},
-		Nak: func(context.Context) error {
-			// Leaving it pending is the return: it stays outstanding and is
-			// reclaimed once it has been idle for the reclaim interval,
-			// by whichever consumer gets there first.
-			//
-			// Appending a copy to the tail would redeliver it sooner, but it
-			// would arrive with a new id and an attempt count of one — and
-			// Attempt is the only signal a consumer has for noticing it is in a
-			// redelivery loop it cannot escape.
-			return nil
-		},
-	}
+	d := streams.NewDelivery(msg, attempt, &redisAck{
+		rdb: m.handler.rdb, key: key, group: group, entry: entry.ID, subject: subject,
+	})
 
 	select {
 	case out <- d:
@@ -467,3 +448,25 @@ func (m *durableManager) PublishBatch(ctx context.Context, subject string, value
 	}
 	return core.PublishEach(ctx, m, subject, values, opts...)
 }
+
+// redisAck settles one delivery against its consumer group.
+type redisAck struct {
+	rdb                        goredis.UniversalClient
+	key, group, entry, subject string
+}
+
+func (a *redisAck) Ack(ctx context.Context) error {
+	if err := a.rdb.XAck(ctx, a.key, a.group, a.entry).Err(); err != nil {
+		return fmt.Errorf("redis: cannot acknowledge %s on %q: %w", a.entry, a.subject, err)
+	}
+	return nil
+}
+
+// Nak leaves the message pending: it stays outstanding and is reclaimed once it
+// has been idle for the reclaim interval, by whichever consumer gets there
+// first.
+//
+// Appending a copy to the tail would redeliver it sooner, but it would arrive
+// with a new id and an attempt count of one — and Attempt is the only signal a
+// consumer has for noticing it is in a redelivery loop it cannot escape.
+func (a *redisAck) Nak(context.Context) error { return nil }

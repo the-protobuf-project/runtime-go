@@ -172,26 +172,11 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		}()
 
 		for d := range msgs {
-			packet := d.packet
 			delivered++
 			select {
-			case out <- streams.Delivery{
-				Message: d.Message,
-				Attempt: 0,
-				Ack: func(context.Context) error {
-					if err := client.Ack(packet); err != nil {
-						return fmt.Errorf("mqtt: cannot acknowledge on %q: %w", subject, err)
-					}
-					return nil
-				},
-				Nak: func(context.Context) error {
-					// Leaving it unacknowledged is the return: the broker keeps
-					// it against this session and delivers it again when the
-					// consumer reconnects. MQTT has no negative acknowledgement,
-					// so there is nothing more truthful to do here.
-					return nil
-				},
-			}:
+			// MQTT flags a repeat delivery but does not count them, so
+			// Attempt is zero — the contract's answer where a provider cannot.
+			case out <- streams.NewDelivery(d.Message, 0, &mqttAck{client: client, packet: d.packet, subject: subject}):
 			case <-ctx.Done():
 				return
 			}
@@ -325,3 +310,22 @@ func (m *manager) PublishBatch(ctx context.Context, subject string, values []any
 	}
 	return core.PublishEach(ctx, m, subject, values, opts...)
 }
+
+// mqttAck settles one delivery with a PUBACK.
+type mqttAck struct {
+	client  *paho.Client
+	packet  *paho.Publish
+	subject string
+}
+
+func (a *mqttAck) Ack(context.Context) error {
+	if err := a.client.Ack(a.packet); err != nil {
+		return fmt.Errorf("mqtt: cannot acknowledge on %q: %w", a.subject, err)
+	}
+	return nil
+}
+
+// Nak leaves the message unacknowledged: the broker keeps it against this
+// session and delivers it again when the consumer reconnects. MQTT has no
+// negative acknowledgement, so there is nothing more truthful to do here.
+func (a *mqttAck) Nak(context.Context) error { return nil }

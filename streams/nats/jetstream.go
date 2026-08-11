@@ -457,12 +457,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 
 			delivered++
 			select {
-			case out <- streams.Delivery{
-				Message: msg,
-				Attempt: attempt,
-				Ack:     func(context.Context) error { return raw.Ack() },
-				Nak:     func(context.Context) error { return raw.Nak() },
-			}:
+			case out <- streams.NewDelivery(msg, attempt, jsAck{raw}):
 			case <-ctx.Done():
 				return
 			}
@@ -481,3 +476,10 @@ func (m *jsManager) PublishBatch(ctx context.Context, subject string, values []a
 	}
 	return core.PublishEach(ctx, m, subject, values, opts...)
 }
+
+// jsAck settles one JetStream delivery. JetStream has a true negative
+// acknowledgement, so Nak returns the message rather than waiting out a timeout.
+type jsAck struct{ msg jetstream.Msg }
+
+func (a jsAck) Ack(context.Context) error { return a.msg.Ack() }
+func (a jsAck) Nak(context.Context) error { return a.msg.Nak() }

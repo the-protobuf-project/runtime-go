@@ -197,24 +197,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 			del := d // the loop variable is reused for the next delivery
 			delivered++
 			select {
-			case out <- streams.Delivery{
-				Message: msg,
-				Attempt: attempt(&del),
-				Ack: func(context.Context) error {
-					if err := del.Ack(false); err != nil {
-						return fmt.Errorf("rabbitmq: cannot acknowledge on %q: %w", subject, err)
-					}
-					return nil
-				},
-				Nak: func(context.Context) error {
-					// requeue, so it goes back for another consumer rather than
-					// being discarded.
-					if err := del.Nack(false, true); err != nil {
-						return fmt.Errorf("rabbitmq: cannot return the message on %q: %w", subject, err)
-					}
-					return nil
-				},
-			}:
+			case out <- streams.NewDelivery(msg, attempt(&del), &amqpAck{del: del, subject: subject}):
 			case <-ctx.Done():
 				return
 			}
@@ -307,4 +290,27 @@ func (m *manager) PublishBatch(ctx context.Context, subject string, values []any
 		return nil, err
 	}
 	return core.PublishEach(ctx, m, subject, values, opts...)
+}
+
+// amqpAck settles one delivery. RabbitMQ is the only provider here with a true
+// negative acknowledgement, so Nak requeues immediately rather than waiting out
+// a visibility timeout.
+type amqpAck struct {
+	del     amqp.Delivery
+	subject string
+}
+
+func (a *amqpAck) Ack(context.Context) error {
+	if err := a.del.Ack(false); err != nil {
+		return fmt.Errorf("rabbitmq: cannot acknowledge on %q: %w", a.subject, err)
+	}
+	return nil
+}
+
+func (a *amqpAck) Nak(context.Context) error {
+	// requeue, so it goes back for another consumer rather than being discarded.
+	if err := a.del.Nack(false, true); err != nil {
+		return fmt.Errorf("rabbitmq: cannot return the message on %q: %w", a.subject, err)
+	}
+	return nil
 }
