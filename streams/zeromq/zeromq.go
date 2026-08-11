@@ -96,9 +96,9 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	}
 
 	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
-		codec: codec, registry: registry, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
 }
 
 // Subscribe returns a [streams.Streams] that connects to endpoint and receives
@@ -113,9 +113,9 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	cfg := newConfig(opts...)
 
 	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
-		codec: codec, registry: registry, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
 }
 
 // store holds the declarations and, for a publisher, the bound socket.
@@ -128,6 +128,7 @@ type store struct {
 	endpoint string
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	cfg      config
 	log      telemetry.Logger
 

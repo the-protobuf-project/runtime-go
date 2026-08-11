@@ -94,7 +94,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 //
 // A value published in the moment after this returns may still be missed; see
 // the package documentation on the slow-joiner problem, and [WithSettle].
-func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 		"subject": subject, "endpoint": m.store.endpoint, "topic": topic,
 	})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 

@@ -28,6 +28,7 @@ type jsStreams struct {
 	js       jetstream.JetStream
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	log      telemetry.Logger
 
 	// owned is the connection this package dialed, if it did. One handed in
@@ -288,7 +289,7 @@ func (m *jsManager) Publish(ctx context.Context, subject string, value any, opts
 // This is the undurable half: an ordered consumer that acknowledges nothing and
 // is discarded when ctx is done. Nothing about what it saw survives it. Reach
 // for [jsManager.Consume] when that matters.
-func (m *jsManager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
@@ -310,7 +311,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string) (<-chan strea
 
 	m.p.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		// Next blocks with no context of its own, so cancellation has to reach
@@ -415,7 +416,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 		"subject": subject, "consumer": name, "from": policy,
 	})
 
-	out := make(chan streams.Delivery)
+	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		stop := context.AfterFunc(ctx, it.Stop)
@@ -456,8 +457,11 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 			}
 
 			delivered++
+			m.p.metrics.Delivered(ctx, subject, name)
 			select {
-			case out <- streams.NewDelivery(msg, attempt, jsAck{raw}):
+			case out <- streams.NewDelivery(msg, attempt, &jsAck{
+				msg: raw, metrics: m.p.metrics, subject: subject, consumer: name,
+			}):
 			case <-ctx.Done():
 				return
 			}
@@ -479,7 +483,23 @@ func (m *jsManager) PublishBatch(ctx context.Context, subject string, values []a
 
 // jsAck settles one JetStream delivery. JetStream has a true negative
 // acknowledgement, so Nak returns the message rather than waiting out a timeout.
-type jsAck struct{ msg jetstream.Msg }
+type jsAck struct {
+	msg               jetstream.Msg
+	metrics           *core.Metrics
+	subject, consumer string
+}
 
-func (a jsAck) Ack(context.Context) error { return a.msg.Ack() }
-func (a jsAck) Nak(context.Context) error { return a.msg.Nak() }
+func (a jsAck) Ack(ctx context.Context) error {
+	if err := a.msg.Ack(); err != nil {
+		return err
+	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "ack")
+	return nil
+}
+func (a jsAck) Nak(ctx context.Context) error {
+	if err := a.msg.Nak(); err != nil {
+		return err
+	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "nak")
+	return nil
+}

@@ -80,7 +80,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 // This is the undurable half: a clean session that keeps nothing, so a message
 // published while nobody is attached is gone. Reach for [manager.Consume] when
 // that matters.
-func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 		return nil, err
 	}
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		for d := range msgs {
@@ -159,7 +159,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		"subject": subject, "consumer": consumer, "group": o.Group, "client_id": clientID,
 	})
 
-	out := make(chan streams.Delivery)
+	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		defer func() { _ = client.Disconnect(&paho.Disconnect{ReasonCode: 0}) }()
@@ -173,10 +173,14 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 		for d := range msgs {
 			delivered++
+			m.store.metrics.Delivered(ctx, subject, consumer)
 			select {
 			// MQTT flags a repeat delivery but does not count them, so
 			// Attempt is zero — the contract's answer where a provider cannot.
-			case out <- streams.NewDelivery(d.Message, 0, &mqttAck{client: client, packet: d.packet, subject: subject}):
+			case out <- streams.NewDelivery(d.Message, 0, &mqttAck{
+				client: client, packet: d.packet, metrics: m.store.metrics,
+				subject: subject, consumer: consumer,
+			}):
 			case <-ctx.Done():
 				return
 			}
@@ -313,19 +317,24 @@ func (m *manager) PublishBatch(ctx context.Context, subject string, values []any
 
 // mqttAck settles one delivery with a PUBACK.
 type mqttAck struct {
-	client  *paho.Client
-	packet  *paho.Publish
-	subject string
+	client            *paho.Client
+	packet            *paho.Publish
+	metrics           *core.Metrics
+	subject, consumer string
 }
 
-func (a *mqttAck) Ack(context.Context) error {
+func (a *mqttAck) Ack(ctx context.Context) error {
 	if err := a.client.Ack(a.packet); err != nil {
 		return fmt.Errorf("mqtt: cannot acknowledge on %q: %w", a.subject, err)
 	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "ack")
 	return nil
 }
 
 // Nak leaves the message unacknowledged: the broker keeps it against this
 // session and delivers it again when the consumer reconnects. MQTT has no
 // negative acknowledgement, so there is nothing more truthful to do here.
-func (a *mqttAck) Nak(context.Context) error { return nil }
+func (a *mqttAck) Nak(ctx context.Context) error {
+	a.metrics.Settled(ctx, a.subject, a.consumer, "nak")
+	return nil
+}

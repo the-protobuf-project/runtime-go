@@ -125,12 +125,12 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 // The channel is closed when ctx is done. That is the only way to stop the
 // subscription, and it is what keeps the delivery goroutine and the server-side
 // subscription from outliving the caller.
-func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
 	if m.handler.scheduled() {
-		return m.subscribeScheduled(ctx, subject)
+		return m.subscribeScheduled(ctx, subject, opts...)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
@@ -147,7 +147,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 
 	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject, "channel": channel})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()
@@ -193,7 +193,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string) (<-chan s
 //
 // Redis publishes one keyspace event per expired key across the whole database,
 // so this filters by key prefix down to the stream and subject asked for.
-func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	channel := "__keyevent@" + strconv.Itoa(m.handler.db) + "__:expired"
 	sub := m.handler.rdb.Subscribe(ctx, channel)
 
@@ -209,7 +209,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string) 
 		"subject": subject, "channel": channel, "prefix": want,
 	})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Close() }()

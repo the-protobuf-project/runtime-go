@@ -106,6 +106,16 @@ type Options struct {
 	// support rejects a non-empty Group rather than silently fanning out.
 	Group string
 
+	// Prefetch is how many messages a provider may hold ahead of the reader.
+	//
+	// It is the throughput/loss trade in one number. Zero, the default, lets
+	// the provider choose. A larger number keeps a fast consumer fed and stops
+	// a slow one from stalling the connection its subscription shares; it also
+	// means more messages are held unacknowledged, and every one of those is
+	// redelivered if the process dies — which is at-least-once behaving as
+	// promised, and still work done twice.
+	Prefetch int
+
 	// PartitionKey decides which partition a message lands on, and so which
 	// messages are ordered relative to each other.
 	//
@@ -136,6 +146,12 @@ func ID(id string) Option {
 // every message. See [Options.Group].
 func Group(name string) Option {
 	return func(o *Options) { o.Group = name }
+}
+
+// Prefetch sets how many messages a provider may hold ahead of the reader. See
+// [Options.Prefetch].
+func Prefetch(n int) Option {
+	return func(o *Options) { o.Prefetch = n }
 }
 
 // PartitionKey decides which messages are ordered relative to each other. See
@@ -170,7 +186,12 @@ type Subscriber interface {
 	// afterwards is delivered rather than raced. The channel is closed when ctx
 	// is done — cancel it to stop delivery and release the server-side
 	// subscription.
-	Subscribe(ctx context.Context, subject string) (<-chan Message, error)
+	//
+	// [Prefetch] sets how many messages may be held ahead of the reader, and
+	// [Group] shares the subject among several subscribers where the provider
+	// can. Options a provider cannot honor are refused by name rather than
+	// ignored.
+	Subscribe(ctx context.Context, subject string, opts ...Option) (<-chan Message, error)
 }
 
 // Manager is a publisher and subscriber bound to one stream.

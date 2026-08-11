@@ -91,7 +91,7 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 // subscription and is removed when the connection drops, so nothing piles up
 // for a subscriber that has gone away. That is what makes this the undurable
 // half — reach for [manager.Consume] when a message must survive the reader.
-func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
@@ -103,7 +103,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 
 	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = ch.Close() }()
@@ -169,7 +169,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 	m.store.log.Info(ctx, "consuming", telemetry.Fields{"subject": subject, "consumer": consumer})
 
-	out := make(chan streams.Delivery)
+	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		defer func() { _ = ch.Close() }()
@@ -196,8 +196,11 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 			del := d // the loop variable is reused for the next delivery
 			delivered++
+			m.store.metrics.Delivered(ctx, subject, consumer)
 			select {
-			case out <- streams.NewDelivery(msg, attempt(&del), &amqpAck{del: del, subject: subject}):
+			case out <- streams.NewDelivery(msg, attempt(&del), &amqpAck{
+				del: del, metrics: m.store.metrics, subject: subject, consumer: consumer,
+			}):
 			case <-ctx.Done():
 				return
 			}
@@ -296,21 +299,24 @@ func (m *manager) PublishBatch(ctx context.Context, subject string, values []any
 // negative acknowledgement, so Nak requeues immediately rather than waiting out
 // a visibility timeout.
 type amqpAck struct {
-	del     amqp.Delivery
-	subject string
+	del               amqp.Delivery
+	metrics           *core.Metrics
+	subject, consumer string
 }
 
-func (a *amqpAck) Ack(context.Context) error {
+func (a *amqpAck) Ack(ctx context.Context) error {
 	if err := a.del.Ack(false); err != nil {
 		return fmt.Errorf("rabbitmq: cannot acknowledge on %q: %w", a.subject, err)
 	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "ack")
 	return nil
 }
 
-func (a *amqpAck) Nak(context.Context) error {
+func (a *amqpAck) Nak(ctx context.Context) error {
 	// requeue, so it goes back for another consumer rather than being discarded.
 	if err := a.del.Nack(false, true); err != nil {
 		return fmt.Errorf("rabbitmq: cannot return the message on %q: %w", a.subject, err)
 	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "nak")
 	return nil
 }

@@ -23,6 +23,7 @@ type plainStreams struct {
 	nc       *gonats.Conn
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	log      telemetry.Logger
 	queue    string
 
@@ -205,22 +206,32 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 //
 // The channel is closed when ctx is done, which is also the only way to stop
 // the subscription and release it on the server.
-func (m *plainManager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
+	}
+
+	o := streams.NewOptions(opts...)
+
+	// A queue group named at the call wins over one named at the constructor:
+	// the call is the more specific statement, and the constructor option is
+	// only there to set a default for every subscription on this provider.
+	queue := m.p.queue
+	if o.Group != "" {
+		queue = o.Group
 	}
 
 	// Buffered so a slow reader does not push back into the client's own
 	// dispatch loop, which would stall every other subscription on this
 	// connection rather than just this one.
-	raw := make(chan *gonats.Msg, 64)
+	raw := make(chan *gonats.Msg, core.Prefetch(o))
 
 	var (
 		sub *gonats.Subscription
 		err error
 	)
-	if m.p.queue != "" {
-		sub, err = m.p.nc.ChanQueueSubscribe(subject, m.p.queue, raw)
+	if queue != "" {
+		sub, err = m.p.nc.ChanQueueSubscribe(subject, queue, raw)
 	} else {
 		sub, err = m.p.nc.ChanSubscribe(subject, raw)
 	}
@@ -239,10 +250,10 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string) (<-chan st
 	}
 
 	m.p.log.Info(ctx, "subscribed", telemetry.Fields{
-		"subject": subject, "queue": m.p.queue,
+		"subject": subject, "queue": queue,
 	})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer func() { _ = sub.Unsubscribe() }()

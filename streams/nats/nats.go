@@ -92,11 +92,12 @@ func newConfig(opts ...Option) config {
 // and does not drain it.
 func Use(nc *gonats.Conn, opts ...Option) streams.Streams {
 	cfg := newConfig(opts...)
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &plainStreams{
 		nc:       nc,
 		codec:    codec,
 		registry: registry,
+		metrics:  metrics,
 		log:      cfg.log,
 		queue:    cfg.queue,
 		declared: make(map[string]streams.Stream),
@@ -126,8 +127,8 @@ func UseJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: cannot reach JetStream: %w", err)
 	}
-	codec, registry := core.Resolve(cfg.codec)
-	return &jsStreams{js: js, log: cfg.log, codec: codec, registry: registry}, nil
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
+	return &jsStreams{js: js, log: cfg.log, codec: codec, registry: registry, metrics: metrics}, nil
 }
 
 // Connect dials url and returns a [streams.Streams] backed by core NATS.

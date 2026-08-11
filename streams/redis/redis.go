@@ -170,12 +170,13 @@ func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) st
 		}
 	}
 
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 
 	return &streamHandler{
 		rdb:      rdb,
 		codec:    codec,
 		registry: registry,
+		metrics:  metrics,
 		keys:     newKeys(cfg.prefix, k),
 		kind:     k,
 		db:       db,

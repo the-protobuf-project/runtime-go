@@ -187,7 +187,7 @@ type fakeSubscriber struct {
 	err error
 }
 
-func (f *fakeSubscriber) Subscribe(context.Context, string) (<-chan Message, error) {
+func (f *fakeSubscriber) Subscribe(context.Context, string, ...Option) (<-chan Message, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

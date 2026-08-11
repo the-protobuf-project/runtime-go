@@ -133,9 +133,9 @@ func Connect(ctx context.Context, address string, opts ...Option) (streams.Strea
 		return nil, fmt.Errorf("mqtt: no broker address given")
 	}
 
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	s := &store{address: address, cfg: cfg, log: cfg.log,
-		codec: codec, registry: registry, declared: map[string]streams.Stream{}}
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}
 
 	// One connection for publishing and for undurable subscriptions. Durable
 	// consumers get their own, because their session is their identity.
@@ -152,6 +152,7 @@ type store struct {
 	address  string
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	cfg      config
 	log      telemetry.Logger
 	client   *paho.Client

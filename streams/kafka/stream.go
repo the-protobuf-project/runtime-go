@@ -34,6 +34,7 @@ type streamStore struct {
 	seeds    []string
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	cfg      config
 	cl       *kgo.Client
 	admin    *kadm.Client

@@ -98,7 +98,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 // of the same log the durable half reads: nothing is acknowledged, nothing is
 // remembered, and a message read from the channel is gone. Reach for
 // [durableManager.Consume] when that matters.
-func (m *durableManager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.handler.declares(ctx, m.stream, subject); err != nil {
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string) (<-chan 
 		"subject": subject, "key": key, "from": last,
 	})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 
@@ -223,7 +223,7 @@ func (m *durableManager) ConsumeFrom(ctx context.Context, subject, consumer stri
 		"subject": subject, "consumer": consumer, "identity": name, "from": start,
 	})
 
-	out := make(chan streams.Delivery)
+	out := make(chan streams.Delivery, core.Prefetch(o))
 	go m.consume(ctx, key, subject, consumer, name, out)
 	return out, nil
 }
@@ -263,6 +263,14 @@ func (m *durableManager) consume(ctx context.Context, key, subject, group, name 
 		} else if sent > 0 {
 			delivered += sent
 			continue
+		}
+
+		// The group's pending count is what "behind" means on Redis: messages
+		// handed out and not yet acknowledged. It is one command, on a loop that
+		// already blocks for seconds, so measuring it costs nothing worth
+		// counting.
+		if n, perr := m.handler.rdb.XPending(ctx, key, group).Result(); perr == nil && n != nil {
+			m.handler.metrics.Lag(ctx, subject, group, n.Count)
 		}
 
 		res, err := m.handler.rdb.XReadGroup(ctx, &goredis.XReadGroupArgs{
@@ -386,7 +394,9 @@ func (m *durableManager) deliver(ctx context.Context, key, subject, group string
 
 	d := streams.NewDelivery(msg, attempt, &redisAck{
 		rdb: m.handler.rdb, key: key, group: group, entry: entry.ID, subject: subject,
+		metrics: m.handler.metrics,
 	})
+	m.handler.metrics.Delivered(ctx, subject, group)
 
 	select {
 	case out <- d:
@@ -453,12 +463,14 @@ func (m *durableManager) PublishBatch(ctx context.Context, subject string, value
 type redisAck struct {
 	rdb                        goredis.UniversalClient
 	key, group, entry, subject string
+	metrics                    *core.Metrics
 }
 
 func (a *redisAck) Ack(ctx context.Context) error {
 	if err := a.rdb.XAck(ctx, a.key, a.group, a.entry).Err(); err != nil {
 		return fmt.Errorf("redis: cannot acknowledge %s on %q: %w", a.entry, a.subject, err)
 	}
+	a.metrics.Settled(ctx, a.subject, a.group, "ack")
 	return nil
 }
 
@@ -469,4 +481,7 @@ func (a *redisAck) Ack(ctx context.Context) error {
 // Appending a copy to the tail would redeliver it sooner, but it would arrive
 // with a new id and an attempt count of one — and Attempt is the only signal a
 // consumer has for noticing it is in a redelivery loop it cannot escape.
-func (a *redisAck) Nak(context.Context) error { return nil }
+func (a *redisAck) Nak(ctx context.Context) error {
+	a.metrics.Settled(ctx, a.subject, a.group, "nak")
+	return nil
+}

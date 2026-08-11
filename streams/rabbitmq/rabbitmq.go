@@ -119,11 +119,11 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 		return nil, fmt.Errorf("rabbitmq: cannot open a channel: %w", err)
 	}
 
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 
 	return &store{
 		url: url, cfg: cfg, log: cfg.log,
-		codec: codec, registry: registry,
+		codec: codec, registry: registry, metrics: metrics,
 		conn: conn, ch: ch,
 		declared: map[string]streams.Stream{},
 	}, nil
@@ -138,6 +138,7 @@ type store struct {
 	url      string
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	cfg      config
 	log      telemetry.Logger
 	conn     *amqp.Connection

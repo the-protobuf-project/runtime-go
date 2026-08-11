@@ -153,7 +153,7 @@ func compact(errs []error) []error {
 // No consumer group and no offsets committed: this is a tail, and nothing about
 // what it saw survives the context that started it. Reach for
 // [manager.Consume] when that matters.
-func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams.Message, error) {
+func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string) (<-chan streams
 
 	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
-	out := make(chan streams.Message)
+	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
 		defer close(out)
 		defer cl.Close()
@@ -281,7 +281,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 		"subject": subject, "consumer": consumer, "from": at,
 	})
 
-	out := make(chan streams.Delivery)
+	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		defer cl.Close()
@@ -320,11 +320,14 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 				}
 
 				delivered++
+				m.store.metrics.Delivered(ctx, subject, consumer)
 				select {
 				// Kafka redelivers the same bytes with no record of having done
 				// so, so there is nothing honest to count: the contract asks for
 				// zero where a provider cannot.
-				case out <- streams.NewDelivery(msg, 0, &kafkaAck{cl: cl, rec: rec, subject: subject}):
+				case out <- streams.NewDelivery(msg, 0, &kafkaAck{
+					cl: cl, rec: rec, metrics: m.store.metrics, subject: subject, consumer: consumer,
+				}):
 				case <-ctx.Done():
 					return
 				}
@@ -336,19 +339,24 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 
 // kafkaAck settles one delivery by committing its offset.
 type kafkaAck struct {
-	cl      *kgo.Client
-	rec     *kgo.Record
-	subject string
+	cl                *kgo.Client
+	rec               *kgo.Record
+	metrics           *core.Metrics
+	subject, consumer string
 }
 
 func (a *kafkaAck) Ack(ctx context.Context) error {
 	if err := a.cl.CommitRecords(ctx, a.rec); err != nil {
 		return fmt.Errorf("kafka: cannot acknowledge offset %d on %q: %w", a.rec.Offset, a.subject, err)
 	}
+	a.metrics.Settled(ctx, a.subject, a.consumer, "ack")
 	return nil
 }
 
 // Nak leaves the offset uncommitted, so the group reads this record again when
 // the partition is next assigned. Kafka has no per-message redelivery, so there
 // is nothing more truthful to do here.
-func (a *kafkaAck) Nak(context.Context) error { return nil }
+func (a *kafkaAck) Nak(ctx context.Context) error {
+	a.metrics.Settled(ctx, a.subject, a.consumer, "nak")
+	return nil
+}

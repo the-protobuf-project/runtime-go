@@ -85,8 +85,8 @@ func WithSubscriberLogging(next Subscriber, log telemetry.Logger) Subscriber {
 	return &loggingSubscriber{next: next, log: log}
 }
 
-func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string) (<-chan Message, error) {
-	msgs, err := l.next.Subscribe(ctx, subject)
+func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts ...Option) (<-chan Message, error) {
+	msgs, err := l.next.Subscribe(ctx, subject, opts...)
 	if err != nil {
 		l.log.Error(ctx, "subscribe failed", err, telemetry.Fields{"subject": subject})
 		return nil, err

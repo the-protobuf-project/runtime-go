@@ -109,12 +109,13 @@ func Connect(ctx context.Context, seeds []string, opts ...Option) (streams.Strea
 		return nil, fmt.Errorf("kafka: cannot build the client: %w", err)
 	}
 
-	codec, registry := core.Resolve(cfg.codec)
+	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 
 	s := &streamStore{
 		seeds:    seeds,
 		codec:    codec,
 		registry: registry,
+		metrics:  metrics,
 		cfg:      cfg,
 		cl:       client,
 		admin:    kadm.NewClient(client),

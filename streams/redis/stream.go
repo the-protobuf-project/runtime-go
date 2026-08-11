@@ -26,6 +26,7 @@ type streamHandler struct {
 	rdb      goredis.UniversalClient
 	codec    streams.Codec
 	registry *streams.Registry
+	metrics  *core.Metrics
 	keys     keys
 	kind     kind
 	db       int
