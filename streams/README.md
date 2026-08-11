@@ -1,25 +1,25 @@
 # Streams
 
-The backend-agnostic contract for messaging. This module holds the interfaces
-and their decorators — no backend, and no client library. Providers implement it
-in their own modules, so a program that reaches for one does not pull in the
-other:
+Messaging with a backend-agnostic contract. One publish/subscribe interface over
+pub/sub, stored logs and scheduled delivery; a provider implements what its
+backend can do and says so where it cannot.
 
-| Provider | Module | Delivery |
+| Backend | Package | Delivery |
 | --- | --- | --- |
 | Redis pub/sub | [`streams/redis`](./redis) | immediate, nothing kept |
 | Redis scheduled | [`streams/redis`](./redis) | on TTL expiry |
 | Redis Streams | [`streams/redis`](./redis) | durable, redelivered until acknowledged |
 | Core NATS | [`streams/nats`](./nats) | immediate, nothing kept |
 | NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
+| Kafka | `streams/kafka` | next |
 
-For storage see [`cache`](../cache) and [`database`](../database).
+For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
+[`database`](../database).
 
 ## Installation
 
 ```bash
 go get github.com/the-protobuf-project/runtime-go/streams
-go get github.com/the-protobuf-project/runtime-go/streams/redis   # or .../streams/nats
 ```
 
 ## Usage
@@ -217,26 +217,16 @@ is how you spot a consumer that leaked.
 
 ## Tests
 
-This module's tests are unit tests over the contract, its decorators and
-`core`, and need no server.
+The contract, its decorators and `core` are covered by unit tests that need no
+server. The provider suites are integration tests.
 
-```bash
-go test ./...
-```
-
-The provider suites are integration tests. NATS starts a server in-process, so
-it needs nothing installed:
-
-```bash
-cd nats && go test ./...
-```
-
-Redis needs a live server and skips without one — including the keyspace events
-the scheduled tests rely on:
+NATS starts a server in-process, so it needs nothing installed. Redis needs a
+live one and skips without it — including the keyspace events the scheduled
+tests rely on:
 
 ```bash
 docker compose -f docker/compose.yaml up -d
-cd redis && go test ./...
+go test ./...
 ```
 
 Runnable demonstrations of every delivery mode live in

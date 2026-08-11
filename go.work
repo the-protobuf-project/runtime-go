@@ -11,8 +11,6 @@ use (
 	./observability
 	./streams
 	./streams/examples
-	./streams/nats
-	./streams/redis
 	./telemetry
 	./ulid
 )

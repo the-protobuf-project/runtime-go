@@ -72,6 +72,28 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go build ./...
 
+      # The streams Redis provider's tests skip without a live server, so
+      # without this they report success having run nothing.
+      #
+      # A service container would be the usual way, but the scheduled-delivery
+      # suite needs `--notify-keyspace-events Ex` and services cannot override a
+      # container's command. Conditioning on the module keeps the other jobs
+      # from paying for a server they do not use.
+      - name: Start Redis
+        if: matrix.module == 'streams'
+        run: |
+          docker run -d --name redis -p 6379:6379 redis:latest \
+            redis-server --notify-keyspace-events Ex
+          for _ in $(seq 1 30); do
+            if docker exec redis redis-cli ping >/dev/null 2>&1; then
+              echo "Redis is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis did not become ready in 30s" >&2
+          exit 1
+
       - name: Test
         working-directory: ${{ matrix.module }}
         run: go test ./... -race -timeout 120s -coverprofile=coverage.out -covermode=atomic
