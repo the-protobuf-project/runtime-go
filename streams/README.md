@@ -12,6 +12,7 @@ backend can do and says so where it cannot.
 | Core NATS | [`streams/nats`](./nats) | immediate, nothing kept |
 | NATS JetStream | [`streams/nats`](./nats) | durable, redelivered until acknowledged |
 | Kafka | [`streams/kafka`](./kafka) | durable, partitioned, replayable by offset |
+| MQTT 5 | [`streams/mqtt`](./mqtt) | durable by session, not replayable |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
 [`database`](../database).
@@ -194,6 +195,22 @@ The position applies when the consumer is created and not after. A consumer that
 already exists keeps the position it has — resetting on every attach would
 replay the log on every restart, which is the opposite of what a durable
 consumer is for.
+
+**MQTT is durable but not positioned**, which is the clearest argument for
+keeping the two capabilities apart. An MQTT session really does hold a
+consumer's subscriptions and its unacknowledged messages while it is away, so
+`Durable` is honest there. But a session is a queue, not a log: there is nothing
+behind it to seek, so `AsPositioned` refuses by name. A contract that had fused
+the two would have had to either lie about replay or throw away durability MQTT
+genuinely has.
+
+| Provider | Durable | Positioned | `Attempt` |
+| --- | --- | --- | --- |
+| Redis Streams | ✓ | ✓ | counted |
+| NATS JetStream | ✓ | ✓ | counted |
+| Kafka | ✓ | ✓ | 0 — cannot count |
+| MQTT 5 | ✓ | ✗ | 0 — cannot count |
+| Redis pub/sub, core NATS | ✗ | ✗ | — |
 
 ### Scheduled delivery
 

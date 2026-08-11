@@ -3,6 +3,8 @@ module github.com/the-protobuf-project/runtime-go/streams
 go 1.26.4
 
 require (
+	github.com/eclipse/paho.golang v0.23.0
+	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/nats-io/nats-server/v2 v2.14.4
 	github.com/nats-io/nats.go v1.52.0
 	github.com/redis/go-redis/v9 v9.18.0
@@ -29,7 +31,6 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/eclipse/paho.golang v0.23.0 // indirect
 	github.com/foxglove/mcap/go/mcap v1.9.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
@@ -56,7 +57,6 @@ require (
 	github.com/minio/highwayhash v1.0.4 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/mochi-mqtt/server/v2 v2.7.9 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/nats-io/jwt/v2 v2.8.2 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
