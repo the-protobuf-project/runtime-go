@@ -15,7 +15,7 @@ import (
 func MustParseSchema(raw string) *jsonschema.Schema {
 	var s jsonschema.Schema
 	if err := json.Unmarshal([]byte(raw), &s); err != nil {
-		panic(fmt.Sprintf("runtime: failed to parse JSON schema: %v", err))
+		panic(fmt.Sprintf("mcp: failed to parse JSON schema: %v", err))
 	}
 	return &s
 }

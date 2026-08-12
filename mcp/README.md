@@ -139,7 +139,7 @@ if pending != nil {
     return pending, nil // ask the client; it will retry this call with the answer
 }
 if result.Action != "accept" {
-    return mcp.TextResult("Action cancelled by user."), nil
+    return mcp.TextResult("Action canceled by user."), nil
 }
 ```
 

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -70,7 +71,7 @@ type MCPServerConfig struct {
 	// BasePath instead of starting a listener of the server's own — the seam a
 	// hosting process uses to serve many MCP services from ONE port, routed by
 	// their distinct base paths. StartServer then blocks until ctx is
-	// cancelled; the host owns the http.Server lifecycle. Ignored by the stdio
+	// canceled; the host owns the http.Server lifecycle. Ignored by the stdio
 	// transport, which cannot share.
 	Mux *http.ServeMux
 }
@@ -103,13 +104,13 @@ func ParseTransports(s string) []Transport {
 }
 
 // shutdownTimeout bounds the graceful drain of an HTTP transport once the
-// caller's context is cancelled.
+// caller's context is canceled.
 const shutdownTimeout = 5 * time.Second
 
 // StartServer starts the MCP server using the configured transport(s).
 // Multiple transports run concurrently -- HTTP-based transports share a
 // single net/http server while stdio gets its own sdk.Server instance.
-// This call blocks until the context is cancelled (HTTP transports are then
+// This call blocks until the context is canceled (HTTP transports are then
 // drained gracefully and nil is returned) or a serve error occurs.
 func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk.Server)) error {
 	// Defaults are resolved on a copy so a caller sharing one config across
@@ -143,7 +144,7 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk
 		case TransportSSE, TransportStreamableHTTP:
 			httpTransports = append(httpTransports, t)
 		default:
-			return fmt.Errorf("runtime: unsupported transport %q", t)
+			return fmt.Errorf("mcp: unsupported transport %q", t)
 		}
 	}
 
@@ -180,12 +181,15 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk
 		}
 		if hasStdio {
 			go func() {
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					log.Printf("runtime: HTTP server error: %v", err)
+				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					log.Printf("mcp: HTTP server error: %v", err)
 				}
 			}()
 			// The stdio path below blocks on ctx; drain HTTP when it ends.
-			go func() {
+			// Shutdown deliberately runs on a fresh context: ctx is already
+			// done by this point, so passing it would abort the drain
+			// immediately instead of giving in-flight requests their window.
+			go func() { //nolint:gosec // G118: see above — the detached context is the point
 				<-ctx.Done()
 				shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 				defer cancel()
@@ -196,7 +200,7 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk
 			go func() { errCh <- srv.ListenAndServe() }()
 			select {
 			case err := <-errCh:
-				if err != nil && err != http.ErrServerClosed {
+				if err != nil && !errors.Is(err, http.ErrServerClosed) {
 					return err
 				}
 				return nil
@@ -214,7 +218,7 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk
 		register(stdioServer)
 		return serveStdio(ctx, stdioServer)
 	}
-	return fmt.Errorf("runtime: no transports configured")
+	return fmt.Errorf("mcp: no transports configured")
 }
 
 // buildHTTPMux registers HTTP-based transports on a fresh ServeMux.

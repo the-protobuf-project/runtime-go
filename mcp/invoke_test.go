@@ -53,7 +53,8 @@ func TestChainUnaryInterceptors_OrderAndNilHandling(t *testing.T) {
 	if ChainUnaryInterceptors() != nil {
 		t.Fatal("empty chain should be nil")
 	}
-	if ChainUnaryInterceptors(nil, nil) != nil {
+	allNil := []grpc.UnaryServerInterceptor{nil, nil}
+	if ChainUnaryInterceptors(allNil...) != nil {
 		t.Fatal("all-nil chain should be nil")
 	}
 

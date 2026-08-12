@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
@@ -9,10 +10,11 @@ import (
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Cancelling the context must stop an HTTP-transport StartServer (it used to
+// Canceling the context must stop an HTTP-transport StartServer (it used to
 // block in ListenAndServe forever) and must not mutate the caller's config.
 func TestStartServer_HTTPShutdownOnContextCancel(t *testing.T) {
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	lis, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
 	}
@@ -36,7 +38,7 @@ func TestStartServer_HTTPShutdownOnContextCancel(t *testing.T) {
 
 	select {
 	case err := <-done:
-		if err != nil && err != context.Canceled {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Fatalf("StartServer returned %v, want nil or context.Canceled", err)
 		}
 	case <-time.After(3 * time.Second):

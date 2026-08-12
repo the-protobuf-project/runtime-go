@@ -26,7 +26,7 @@ type grpcError struct {
 // in the JSON error payload.
 func HandleError(err error) (*sdk.CallToolResult, error) {
 	if err == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // documented contract: no error in, nothing out
 	}
 
 	// Try gRPC status.

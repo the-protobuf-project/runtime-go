@@ -48,7 +48,7 @@ func TestForwardMetadata_HTTPHeaders(t *testing.T) {
 	})
 	handler := HeadersMiddleware(mappings, inner)
 
-	req := httptest.NewRequest("POST", "/mcp", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp", nil)
 	req.Header.Set("Authorization", "Bearer secret")
 	req.Header.Set("X-Tenant-Id", "tenant-42")
 	handler.ServeHTTP(httptest.NewRecorder(), req)

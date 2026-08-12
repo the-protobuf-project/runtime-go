@@ -29,13 +29,13 @@ type InProcessServerStream[T any] struct {
 }
 
 // NewInProcessServerStream creates a new InProcessServerStream with a buffered
-// channel (capacity 16). The ctx is used by Send to abort early if cancelled.
+// channel (capacity 16). The ctx is used by Send to abort early if canceled.
 func NewInProcessServerStream[T any](ctx context.Context) *InProcessServerStream[T] {
 	return &InProcessServerStream[T]{ctx: ctx, ch: make(chan T, 16)}
 }
 
 // Send enqueues msg into the channel. Blocks if the buffer is full until space
-// is available or ctx is cancelled.
+// is available or ctx is canceled.
 func (s *InProcessServerStream[T]) Send(msg T) error {
 	select {
 	case s.ch <- msg:

@@ -67,6 +67,6 @@
 //	    return pending, nil
 //	}
 //	if result.Action != "accept" {
-//	    return mcp.TextResult("Action cancelled by user."), nil
+//	    return mcp.TextResult("Action canceled by user."), nil
 //	}
 package mcp
