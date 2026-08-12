@@ -1,4 +1,4 @@
-package runtime
+package mcp
 
 import (
 	"fmt"
@@ -32,7 +32,7 @@ func PreferGeneratedBasePath(generatedDefault string, cfg *MCPServerConfig) stri
 // ServerEndpoint returns the endpoint for an MCP server based on its config.
 // Use to log the URL before starting:
 //
-//	if ep, err := runtime.ServerEndpoint(cfg); err == nil {
+//	if ep, err := mcp.ServerEndpoint(cfg); err == nil {
 //	    log.Printf("MCP listening on %s", ep.URL)
 //	}
 //

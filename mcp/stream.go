@@ -1,4 +1,4 @@
-package runtime
+package mcp
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 //
 // Usage:
 //
-//	stream := runtime.NewInProcessServerStream[*MyChunkType](ctx)
+//	stream := mcp.NewInProcessServerStream[*MyChunkType](ctx)
 //	go func() {
 //	    defer stream.Close()
 //	    _ = srv.MyStreamingRPC(req, stream)

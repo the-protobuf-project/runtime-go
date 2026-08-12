@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
+	"github.com/the-protobuf-project/runtime-go/mcp"
 )
 
 // mcpEndpointInfo carries resolved endpoint details from the OnReady callback.
@@ -35,8 +35,8 @@ func (s *HybridServer) startMCPServer() {
 
 	for i, fn := range s.mcpServiceFuncs {
 		cfg := s.buildMCPConfig(mux)
-		cfg.OnReady = func(resolved *runtime.MCPServerConfig) {
-			if ep, err := runtime.ServerEndpoint(resolved); err == nil {
+		cfg.OnReady = func(resolved *mcp.MCPServerConfig) {
+			if ep, err := mcp.ServerEndpoint(resolved); err == nil {
 				shared.Telemetry().Logger.Debugf("MCP: service ready — transport=%s url=%s", ep.Transport, ep.URL)
 				readyCh <- mcpEndpointInfo{transport: ep.Transport, url: ep.URL, port: s.opts.MCP.Port}
 			} else {
@@ -44,7 +44,7 @@ func (s *HybridServer) startMCPServer() {
 			}
 		}
 		shared.Telemetry().Logger.Debugf("MCP: launching service goroutine [%d]", i)
-		go func(f MCPServiceFunc, c *runtime.MCPServerConfig) {
+		go func(f MCPServiceFunc, c *mcp.MCPServerConfig) {
 			if err := f(ctx, c); err != nil && ctx.Err() == nil {
 				_ = shared.Telemetry().Logger.Errorf("MCP server error: %v", err)
 			}
@@ -80,22 +80,22 @@ func (s *HybridServer) startMCPServer() {
 // buildMCPConfig constructs the per-service MCPServerConfig: shared mux and
 // addr (one port for all services), the server's unary interceptor chain, and
 // the service identity.
-func (s *HybridServer) buildMCPConfig(mux *http.ServeMux) *runtime.MCPServerConfig {
-	transport := runtime.Transport(s.opts.MCP.Transport)
+func (s *HybridServer) buildMCPConfig(mux *http.ServeMux) *mcp.MCPServerConfig {
+	transport := mcp.Transport(s.opts.MCP.Transport)
 	if transport == "" {
 		shared.Telemetry().Logger.Debugf("MCP: no transport specified, defaulting to streamable-http")
-		transport = runtime.TransportStreamableHTTP
+		transport = mcp.TransportStreamableHTTP
 	}
 
-	return &runtime.MCPServerConfig{
+	return &mcp.MCPServerConfig{
 		Name:       s.opts.ServiceName,
 		Version:    s.opts.Version,
-		Transports: []runtime.Transport{transport},
+		Transports: []mcp.Transport{transport},
 		Addr:       fmt.Sprintf("%s:%d", s.opts.MCP.Host, s.opts.MCP.Port),
 		Mux:        mux,
 		// Push the server's unary interceptor chain (incl. WithValidation,
 		// resolved during startGRPCServer) down to MCP tool dispatch, so MCP
 		// calls run the same middleware as wire RPCs.
-		UnaryInterceptor: runtime.ChainUnaryInterceptors(s.unaryInts...),
+		UnaryInterceptor: mcp.ChainUnaryInterceptors(s.unaryInts...),
 	}
 }

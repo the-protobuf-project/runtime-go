@@ -1,4 +1,4 @@
-package runtime
+package mcp
 
 import (
 	"context"
@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/the-protobuf-project/grpc-mcp-gateway/mcp/protobuf/mcppb"
 )
 
 // SendProgressFromProto sends an MCP progress notification from an MCPProgress proto.
 // If token or p is nil, it returns nil. Used by generated streaming tool handlers.
-func SendProgressFromProto(ctx context.Context, session *mcp.ServerSession, token any, p *mcppb.MCPProgress) error {
+func SendProgressFromProto(ctx context.Context, session *sdk.ServerSession, token any, p *mcppb.MCPProgress) error {
 	if token == nil || p == nil || session == nil {
 		return nil
 	}
-	params := &mcp.ProgressNotificationParams{
+	params := &sdk.ProgressNotificationParams{
 		ProgressToken: token,
 		Progress:      p.Progress,
 		Message:       p.Message,
@@ -32,7 +32,7 @@ func SendProgressFromProto(ctx context.Context, session *mcp.ServerSession, toke
 // with resultJSON as the message, signaling to the MCP client that the streaming
 // operation has completed. Generated non-blocking streaming handlers call this
 // when the result chunk arrives from the gRPC server method.
-func SendDoneProgress(ctx context.Context, session *mcp.ServerSession, token any, resultJSON string) error {
+func SendDoneProgress(ctx context.Context, session *sdk.ServerSession, token any, resultJSON string) error {
 	if token == nil || session == nil {
 		return nil
 	}
@@ -48,14 +48,14 @@ func SendDoneProgress(ctx context.Context, session *mcp.ServerSession, token any
 // message containing the prompt description. It is used as a placeholder for
 // prompts declared via MCP proto options. Replace it by calling
 // server.RemovePrompts / server.AddPrompt with your own handler.
-func DefaultPromptHandler(description string) func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-	return func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-		return &mcp.GetPromptResult{
+func DefaultPromptHandler(description string) func(context.Context, *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
+	return func(_ context.Context, req *sdk.GetPromptRequest) (*sdk.GetPromptResult, error) {
+		return &sdk.GetPromptResult{
 			Description: description,
-			Messages: []*mcp.PromptMessage{
+			Messages: []*sdk.PromptMessage{
 				{
 					Role:    "user",
-					Content: &mcp.TextContent{Text: description},
+					Content: &sdk.TextContent{Text: description},
 				},
 			},
 		}, nil
@@ -66,10 +66,10 @@ func DefaultPromptHandler(description string) func(context.Context, *mcp.GetProm
 // object. It is used as a placeholder for resources declared via MCP proto
 // options. Replace it by calling server.RemoveResources / server.AddResource
 // with your own handler.
-func DefaultResourceHandler() func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-	return func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		return &mcp.ReadResourceResult{
-			Contents: []*mcp.ResourceContents{
+func DefaultResourceHandler() func(context.Context, *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+	return func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+		return &sdk.ReadResourceResult{
+			Contents: []*sdk.ResourceContents{
 				{URI: req.Params.URI, Text: "{}"},
 			},
 		}, nil
@@ -83,9 +83,9 @@ func AppResourceURI(serviceName string) string {
 
 // SetToolAppMeta returns a shallow clone of tool with _meta.ui.resourceUri set,
 // which makes the tool show up as an MCP App in supporting hosts.
-func SetToolAppMeta(tool *mcp.Tool, resourceURI string) *mcp.Tool {
+func SetToolAppMeta(tool *sdk.Tool, resourceURI string) *sdk.Tool {
 	cloned := *tool
-	cloned.Meta = mcp.Meta{
+	cloned.Meta = sdk.Meta{
 		"ui": map[string]any{
 			"resourceUri": resourceURI,
 		},
@@ -115,11 +115,11 @@ func DefaultAppHTML(appName, version, description string) string {
 // DefaultAppResourceHandler returns a resource handler that serves the default
 // app HTML page. The returned handler is suitable for registration with
 // server.AddResource for the ui:// resource URI.
-func DefaultAppResourceHandler(appName, version, description string) func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+func DefaultAppResourceHandler(appName, version, description string) func(context.Context, *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
 	html := DefaultAppHTML(appName, version, description)
-	return func(_ context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		return &mcp.ReadResourceResult{
-			Contents: []*mcp.ResourceContents{
+	return func(_ context.Context, req *sdk.ReadResourceRequest) (*sdk.ReadResourceResult, error) {
+		return &sdk.ReadResourceResult{
+			Contents: []*sdk.ResourceContents{
 				{URI: req.Params.URI, MIMEType: "text/html", Text: html},
 			},
 		}, nil
@@ -128,15 +128,15 @@ func DefaultAppResourceHandler(appName, version, description string) func(contex
 
 // CompletionHandlerFromEnums builds a CompletionHandler that serves autocomplete
 // values for prompt arguments. The enumValues map is keyed by "promptName:argName".
-func CompletionHandlerFromEnums(enumValues map[string][]string) func(context.Context, *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
-	return func(_ context.Context, req *mcp.CompleteRequest) (*mcp.CompleteResult, error) {
+func CompletionHandlerFromEnums(enumValues map[string][]string) func(context.Context, *sdk.CompleteRequest) (*sdk.CompleteResult, error) {
+	return func(_ context.Context, req *sdk.CompleteRequest) (*sdk.CompleteResult, error) {
 		if req.Params.Ref.Type != "ref/prompt" {
-			return &mcp.CompleteResult{Completion: mcp.CompletionResultDetails{Values: []string{}}}, nil
+			return &sdk.CompleteResult{Completion: sdk.CompletionResultDetails{Values: []string{}}}, nil
 		}
 		key := req.Params.Ref.Name + ":" + req.Params.Argument.Name
 		values, ok := enumValues[key]
 		if !ok {
-			return &mcp.CompleteResult{Completion: mcp.CompletionResultDetails{Values: []string{}}}, nil
+			return &sdk.CompleteResult{Completion: sdk.CompletionResultDetails{Values: []string{}}}, nil
 		}
 		prefix := strings.ToLower(req.Params.Argument.Value)
 		filtered := []string{}
@@ -145,8 +145,8 @@ func CompletionHandlerFromEnums(enumValues map[string][]string) func(context.Con
 				filtered = append(filtered, v)
 			}
 		}
-		return &mcp.CompleteResult{
-			Completion: mcp.CompletionResultDetails{
+		return &sdk.CompleteResult{
+			Completion: sdk.CompletionResultDetails{
 				Values:  filtered,
 				Total:   len(filtered),
 				HasMore: false,
@@ -253,20 +253,20 @@ func ElicitSchema(fields []ElicitField) *jsonschema.Schema {
 //     "accept" means the user declined.
 //   - pending: no answer yet. Return it from the handler unchanged to ask the
 //     client for input.
-func RunElicitation(req *mcp.CallToolRequest, message string, fields []ElicitField) (result *mcp.ElicitResult, pending *mcp.CallToolResult, err error) {
+func RunElicitation(req *sdk.CallToolRequest, message string, fields []ElicitField) (result *sdk.ElicitResult, pending *sdk.CallToolResult, err error) {
 	if req == nil || req.Params == nil {
 		return nil, nil, fmt.Errorf("elicitation %q: no tool call request", message)
 	}
 	if resp, ok := req.Params.InputResponses[ElicitRequestID]; ok {
-		res, ok := resp.(*mcp.ElicitResult)
+		res, ok := resp.(*sdk.ElicitResult)
 		if !ok {
-			return nil, nil, fmt.Errorf("elicitation %q: input response is %T, want *mcp.ElicitResult", message, resp)
+			return nil, nil, fmt.Errorf("elicitation %q: input response is %T, want *sdk.ElicitResult", message, resp)
 		}
 		return res, nil, nil
 	}
-	return nil, &mcp.CallToolResult{
-		InputRequests: mcp.InputRequestMap{
-			ElicitRequestID: &mcp.ElicitParams{
+	return nil, &sdk.CallToolResult{
+		InputRequests: sdk.InputRequestMap{
+			ElicitRequestID: &sdk.ElicitParams{
 				Message:         message,
 				RequestedSchema: ElicitSchema(fields),
 			},

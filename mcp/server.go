@@ -1,4 +1,4 @@
-package runtime
+package mcp
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 )
 
@@ -30,12 +30,12 @@ type MCPServerConfig struct {
 	Transports []Transport
 	// Addr is the listen address for HTTP-based transports (default ":8080").
 	Addr string
-	// ServerOptions are passed to mcp.NewServer.
-	ServerOptions *mcp.ServerOptions
-	// StreamableHTTPOptions are passed to mcp.NewStreamableHTTPHandler.
-	StreamableHTTPOptions *mcp.StreamableHTTPOptions
-	// SSEOptions are passed to mcp.NewSSEHandler.
-	SSEOptions *mcp.SSEOptions
+	// ServerOptions are passed to sdk.NewServer.
+	ServerOptions *sdk.ServerOptions
+	// StreamableHTTPOptions are passed to sdk.NewStreamableHTTPHandler.
+	StreamableHTTPOptions *sdk.StreamableHTTPOptions
+	// SSEOptions are passed to sdk.NewSSEHandler.
+	SSEOptions *sdk.SSEOptions
 	// BasePath is the HTTP path prefix for the MCP endpoint (default "/mcp").
 	BasePath string
 	// GeneratedBasePath is the proto-derived default BasePath. If set, it takes precedence over BasePath.
@@ -75,21 +75,21 @@ type MCPServerConfig struct {
 	Mux *http.ServeMux
 }
 
-// NewMCPServer creates an mcp.Server from a MCPServerConfig.
-func NewMCPServer(cfg *MCPServerConfig) *mcp.Server {
+// NewMCPServer creates an sdk.Server from a MCPServerConfig.
+func NewMCPServer(cfg *MCPServerConfig) *sdk.Server {
 	opts := cfg.ServerOptions
 	if opts == nil {
-		opts = &mcp.ServerOptions{}
+		opts = &sdk.ServerOptions{}
 	}
-	return mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
+	return sdk.NewServer(&sdk.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
 }
 
 // ParseTransports splits a comma-separated transport string into a []Transport slice.
 // Use with MCP_TRANSPORT env var:
 //
-//	transports := runtime.ParseTransports(os.Getenv("MCP_TRANSPORT"))
+//	transports := mcp.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 //	if len(transports) == 0 {
-//	    transports = []runtime.Transport{runtime.TransportStreamableHTTP}
+//	    transports = []mcp.Transport{mcp.TransportStreamableHTTP}
 //	}
 func ParseTransports(s string) []Transport {
 	parts := strings.Split(s, ",")
@@ -108,10 +108,10 @@ const shutdownTimeout = 5 * time.Second
 
 // StartServer starts the MCP server using the configured transport(s).
 // Multiple transports run concurrently -- HTTP-based transports share a
-// single net/http server while stdio gets its own mcp.Server instance.
+// single net/http server while stdio gets its own sdk.Server instance.
 // This call blocks until the context is cancelled (HTTP transports are then
 // drained gracefully and nil is returned) or a serve error occurs.
-func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp.Server)) error {
+func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *sdk.Server)) error {
 	// Defaults are resolved on a copy so a caller sharing one config across
 	// several servers never observes another server's resolved state.
 	resolved := *cfg
@@ -218,7 +218,7 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp
 }
 
 // buildHTTPMux registers HTTP-based transports on a fresh ServeMux.
-func buildHTTPMux(server *mcp.Server, cfg *MCPServerConfig, transports []Transport) *http.ServeMux {
+func buildHTTPMux(server *sdk.Server, cfg *MCPServerConfig, transports []Transport) *http.ServeMux {
 	mux := http.NewServeMux()
 	mountHTTPTransports(mux, server, cfg, transports)
 	return mux
@@ -228,15 +228,15 @@ func buildHTTPMux(server *mcp.Server, cfg *MCPServerConfig, transports []Transpo
 // server on mux at cfg.BasePath. Distinct base paths let many MCP services
 // share one mux (and therefore one port); header-mapping middleware is applied
 // per handler so shared-mux mounts keep their own mappings.
-func mountHTTPTransports(mux *http.ServeMux, server *mcp.Server, cfg *MCPServerConfig, transports []Transport) {
+func mountHTTPTransports(mux *http.ServeMux, server *sdk.Server, cfg *MCPServerConfig, transports []Transport) {
 	wrap := func(h http.Handler) http.Handler { return HeadersMiddleware(cfg.HeaderMappings, h) }
 	for _, t := range transports {
 		switch t {
 		case TransportStreamableHTTP:
-			h := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return server }, cfg.StreamableHTTPOptions)
+			h := sdk.NewStreamableHTTPHandler(func(_ *http.Request) *sdk.Server { return server }, cfg.StreamableHTTPOptions)
 			mux.Handle(cfg.BasePath, wrap(h))
 		case TransportSSE:
-			h := mcp.NewSSEHandler(func(_ *http.Request) *mcp.Server { return server }, cfg.SSEOptions)
+			h := sdk.NewSSEHandler(func(_ *http.Request) *sdk.Server { return server }, cfg.SSEOptions)
 			mux.Handle(cfg.BasePath+"/", wrap(h))
 		}
 	}
@@ -249,7 +249,7 @@ func mountHTTPTransports(mux *http.ServeMux, server *mcp.Server, cfg *MCPServerC
 	}
 }
 
-func serveStdio(ctx context.Context, server *mcp.Server) error {
+func serveStdio(ctx context.Context, server *sdk.Server) error {
 	log.SetOutput(os.Stderr)
-	return server.Run(ctx, &mcp.StdioTransport{})
+	return server.Run(ctx, &sdk.StdioTransport{})
 }

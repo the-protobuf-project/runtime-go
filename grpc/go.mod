@@ -10,8 +10,8 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/quic-go/quic-go v0.61.0
-	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.1
 	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
+	github.com/the-protobuf-project/runtime-go/mcp v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0
@@ -20,6 +20,12 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d
 	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
+)
+
+require (
+	github.com/the-protobuf-project/grpc-mcp-gateway v1.6.2 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/time v0.15.0 // indirect
 )
 
 require (
@@ -64,7 +70,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.6.1 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.7.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/olekukonko/cat v0.0.0-20250911104152-50322a0618f6 // indirect
 	github.com/olekukonko/errors v1.3.0 // indirect
@@ -104,9 +110,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-// observability and telemetry are versioned alongside this module in
-// runtime-go and have no tagged release carrying the Logger contract yet.
-// Drop these once they are published.
-replace github.com/the-protobuf-project/runtime-go/observability => ../observability
-
-replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
+// mcp, observability and telemetry are versioned alongside this module in
+// runtime-go and have no tagged release carrying the contracts this module
+// builds against yet. Drop these once they are published.
+replace (
+	github.com/the-protobuf-project/runtime-go/mcp => ../mcp
+	github.com/the-protobuf-project/runtime-go/observability => ../observability
+	github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
+)

@@ -1,4 +1,4 @@
-package runtime
+package mcp
 
 import (
 	"context"
@@ -54,7 +54,7 @@ type Config struct {
 //
 // Example: add an "api_key" property that gets extracted into context:
 //
-//	runtime.WithExtraProperties(runtime.ExtraProperty{
+//	mcp.WithExtraProperties(mcp.ExtraProperty{
 //	    Name: "api_key", Description: "API key for auth", Required: true,
 //	    ContextKey: contextKeyForAPIKey,
 //	})

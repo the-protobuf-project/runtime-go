@@ -1,16 +1,16 @@
-# runtime
+# mcp
 
-Go runtime for [grpc-mcp-gateway](https://github.com/the-protobuf-project/grpc-mcp-gateway) — server configuration, transport handling, and MCP integration helpers.
+The Go runtime behind [grpc-mcp-gateway](https://github.com/the-protobuf-project/grpc-mcp-gateway) — server configuration, transport handling, and the MCP integration helpers that `protoc-gen-mcp`'s generated code calls into.
 
 ## Install
 
 ```bash
-go get github.com/the-protobuf-project/grpc-mcp-gateway/runtime
+go get github.com/the-protobuf-project/runtime-go/mcp
 ```
 
-## Overview
+The package is named `mcp`, matching its import path. Because the MCP SDK's package is also called `mcp`, this package imports it as `sdk` internally, and returns SDK types (`*sdk.CallToolResult`, `*sdk.Tool`, `*sdk.Server`) that your code will see under whatever name you import the SDK as.
 
-The runtime package provides:
+## Overview
 
 - **MCPServerConfig** — Configuration for MCP server name, version, transports, address, and base path
 - **StartServer** — Start an MCP server with stdio, streamable-http, or SSE transports
@@ -33,17 +33,17 @@ import (
     "context"
     "log"
 
-    "github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
+    "github.com/the-protobuf-project/runtime-go/mcp"
     "github.com/your/module/yourpb"
 )
 
 func main() {
     srv := newYourServer()  // implements YourServiceMCPServer (gRPC methods)
 
-    cfg := &runtime.MCPServerConfig{
+    cfg := &mcp.MCPServerConfig{
         Name:                 "my-service",
         Version:              "1.0.0",
-        Transports:           []runtime.Transport{runtime.TransportStreamableHTTP},
+        Transports:           []mcp.Transport{mcp.TransportStreamableHTTP},
         Addr:                 ":8082",
         GeneratedBasePath:     yourpb.YourServiceMCPDefaultBasePath,
     }
@@ -53,6 +53,14 @@ func main() {
         log.Fatal(err)
     }
 }
+```
+
+### Alongside gRPC and the HTTP gateway
+
+To serve MCP next to gRPC and REST rather than on its own, register the same generated function with [`grpc`](../grpc)'s `HybridServer` and skip the config entirely — it is built from the server's `MCP` options, and every registered service mounts on one shared listener:
+
+```go
+srv := grpc.NewHybridServer(opts, grpc.WithMCPServices(yourpb.ServeYourServiceMCP))
 ```
 
 ## Transports
@@ -66,7 +74,7 @@ func main() {
 Multiple transports run concurrently. Parse from env:
 
 ```go
-transports := runtime.ParseTransports(os.Getenv("MCP_TRANSPORT"))
+transports := mcp.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 // e.g. MCP_TRANSPORT=stdio,streamable-http
 ```
 
@@ -92,9 +100,9 @@ transports := runtime.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 Forward HTTP headers to gRPC metadata:
 
 ```go
-cfg := &runtime.MCPServerConfig{
-    HeaderMappings: runtime.DefaultHeaderMappings(),
-    // Or custom: []runtime.HeaderMapping{
+cfg := &mcp.MCPServerConfig{
+    HeaderMappings: mcp.DefaultHeaderMappings(),
+    // Or custom: []mcp.HeaderMapping{
     //     {HTTPHeader: "Authorization", GRPCKey: "authorization"},
     // },
 }
@@ -107,7 +115,7 @@ Convert gRPC errors to MCP tool results:
 ```go
 result, err := myToolHandler(ctx, req)
 if err != nil {
-    return runtime.HandleError(err)  // Returns (*mcp.CallToolResult, error)
+    return mcp.HandleError(err)  // Returns (*sdk.CallToolResult, error)
 }
 ```
 
@@ -120,10 +128,10 @@ first pass returns a pending result carrying the question and the client
 retries the tool call with the answer. The handler body therefore runs twice.
 
 ```go
-fields := []runtime.ElicitField{
+fields := []mcp.ElicitField{
     {Name: "confirm", Description: "Confirm action", Required: true, Type: "string", EnumValues: []string{"yes", "no"}},
 }
-result, pending, err := runtime.RunElicitation(req, "Are you sure?", fields)
+result, pending, err := mcp.RunElicitation(req, "Are you sure?", fields)
 if err != nil {
     return nil, err
 }
@@ -131,7 +139,7 @@ if pending != nil {
     return pending, nil // ask the client; it will retry this call with the answer
 }
 if result.Action != "accept" {
-    return runtime.TextResult("Action cancelled by user."), nil
+    return mcp.TextResult("Action cancelled by user."), nil
 }
 ```
 
@@ -143,6 +151,6 @@ reinvokes the handler.
 
 ## Links
 
-- **Source**: [github.com/the-protobuf-project/grpc-mcp-gateway](https://github.com/the-protobuf-project/grpc-mcp-gateway)
+- **Generator**: [github.com/the-protobuf-project/grpc-mcp-gateway](https://github.com/the-protobuf-project/grpc-mcp-gateway) — the `protoc-gen-mcp` plugin that emits code against this runtime
 - **Examples**: [examples/go](https://github.com/the-protobuf-project/grpc-mcp-gateway/tree/main/examples/go)
 - **License**: Apache-2.0

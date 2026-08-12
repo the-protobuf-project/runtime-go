@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	mcpRuntime "github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
+	"github.com/the-protobuf-project/runtime-go/mcp"
 	"google.golang.org/grpc"
 )
 
@@ -20,21 +20,21 @@ type HTTPServiceFunc func(*runtime.ServeMux, string, []grpc.DialOption) error
 // MCPServiceFunc defines the signature for a blocking function that serves
 // an MCP service. The MCPServerConfig is built by the HybridServer from
 // MCPOptions; the generated ServeFooMCP function auto-sets BasePath.
-type MCPServiceFunc func(ctx context.Context, cfg *mcpRuntime.MCPServerConfig) error
+type MCPServiceFunc func(ctx context.Context, cfg *mcp.MCPServerConfig) error
 
 // MCPServerConfig is re-exported for convenience so callers don't need to
-// import grpc-mcp-gateway/runtime directly.
-type MCPServerConfig = mcpRuntime.MCPServerConfig
+// import runtime-go/mcp directly.
+type MCPServerConfig = mcp.MCPServerConfig
 
 // MCPOption is re-exported for convenience.
-type MCPOption = mcpRuntime.Option
+type MCPOption = mcp.Option
 
 // ElicitField is re-exported for convenience.
-type ElicitField = mcpRuntime.ElicitField
+type ElicitField = mcp.ElicitField
 
 // WithElicitHook returns an MCPOption that runs hook before each elicitation.
 func WithElicitHook(hook func(ctx context.Context, toolName string, fields []ElicitField) ([]ElicitField, error)) MCPOption {
-	return mcpRuntime.WithElicitHook(hook)
+	return mcp.WithElicitHook(hook)
 }
 
 // Option is a functional option used for configuring a HybridServer.
