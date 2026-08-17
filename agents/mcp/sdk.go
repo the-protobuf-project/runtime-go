@@ -172,6 +172,30 @@ func NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts *Strea
 	return mcp.NewStreamableHTTPHandler(getServer, opts)
 }
 
+// CallToolParams names a tool and its arguments for a [ClientSession] call.
+// Set the progress token with its SetProgressToken method.
+type CallToolParams = mcp.CallToolParams
+
+// CallToolParamsRaw is [CallToolParams] with arguments left as raw JSON.
+type CallToolParamsRaw = mcp.CallToolParamsRaw
+
+// ListResourcesParams paginates a resources/list call.
+type ListResourcesParams = mcp.ListResourcesParams
+
+// ListToolsParams paginates a tools/list call.
+type ListToolsParams = mcp.ListToolsParams
+
+// GetPromptParams names a prompt and its arguments for a prompts/get call.
+type GetPromptParams = mcp.GetPromptParams
+
+// ProgressNotificationClientRequest delivers a progress notification to a
+// client. Handle it with [ClientOptions.ProgressNotificationHandler].
+type ProgressNotificationClientRequest = mcp.ProgressNotificationClientRequest
+
+// ProgressNotificationServerRequest delivers a progress notification to a
+// server. Handle it with [ServerOptions.ProgressNotificationHandler].
+type ProgressNotificationServerRequest = mcp.ProgressNotificationServerRequest
+
 // ResourceHandler serves the content of a resource read. Register one with
 // [WithResourceHandler] to replace the placeholder generated code installs.
 type ResourceHandler = mcp.ResourceHandler
