@@ -3,7 +3,7 @@ package mcp
 import (
 	"encoding/json"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc/status"
 )
 
@@ -24,7 +24,7 @@ type grpcError struct {
 //
 // If err is nil both return values are nil. gRPC status codes are preserved
 // in the JSON error payload.
-func HandleError(err error) (*mcpsdk.CallToolResult, error) {
+func HandleError(err error) (*mcp.CallToolResult, error) {
 	if err == nil {
 		return nil, nil
 	}
@@ -38,7 +38,7 @@ func HandleError(err error) (*mcpsdk.CallToolResult, error) {
 	return ErrorResult(err.Error()), nil
 }
 
-func errorFromGRPC(st *status.Status) *mcpsdk.CallToolResult {
+func errorFromGRPC(st *status.Status) *mcp.CallToolResult {
 	e := grpcError{
 		Code:    st.Code().String(),
 		Message: st.Message(),
@@ -47,7 +47,7 @@ func errorFromGRPC(st *status.Status) *mcpsdk.CallToolResult {
 	return marshalErrorResult(e)
 }
 
-func marshalErrorResult(e grpcError) *mcpsdk.CallToolResult {
+func marshalErrorResult(e grpcError) *mcp.CallToolResult {
 	b, err := json.Marshal(e)
 	if err != nil {
 		return ErrorResult(e.Message)

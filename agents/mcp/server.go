@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 )
 
@@ -26,12 +26,12 @@ type MCPServerConfig struct {
 	Transports []Transport
 	// Addr is the listen address for HTTP-based transports (default ":8080").
 	Addr string
-	// ServerOptions are passed to mcpsdk.NewServer.
-	ServerOptions *mcpsdk.ServerOptions
-	// StreamableHTTPOptions are passed to mcpsdk.NewStreamableHTTPHandler.
-	StreamableHTTPOptions *mcpsdk.StreamableHTTPOptions
-	// SSEOptions are passed to mcpsdk.NewSSEHandler.
-	SSEOptions *mcpsdk.SSEOptions
+	// ServerOptions are passed to mcp.NewServer.
+	ServerOptions *mcp.ServerOptions
+	// StreamableHTTPOptions are passed to mcp.NewStreamableHTTPHandler.
+	StreamableHTTPOptions *mcp.StreamableHTTPOptions
+	// SSEOptions are passed to mcp.NewSSEHandler.
+	SSEOptions *mcp.SSEOptions
 	// BasePath is the HTTP path prefix for the MCP endpoint (default "/mcp").
 	BasePath string
 	// GeneratedBasePath is the proto-derived default BasePath. If set, it takes precedence over BasePath.
@@ -71,13 +71,13 @@ type MCPServerConfig struct {
 	Mux *http.ServeMux
 }
 
-// NewMCPServer creates an mcpsdk.Server from a MCPServerConfig.
-func NewMCPServer(cfg *MCPServerConfig) *mcpsdk.Server {
+// NewMCPServer creates an mcp.Server from a MCPServerConfig.
+func NewMCPServer(cfg *MCPServerConfig) *mcp.Server {
 	opts := cfg.ServerOptions
 	if opts == nil {
-		opts = &mcpsdk.ServerOptions{}
+		opts = &mcp.ServerOptions{}
 	}
-	return mcpsdk.NewServer(&mcpsdk.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
+	return mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
 }
 
 // ParseTransports splits a comma-separated transport string into a []Transport slice.

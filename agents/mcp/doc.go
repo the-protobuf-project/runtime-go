@@ -6,16 +6,19 @@
 // ships only the plugin and its annotations, and a service binary depends on
 // the runtime alone.
 //
-// The one proto type it reads comes from the Buf Schema Registry, at
-// buf.build/gen/go/the-protobuf-project/mcp/protocolbuffers/go, which is why
-// this module needs no checkout of the generator's repository to build. That
-// package is named protobuf, which says nothing at a call site, so it is
-// imported here as mcppb.
+// It depends on no build of the MCP annotations. The one proto type it reads,
+// MCPProgress, is accepted as the [ProgressMessage] interface, so any generated
+// MCPProgress satisfies it whatever version of the schema produced it. That is
+// not only convenience: Go's protobuf registry rejects two packages claiming
+// the same extension numbers, so pinning one build here would make any binary
+// that links a differently-built MCPProgress panic during package init.
+//
+// The upstream SDK types a caller needs are re-exported from sdk.go, so
+// generated code and service binaries import this package alone and never name
+// the SDK. See that file for why the re-exports are type aliases.
 //
 // This package and the upstream SDK it is built on are both named mcp, so the
-// SDK is imported as mcpsdk throughout. Inside this package a bare mcp. never
-// appears and mcpsdk.Tool is unambiguously the SDK's; callers see the reverse,
-// importing this package as mcp and rarely reaching for the SDK at all.
+// SDK is imported as mcpsdk in the files that use it directly.
 //
 // # Install
 //
