@@ -3,11 +3,11 @@ module github.com/the-protobuf-project/runtime-go/agents
 go 1.26.4
 
 require (
-	buf.build/gen/go/the-protobuf-project/mcp/protocolbuffers/go v1.36.12-20260622085421-d8286d36a0cc.1
 	github.com/a2aproject/a2a-go/v2 v2.4.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	google.golang.org/grpc v1.83.0
+	google.golang.org/protobuf v1.36.12
 )
 
 require (
@@ -24,8 +24,6 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260810153831-ec0a7760b754 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260810153831-ec0a7760b754 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )

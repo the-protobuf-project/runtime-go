@@ -171,3 +171,7 @@ func NewClient(impl *Implementation, options *ClientOptions) *Client {
 func NewStreamableHTTPHandler(getServer func(*http.Request) *Server, opts *StreamableHTTPOptions) *StreamableHTTPHandler {
 	return mcp.NewStreamableHTTPHandler(getServer, opts)
 }
+
+// ResourceHandler serves the content of a resource read. Register one with
+// [WithResourceHandler] to replace the placeholder generated code installs.
+type ResourceHandler = mcp.ResourceHandler

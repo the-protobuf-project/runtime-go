@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Canceling the context must stop an HTTP-transport StartServer (it used to
@@ -30,7 +30,7 @@ func TestStartServer_HTTPShutdownOnContextCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- StartServer(ctx, cfg, func(s *mcpsdk.Server) {}) }()
+	go func() { done <- StartServer(ctx, cfg, func(s *mcp.Server) {}) }()
 
 	// Give the listener a moment to bind, then cancel.
 	time.Sleep(100 * time.Millisecond)

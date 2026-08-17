@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ElicitField describes a field for an elicitation (confirmation) request.
@@ -106,20 +106,20 @@ func ElicitSchema(fields []ElicitField) *jsonschema.Schema {
 //     "accept" means the user declined.
 //   - pending: no answer yet. Return it from the handler unchanged to ask the
 //     client for input.
-func RunElicitation(req *mcpsdk.CallToolRequest, message string, fields []ElicitField) (result *mcpsdk.ElicitResult, pending *mcpsdk.CallToolResult, err error) {
+func RunElicitation(req *mcp.CallToolRequest, message string, fields []ElicitField) (result *mcp.ElicitResult, pending *mcp.CallToolResult, err error) {
 	if req == nil || req.Params == nil {
 		return nil, nil, fmt.Errorf("elicitation %q: no tool call request", message)
 	}
 	if resp, ok := req.Params.InputResponses[ElicitRequestID]; ok {
-		res, ok := resp.(*mcpsdk.ElicitResult)
+		res, ok := resp.(*mcp.ElicitResult)
 		if !ok {
-			return nil, nil, fmt.Errorf("elicitation %q: input response is %T, want *mcpsdk.ElicitResult", message, resp)
+			return nil, nil, fmt.Errorf("elicitation %q: input response is %T, want *mcp.ElicitResult", message, resp)
 		}
 		return res, nil, nil
 	}
-	return nil, &mcpsdk.CallToolResult{
-		InputRequests: mcpsdk.InputRequestMap{
-			ElicitRequestID: &mcpsdk.ElicitParams{
+	return nil, &mcp.CallToolResult{
+		InputRequests: mcp.InputRequestMap{
+			ElicitRequestID: &mcp.ElicitParams{
 				Message:         message,
 				RequestedSchema: ElicitSchema(fields),
 			},

@@ -47,6 +47,40 @@ type Config struct {
 	// they would need a grpc.StreamServerInterceptor, which has a different
 	// shape. Compose multiple interceptors with ChainUnaryInterceptors.
 	UnaryInterceptor grpc.UnaryServerInterceptor
+	// ResourceHandlers override, by resource URI or URI template, the
+	// placeholder handler generated code registers for a declared resource.
+	// Use WithResourceHandler to set them.
+	ResourceHandlers map[string]ResourceHandler
+}
+
+// WithResourceHandler returns an Option that serves a resource's content from
+// h instead of the generated placeholder. Key it by the resource's `uri`, or by
+// its `pattern` for a resource template.
+//
+// The resource's metadata — title, media type, size, annotations, icons — still
+// comes from the proto, so only the content lives in Go:
+//
+//	RegisterGalleryServiceMCPHandler(s, srv,
+//	    mcp.WithResourceHandler("gallery://docs/overview.md", readOverview),
+//	)
+func WithResourceHandler(uri string, h ResourceHandler) Option {
+	return func(c *Config) {
+		if c.ResourceHandlers == nil {
+			c.ResourceHandlers = make(map[string]ResourceHandler)
+		}
+		c.ResourceHandlers[uri] = h
+	}
+}
+
+// ResourceHandlerFor returns the handler configured for uri, or fallback when
+// none is. Generated registration code calls it for every declared resource.
+func ResourceHandlerFor(cfg *Config, uri string, fallback ResourceHandler) ResourceHandler {
+	if cfg != nil {
+		if h, ok := cfg.ResourceHandlers[uri]; ok && h != nil {
+			return h
+		}
+	}
+	return fallback
 }
 
 // ExtraProperty defines an additional property to inject into tool schemas

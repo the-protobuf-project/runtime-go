@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	grpcmd "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/metadata"
 )
 
 // InProcessServerStream is a generic, channel-backed implementation of
@@ -63,9 +63,9 @@ func (s *InProcessServerStream[T]) Context() context.Context { return s.ctx }
 
 // The following methods satisfy grpc.ServerStream but are no-ops for in-process
 // use since there is no network transport.
-func (s *InProcessServerStream[T]) SetHeader(grpcmd.MD) error  { return nil }
-func (s *InProcessServerStream[T]) SendHeader(grpcmd.MD) error { return nil }
-func (s *InProcessServerStream[T]) SetTrailer(grpcmd.MD)       {}
+func (s *InProcessServerStream[T]) SetHeader(metadata.MD) error  { return nil }
+func (s *InProcessServerStream[T]) SendHeader(metadata.MD) error { return nil }
+func (s *InProcessServerStream[T]) SetTrailer(metadata.MD)       {}
 
 // SendMsg type-asserts m to T and forwards it to Send. Returns an error if
 // the assertion fails so that unsupported usage is caught immediately rather

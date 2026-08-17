@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // MustParseSchema parses a JSON string into a *jsonschema.Schema.
@@ -20,10 +20,10 @@ func MustParseSchema(raw string) *jsonschema.Schema {
 	return &s
 }
 
-// MustCreateTool builds an *mcpsdk.Tool from a name, description, and raw JSON schema.
+// MustCreateTool builds an *mcp.Tool from a name, description, and raw JSON schema.
 // Panics if the schema cannot be parsed.
-func MustCreateTool(name, description, schemaJSON string) *mcpsdk.Tool {
-	return &mcpsdk.Tool{
+func MustCreateTool(name, description, schemaJSON string) *mcp.Tool {
+	return &mcp.Tool{
 		Name:        name,
 		Description: description,
 		InputSchema: MustParseSchema(schemaJSON),
@@ -33,7 +33,7 @@ func MustCreateTool(name, description, schemaJSON string) *mcpsdk.Tool {
 // PrepareToolWithExtras returns a shallow clone of tool with extra properties
 // injected into its InputSchema.  If there are no extras the original tool is
 // returned as-is.
-func PrepareToolWithExtras(tool *mcpsdk.Tool, extras []ExtraProperty) *mcpsdk.Tool {
+func PrepareToolWithExtras(tool *mcp.Tool, extras []ExtraProperty) *mcp.Tool {
 	if len(extras) == 0 {
 		return tool
 	}
@@ -67,17 +67,17 @@ func PrepareToolWithExtras(tool *mcpsdk.Tool, extras []ExtraProperty) *mcpsdk.To
 // Use for successful tool responses:
 //
 //	return TextResult(string(jsonBytes)), nil
-func TextResult(text string) *mcpsdk.CallToolResult {
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: text}},
+func TextResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 	}
 }
 
 // ErrorResult creates a CallToolResult flagged as an error.
 // Prefer HandleError for gRPC errors; use ErrorResult for custom error messages.
-func ErrorResult(text string) *mcpsdk.CallToolResult {
-	return &mcpsdk.CallToolResult{
-		Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: text}},
+func ErrorResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 		IsError: true,
 	}
 }

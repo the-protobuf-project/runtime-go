@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/jsonschema-go/jsonschema"
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 var confirmFields = []ElicitField{
@@ -24,7 +24,7 @@ var confirmFields = []ElicitField{
 // protocol version 2026-07-28 rejects server-initiated elicitation requests
 // (SEP-2322).
 func TestRunElicitation_FirstPassAsksForInput(t *testing.T) {
-	req := &mcpsdk.CallToolRequest{Params: &mcpsdk.CallToolParamsRaw{Name: "tool"}}
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Name: "tool"}}
 
 	result, pending, err := RunElicitation(req, "Are you sure?", confirmFields)
 	if err != nil {
@@ -44,9 +44,9 @@ func TestRunElicitation_FirstPassAsksForInput(t *testing.T) {
 	if !ok {
 		t.Fatalf("no input request under %q, got %v", ElicitRequestID, pending.InputRequests)
 	}
-	params, ok := ir.(*mcpsdk.ElicitParams)
+	params, ok := ir.(*mcp.ElicitParams)
 	if !ok {
-		t.Fatalf("input request is %T, want *mcpsdk.ElicitParams", ir)
+		t.Fatalf("input request is %T, want *mcp.ElicitParams", ir)
 	}
 	if params.Message != "Are you sure?" {
 		t.Errorf("message: got %q", params.Message)
@@ -74,10 +74,10 @@ func TestRunElicitation_FirstPassAsksForInput(t *testing.T) {
 // On the retry the client echoes the answer back in InputResponses, and
 // RunElicitation hands it to the handler instead of asking again.
 func TestRunElicitation_RetryReturnsAnswer(t *testing.T) {
-	req := &mcpsdk.CallToolRequest{Params: &mcpsdk.CallToolParamsRaw{
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
 		Name: "tool",
-		InputResponses: mcpsdk.InputResponseMap{
-			ElicitRequestID: &mcpsdk.ElicitResult{
+		InputResponses: mcp.InputResponseMap{
+			ElicitRequestID: &mcp.ElicitResult{
 				Action:  "accept",
 				Content: map[string]any{"confirm": "yes"},
 			},
@@ -103,9 +103,9 @@ func TestRunElicitation_RetryReturnsAnswer(t *testing.T) {
 }
 
 func TestRunElicitation_DeclinedAnswer(t *testing.T) {
-	req := &mcpsdk.CallToolRequest{Params: &mcpsdk.CallToolParamsRaw{
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
 		Name:           "tool",
-		InputResponses: mcpsdk.InputResponseMap{ElicitRequestID: &mcpsdk.ElicitResult{Action: "decline"}},
+		InputResponses: mcp.InputResponseMap{ElicitRequestID: &mcp.ElicitResult{Action: "decline"}},
 	}}
 
 	result, pending, err := RunElicitation(req, "Are you sure?", confirmFields)
@@ -118,9 +118,9 @@ func TestRunElicitation_DeclinedAnswer(t *testing.T) {
 }
 
 func TestRunElicitation_WrongResponseType(t *testing.T) {
-	req := &mcpsdk.CallToolRequest{Params: &mcpsdk.CallToolParamsRaw{
+	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{
 		Name:           "tool",
-		InputResponses: mcpsdk.InputResponseMap{ElicitRequestID: nil},
+		InputResponses: mcp.InputResponseMap{ElicitRequestID: nil},
 	}}
 
 	if _, _, err := RunElicitation(req, "Are you sure?", confirmFields); err == nil {

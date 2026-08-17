@@ -153,12 +153,35 @@ reinvokes the handler.
 
 [SEP-2322]: https://modelcontextprotocol.io/seps/2322-multi-round-trip-requests
 
-## Naming
+## Protocol types
 
-This package and the upstream SDK are both called `mcp`, so the SDK is imported
-as `mcpsdk` throughout. Inside here a bare `mcp.` never appears and
-`mcpsdk.Tool` is unambiguously the SDK's. Callers see the reverse: they import
-this package as `mcp` and rarely need the SDK at all.
+The SDK types a caller needs are re-exported from `sdk.go` — `Server`,
+`Resource`, `ResourceTemplate`, `Annotations`, `Icon`, `Prompt`,
+`CallToolRequest`/`Result`, `ElicitParams`/`Result`, the client-side types, and
+so on. Generated code and service binaries therefore import this package alone:
+
+```go
+import "github.com/the-protobuf-project/runtime-go/agents/mcp"
+
+func register(s *mcp.Server) { ... }
+```
+
+Two reasons, beyond the cosmetic one that both packages are called `mcp` and so
+one of them would need an import alias at every call site. A consumer's `go.mod`
+no longer takes a direct dependency on the SDK, so generated code and this
+runtime cannot drift onto different SDK versions. And this package depends on no
+build of the MCP annotations at all — `SendProgressFromProto` accepts the
+[`ProgressMessage`] interface rather than a generated `*MCPProgress`, because
+Go's protobuf registry rejects two packages claiming the same extension numbers
+and pinning one build here would make a binary that links a differently-built
+`MCPProgress` panic during package init.
+
+The re-exports are type *aliases*, so a value crosses between this package and
+the SDK with no conversion and a caller who does reach for the SDK directly
+still interoperates. The SDK is imported as `mcpsdk` in the files that use it
+directly.
+
+[`ProgressMessage`]: https://pkg.go.dev/github.com/the-protobuf-project/runtime-go/agents/mcp#ProgressMessage
 
 ## Links
 
