@@ -59,4 +59,41 @@ func applyEnvOverrides(opts *options.Options) {
 			shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_MCP_PORT=%q is not a valid int, ignoring", prefix, portStr)
 		}
 	}
+	if host := os.Getenv(prefix + "_A2A_HOST"); host != "" {
+		shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_A2A_HOST=%q overrides A2A host", prefix, host)
+		opts.A2A.Host = host
+	}
+	if portStr := os.Getenv(prefix + "_A2A_PORT"); portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil {
+			shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_A2A_PORT=%d overrides A2A port", prefix, port)
+			opts.A2A.Port = port
+		} else {
+			shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_A2A_PORT=%q is not a valid int, ignoring", prefix, portStr)
+		}
+	}
+	if transport := os.Getenv(prefix + "_A2A_TRANSPORT"); transport != "" {
+		// Several transports run at once, so this is a list; a value that
+		// resolves to nothing leaves the configured setting alone rather than
+		// silently dropping the agent to no transport at all.
+		if parsed := parseA2ATransports(transport); len(parsed) > 0 {
+			shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_A2A_TRANSPORT=%q overrides A2A transports", prefix, transport)
+			opts.A2A.Transports = parsed
+		} else {
+			shared.Telemetry().Logger.Debugf("applyEnvOverrides: %s_A2A_TRANSPORT=%q named no known transport, ignoring", prefix, transport)
+		}
+	}
+}
+
+// parseA2ATransports splits a comma-separated transport list, dropping entries
+// that name nothing this server can serve.
+func parseA2ATransports(s string) []options.A2ATransport {
+	parts := strings.Split(s, ",")
+	out := make([]options.A2ATransport, 0, len(parts))
+	for _, p := range parts {
+		switch t := options.A2ATransport(strings.ToLower(strings.TrimSpace(p))); t {
+		case options.A2ATransportJSONRPC, options.A2ATransportGRPC, options.A2ATransportREST:
+			out = append(out, t)
+		}
+	}
+	return out
 }

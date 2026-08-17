@@ -4,7 +4,8 @@ import (
 	"context"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	mcpRuntime "github.com/the-protobuf-project/grpc-mcp-gateway/runtime"
+	"github.com/the-protobuf-project/runtime-go/agents/a2a"
+	"github.com/the-protobuf-project/runtime-go/agents/mcp"
 	"google.golang.org/grpc"
 )
 
@@ -20,22 +21,45 @@ type HTTPServiceFunc func(*runtime.ServeMux, string, []grpc.DialOption) error
 // MCPServiceFunc defines the signature for a blocking function that serves
 // an MCP service. The MCPServerConfig is built by the HybridServer from
 // MCPOptions; the generated ServeFooMCP function auto-sets BasePath.
-type MCPServiceFunc func(ctx context.Context, cfg *mcpRuntime.MCPServerConfig) error
+type MCPServiceFunc func(ctx context.Context, cfg *mcp.MCPServerConfig) error
 
 // MCPServerConfig is re-exported for convenience so callers don't need to
-// import grpc-mcp-gateway/runtime directly.
-type MCPServerConfig = mcpRuntime.MCPServerConfig
+// import runtime-go/agents/mcp directly.
+type MCPServerConfig = mcp.MCPServerConfig
 
 // MCPOption is re-exported for convenience.
-type MCPOption = mcpRuntime.Option
+type MCPOption = mcp.Option
 
 // ElicitField is re-exported for convenience.
-type ElicitField = mcpRuntime.ElicitField
+type ElicitField = mcp.ElicitField
 
 // WithElicitHook returns an MCPOption that runs hook before each elicitation.
 func WithElicitHook(hook func(ctx context.Context, toolName string, fields []ElicitField) ([]ElicitField, error)) MCPOption {
-	return mcpRuntime.WithElicitHook(hook)
+	return mcp.WithElicitHook(hook)
 }
+
+// A2AServiceFunc defines the signature for a blocking function that serves an
+// Agent2Agent service. The A2AServerConfig is built by the HybridServer from
+// A2AOptions — transports, shared mux, listen address, and the gRPC server the
+// gRPC transport registers on — so a service func supplies the agent and lets
+// the server place it.
+//
+// It mirrors MCPServiceFunc so a generated ServeFooA2A can be registered the
+// same way a generated ServeFooMCP is. [WithA2AAgent] wraps a hand-written
+// agent into one.
+type A2AServiceFunc func(ctx context.Context, cfg *A2AServerConfig) error
+
+// A2AServerConfig is re-exported for convenience so callers don't need to
+// import runtime-go/agents/a2a directly.
+type A2AServerConfig = a2a.ServerConfig
+
+// A2AAgent is the interface an agent implements: a request in, a stream of
+// events out. Re-exported for convenience.
+type A2AAgent = a2a.Executor
+
+// A2ASkill is one distinct capability an agent advertises on its card.
+// Re-exported for convenience.
+type A2ASkill = a2a.Skill
 
 // Option is a functional option used for configuring a HybridServer.
 type Option func(*HybridServer)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/quic-go/quic-go/http3"
+	"github.com/the-protobuf-project/runtime-go/agents"
 	"github.com/the-protobuf-project/runtime-go/grpc/options"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"google.golang.org/grpc"
@@ -24,12 +25,12 @@ type HybridServer struct {
 	httpServer       *http.Server                  // HTTP/1.1 server
 	mux              *runtime.ServeMux             // grpc-gateway mux
 	http3Server      *http3.Server                 // experimental HTTP/3 server
-	mcpCancel        context.CancelFunc            // cancels MCP server goroutines
-	mcpHTTPServer    *http.Server                  // shared MCP listener fronting every service (one port)
-	mcpEndpoints     []mcpEndpointInfo             // resolved MCP endpoints (populated on start)
+	agentRuntime     *agents.Runtime               // the one runtime serving MCP and A2A (nil when neither is on)
+	agentCancel      context.CancelFunc            // stops the agent protocols' goroutines
 	grpcServiceFuncs []GRPCServiceFunc             // registered gRPC service functions
 	httpServiceFuncs []HTTPServiceFunc             // registered HTTP gateway functions
 	mcpServiceFuncs  []MCPServiceFunc              // registered MCP service functions
+	a2aServiceFuncs  []A2AServiceFunc              // registered A2A service functions
 	cert             *tls.Certificate              // TLS certificate for secure connections
 	unaryInts        []grpc.UnaryServerInterceptor // caller-supplied unary interceptors (chained in order)
 	enableValidation bool                          // prepend the protovalidate interceptor at Start (WithValidation)
@@ -100,192 +101,4 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 	}
 
 	return s
-}
-
-// WithGRPCServers returns a server Option that registers one or more gRPC
-// services. These registration functions are called during server startup.
-func WithGRPCServers(services ...GRPCServiceFunc) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithGRPCServers: appending %d gRPC service func(s)", len(services))
-		s.grpcServiceFuncs = append(s.grpcServiceFuncs, services...)
-	}
-}
-
-// WithHTTPGateways returns a server Option that registers one or more HTTP
-// gateway handlers. These handlers proxy RESTful JSON requests to their
-// corresponding gRPC services.
-func WithHTTPGateways(services ...HTTPServiceFunc) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithHTTPGateways: appending %d HTTP gateway func(s)", len(services))
-		s.httpServiceFuncs = append(s.httpServiceFuncs, services...)
-	}
-}
-
-// WithUnaryInterceptors returns a server Option that installs one or more
-// unary server interceptors on the gRPC server, chained in the order given
-// (after the built-in OpenTelemetry stats handler). Use it for cross-cutting
-// request middleware such as protovalidate request validation or auth.
-func WithUnaryInterceptors(interceptors ...grpc.UnaryServerInterceptor) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithUnaryInterceptors: appending %d unary interceptor(s)", len(interceptors))
-		s.unaryInts = append(s.unaryInts, interceptors...)
-	}
-}
-
-// WithRESTSnakeCase returns a server Option that makes the HTTP/REST gateway
-// emit and accept snake_case JSON field names (proto field names) instead of
-// the default camelCase. This matches the field naming used by the MCP layer.
-func WithRESTSnakeCase() Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithRESTSnakeCase: enabling snake_case JSON field names")
-		s.restMarshal.UseProtoNames = true
-	}
-}
-
-// WithRESTMarshaler returns a server Option that fully overrides the protojson
-// marshal and unmarshal options used by the HTTP/REST gateway, for callers that
-// need finer control than WithRESTSnakeCase (e.g. toggling EmitUnpopulated).
-func WithRESTMarshaler(marshal protojson.MarshalOptions, unmarshal protojson.UnmarshalOptions) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithRESTMarshaler: overriding gateway codec (EmitUnpopulated=%t, UseProtoNames=%t, DiscardUnknown=%t)",
-			marshal.EmitUnpopulated, marshal.UseProtoNames, unmarshal.DiscardUnknown)
-		s.restMarshal = marshal
-		s.restUnmarshal = unmarshal
-	}
-}
-
-// WithMCPServices returns a server Option that registers one or more MCP
-// service functions. Each function is started in its own goroutine and bound
-// to its own port, incrementing from opts.MCP.Port.
-func WithMCPServices(services ...MCPServiceFunc) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithMCPServices: appending %d MCP service func(s)", len(services))
-		s.mcpServiceFuncs = append(s.mcpServiceFuncs, services...)
-	}
-}
-
-// WithCertificates returns a server Option that loads a TLS certificate and
-// key from the specified files. This enables TLS for both gRPC and HTTP servers.
-// The function will panic if the certificate files cannot be loaded.
-func WithCertificates(certFile, keyFile string) Option {
-	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithCertificates: loading cert=%s key=%s", certFile, keyFile)
-		cert := mustLoadCertificate(certFile, keyFile)
-		s.cert = &cert
-		shared.Telemetry().Logger.Debugf("WithCertificates: certificate loaded successfully")
-	}
-}
-
-// WithGrafanaFS registers an fs.FS (typically an embed.FS) whose dir directory
-// is scanned for *.json Grafana dashboard files at server startup. Every JSON
-// file found is parsed and loaded into the MemoryDashboardStore automatically.
-//
-// Typical usage:
-//
-//	//go:embed all:.grafana
-//	var dashboardFiles embed.FS
-//
-//	server := grpc.NewHybridServer(opts, ...)
-//	server.WithGrafanaFS(dashboardFiles, ".grafana")
-func (s *HybridServer) WithGrafanaFS(fsys fs.FS, dir string) *HybridServer {
-	shared.Telemetry().Logger.Debugf("WithGrafanaFS: registering dashboard FS, dir=%q", dir)
-	s.dashboardFS = fsys
-	s.dashboardFSDir = dir
-	return s
-}
-
-// Start validates the server configuration and launches the gRPC server and any
-// enabled gateways (HTTP/1.1, experimental HTTP/3). Each server component runs
-// in its own goroutine. Once all components are up a startup summary table is
-// printed to stdout.
-func (s *HybridServer) Start() error {
-	shared.Telemetry().Logger.Debugf("Start: validating server options")
-	if err := s.validateOptions(); err != nil {
-		return err
-	}
-	shared.Telemetry().Logger.Debugf("Start: options valid — gRPC=%s:%d enableHTTP=%v enableMCP=%v",
-		s.opts.GRPC.Host, s.opts.GRPC.Port,
-		s.opts.EnableHTTP, s.opts.EnableMCP)
-
-	shared.Telemetry().Logger.Debugf("Start: starting gRPC server")
-	if err := s.startGRPCServer(); err != nil {
-		return err
-	}
-
-	if s.opts.ExperimentalHttp3 {
-		shared.Telemetry().Logger.Debugf("Start: starting experimental HTTP/3 server")
-		s.startHTTP3ExperimentalServer()
-	}
-
-	if s.opts.EnableMCP {
-		shared.Telemetry().Logger.Debugf("Start: starting MCP server(s)")
-		s.startMCPServer()
-	} else {
-		shared.Telemetry().Logger.Debugf("Start: MCP disabled (EnableMCP=false)")
-	}
-
-	if s.opts.EnableHTTP {
-		shared.Telemetry().Logger.Debugf("Start: starting HTTP/1.1 gateway")
-		if err := s.startHTTPGateway(); err != nil {
-			return err
-		}
-	} else {
-		shared.Telemetry().Logger.Debugf("Start: HTTP/1.1 gateway disabled (EnableHTTP=false)")
-	}
-
-	s.printStartupBanner(s.mcpEndpoints)
-	return nil
-}
-
-func (s *HybridServer) Close() error {
-	shared.Telemetry().Logger.Debugf("Close: initiating graceful close")
-	go func() {
-		_ = shared.Close()
-	}()
-	return s.Stop()
-}
-
-// Stop gracefully shuts down all running servers, allowing in-flight requests
-// to complete before closing connections.
-func (s *HybridServer) Stop() error {
-	shared.Telemetry().Logger.Info("Shutting down servers...")
-	if s.grpcServer != nil {
-		shared.Telemetry().Logger.Debugf("Stop: calling GracefulStop on gRPC server")
-		s.grpcServer.GracefulStop()
-		shared.Telemetry().Logger.Debugf("Stop: gRPC server stopped")
-	}
-	if s.httpServer != nil {
-		shared.Telemetry().Logger.Debugf("Stop: shutting down HTTP/1.1 server")
-		if err := s.httpServer.Shutdown(context.Background()); err != nil {
-			return fmt.Errorf("failed to shutdown HTTP server: %w", err)
-		}
-		shared.Telemetry().Logger.Debugf("Stop: HTTP/1.1 server stopped")
-	}
-	if s.mcpCancel != nil {
-		shared.Telemetry().Logger.Info("Shutting down MCP server...")
-		s.mcpCancel()
-		shared.Telemetry().Logger.Debugf("Stop: MCP context canceled")
-	}
-	if s.mcpHTTPServer != nil {
-		shared.Telemetry().Logger.Debugf("Stop: shutting down shared MCP HTTP server")
-		if err := s.mcpHTTPServer.Shutdown(context.Background()); err != nil {
-			return fmt.Errorf("failed to shutdown MCP HTTP server: %w", err)
-		}
-		s.mcpHTTPServer = nil
-		shared.Telemetry().Logger.Debugf("Stop: MCP HTTP server stopped")
-	}
-	return nil
-}
-
-// Restart gracefully stops and then starts the server again. This is useful
-// for applying configuration reloads or performing hot restarts without killing
-// the main process.
-func (s *HybridServer) Restart() error {
-	shared.Telemetry().Logger.Info("Restarting servers...")
-	shared.Telemetry().Logger.Debugf("Restart: stopping all components before restart")
-	if err := s.Stop(); err != nil {
-		return fmt.Errorf("failed to stop servers during restart: %w", err)
-	}
-	shared.Telemetry().Logger.Debugf("Restart: all components stopped, starting again")
-	return s.Start()
 }

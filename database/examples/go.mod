@@ -15,7 +15,7 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/database v0.0.0
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/gorm v1.31.2
 )

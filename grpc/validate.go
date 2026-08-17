@@ -71,6 +71,30 @@ func (s *HybridServer) validateOptions() error {
 			s.opts.MCP.Transport)
 	}
 
+	if s.opts.EnableA2A {
+		shared.Telemetry().Logger.Debugf("validateOptions: checking A2A host=%q port=%d transport=%q",
+			s.opts.A2A.Host, s.opts.A2A.Port, s.opts.A2A.Transport)
+		if s.opts.A2A.Host == "" {
+			shared.Telemetry().Logger.Debugf("validateOptions: A2A host not set, defaulting to 0.0.0.0")
+			s.opts.A2A.Host = "0.0.0.0"
+		}
+		if s.opts.A2A.Port == 0 {
+			// One past MCP, which is itself one past HTTP — so the four layers
+			// land on consecutive ports without the caller assigning any.
+			base := s.opts.MCP.Port
+			if base == 0 {
+				base = s.opts.HTTP.Port + 1
+			}
+			s.opts.A2A.Port = base + 1
+			shared.Telemetry().Logger.Debugf("validateOptions: A2A port not set, defaulting to %d", s.opts.A2A.Port)
+		}
+		if s.opts.A2A.Port < 1 || s.opts.A2A.Port > 65535 {
+			return fmt.Errorf("A2A.Port must be between 1 and 65535")
+		}
+		shared.Telemetry().Logger.Debugf("validateOptions: A2A %s:%d transport=%s OK",
+			s.opts.A2A.Host, s.opts.A2A.Port, s.opts.A2A.Transport)
+	}
+
 	if s.opts.ExperimentalHttp3 {
 		shared.Telemetry().Logger.Debugf("validateOptions: HTTP/3 enabled, cert present=%v", s.cert != nil)
 		if s.cert == nil {

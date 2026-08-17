@@ -146,6 +146,14 @@ linters:
         linters:
           - noctx
 
+      # HandleError returns (nil, nil) for a nil error on purpose: generated
+      # tool handlers are written as `return HandleError(err)`, so success has
+      # to pass straight through. A sentinel would make every one of those
+      # call sites special-case the happy path.
+      - path: agents/mcp/error\.go
+        linters:
+          - nilnil
+
 
 issues:
   # Surface every finding — do not cap per-linter or per-type.

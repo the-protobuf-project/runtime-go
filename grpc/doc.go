@@ -1,7 +1,7 @@
 // Package grpc provides HybridServer — a single server that simultaneously
 // speaks gRPC, HTTP/1.1 JSON gateway (via grpc-gateway), optional HTTP/3
-// (QUIC), and an MCP (Model Context Protocol) endpoint, all sharing the same
-// port and TLS configuration.
+// (QUIC), an MCP (Model Context Protocol) endpoint, and an A2A (Agent2Agent)
+// endpoint, all sharing the same port and TLS configuration.
 //
 // # Overview
 //
@@ -48,6 +48,31 @@
 //
 // Set [options.Options.MCP] to enable an HTTP-based MCP endpoint alongside
 // the gateway. This is experimental and subject to change.
+//
+// # A2A (Agent2Agent)
+//
+// Set [options.Options.EnableA2A] and register an agent with [WithA2AAgent] to
+// serve one alongside everything else:
+//
+//	srv := grpc.NewHybridServer(opts, grpc.WithA2AAgent(
+//	    a2a.TextAgent(func(ctx context.Context, text string) (string, error) {
+//	        return "you said: " + text, nil
+//	    }),
+//	    grpc.A2ASkill{ID: "echo", Name: "Echo", Description: "Repeats the input"},
+//	))
+//
+// Which transports it answers on is [options.A2AOptions.Transports]. The
+// JSON-RPC and REST bindings share one listener on [options.A2AOptions.Port],
+// with the public agent card at /.well-known/agent-card.json. The gRPC binding
+// is different in kind: it registers on this server's own gRPC port, so an
+// agent is a service among the others and runs through the same interceptor
+// chain. That is also why A2A services mount during gRPC setup rather than
+// after it — gRPC refuses a registration once it is serving.
+//
+// The agent's identity on its card comes from the server's own ServiceName,
+// Description and Version, so the card cannot disagree with the service.
+// See [github.com/the-protobuf-project/runtime-go/agents/a2a] for the runtime
+// and [WithA2AServices] for the generated-entrypoint form.
 //
 // # HTTP/3 (QUIC) — experimental
 //
