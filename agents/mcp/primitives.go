@@ -50,6 +50,17 @@ func SendProgressFromProto(ctx context.Context, session *mcp.ServerSession, toke
 	if token == nil || p == nil || session == nil {
 		return nil
 	}
+	return session.NotifyProgress(ctx, progressParams(token, p))
+}
+
+// progressParams maps an MCPProgress onto the notification the MCP client
+// receives. It is separate from SendProgressFromProto so the mapping can be
+// tested without a live session.
+//
+// fallback is the token from the MCP request; a chunk carrying its own token
+// overrides it.
+func progressParams(fallback any, p ProgressMessage) *mcp.ProgressNotificationParams {
+	token := fallback
 	if carrier, ok := p.(progressTokenCarrier); ok {
 		if s := carrier.GetTokenString(); s != "" {
 			token = s
@@ -71,7 +82,7 @@ func SendProgressFromProto(ctx context.Context, session *mcp.ServerSession, toke
 			}
 		}
 	}
-	return session.NotifyProgress(ctx, params)
+	return params
 }
 
 // doneProgress is the final progress update SendDoneProgress sends. It exists

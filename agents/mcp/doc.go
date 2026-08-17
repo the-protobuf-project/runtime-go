@@ -17,8 +17,10 @@
 // generated code and service binaries import this package alone and never name
 // the SDK. See that file for why the re-exports are type aliases.
 //
-// This package and the upstream SDK it is built on are both named mcp, so the
-// SDK is imported as mcpsdk in the files that use it directly.
+// This package and the upstream SDK it is built on are both named mcp. The
+// files that reach for the SDK directly import it unaliased, which is legal
+// because a package never refers to itself by name; unqualified identifiers are
+// this package's and mcp.Tool is the SDK's.
 //
 // # Install
 //

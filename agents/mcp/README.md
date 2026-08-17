@@ -47,7 +47,6 @@ rt.Register(mcp.Service(yourpb.ServeYourServiceMCP))
 own proto-derived base path. Through the HybridServer the same registration is
 `grpc.WithMCPServices(...)`, which re-exports `MCPServerConfig`, `MCPOption` and
 `ElicitField` so a program taking that route never imports `agents/mcp`
-directly.
 
 ## MCP transports
 
@@ -104,8 +103,11 @@ cfg := &mcp.MCPServerConfig{
 - **Elicitation** — `RunElicitation`, `ElicitField`, `ElicitSchema`
 - **Metadata** — `ForwardMetadata`, `HeadersMiddleware`, `DefaultHeaderMappings`
 - **Prompts and resources** — `DefaultPromptHandler`, `DefaultResourceHandler`,
-  `DefaultAppResourceHandler`, `AppResourceURI`, `SetToolAppMeta`
-- **Progress** — `SendProgressFromProto`, `SendDoneProgress`, `WithProgressToken`
+  `DefaultAppResourceHandler`, `AppResourceURI`, `SetToolAppMeta`, and
+  `WithResourceHandler` to serve a declared resource's real content while its
+  metadata keeps coming from the proto
+- **Progress** — `SendProgressFromProto`, `SendDoneProgress`, `WithProgressToken`,
+  and the `ProgressMessage` interface any generated `MCPProgress` satisfies
 - **Streaming** — `InProcessServerStream`, which lets a generated handler call a
   gRPC streaming method in-process with no network hop
 
@@ -118,7 +120,7 @@ returns without sending a response.
 ```go
 resp, err := srv.MyRPC(ctx, req)
 if err != nil {
-    return mcp.HandleError(err) // (*mcpsdk.CallToolResult, error)
+    return mcp.HandleError(err) // (*mcp.CallToolResult, error)
 }
 ```
 
@@ -178,8 +180,7 @@ and pinning one build here would make a binary that links a differently-built
 
 The re-exports are type *aliases*, so a value crosses between this package and
 the SDK with no conversion and a caller who does reach for the SDK directly
-still interoperates. The SDK is imported as `mcpsdk` in the files that use it
-directly.
+still interoperates. Files that reach for the SDK directly import it unaliased.
 
 [`ProgressMessage`]: https://pkg.go.dev/github.com/the-protobuf-project/runtime-go/agents/mcp#ProgressMessage
 
