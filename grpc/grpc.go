@@ -68,6 +68,13 @@ func (s *HybridServer) startGRPCServer() error {
 	s.registerReflection()
 	s.registerGRPCServices()
 
+	// The agent protocols start here rather than from Start because A2A's gRPC
+	// binding is a service like any other, and gRPC refuses a registration once
+	// Serve has been called.
+	if err := s.startAgents(); err != nil {
+		return err
+	}
+
 	shared.Telemetry().Logger.Debugf("gRPC: starting server goroutine on %s", grpcAddr)
 	go func() {
 		if err := s.grpcServer.Serve(lis); err != nil {

@@ -16,12 +16,16 @@ type Options struct {
 	HTTP HTTPOptions
 	// MCP holds the configuration for the MCP server.
 	MCP MCPOptions
+	// A2A holds the configuration for the Agent2Agent server.
+	A2A A2AOptions
 	// EnableHTTP controls whether the HTTP gateway is started.
 	EnableHTTP bool
 	// EnableHealth controls whether the standard gRPC health check service is enabled.
 	EnableHealth bool
 	// EnableMCP controls whether the MCP server is started.
 	EnableMCP bool
+	// EnableA2A controls whether the Agent2Agent server is started.
+	EnableA2A bool
 	// Environment specifies the server's operating mode (e.g., "production").
 	Environment ServerEnvironment
 	// ExperimentalHttp3 enables experimental HTTP/3 support on the HTTP port + 1.
@@ -67,6 +71,42 @@ type MCPOptions struct {
 	Port int
 	// Transport specifies the MCP transport protocol. Defaults to stdio.
 	Transport MCPTransport
+}
+
+// A2ATransport represents a transport protocol for the Agent2Agent server.
+type A2ATransport string
+
+const (
+	// A2ATransportJSONRPC serves A2A as JSON-RPC 2.0 over HTTP, with
+	// server-sent events for streaming. Every A2A client speaks it.
+	A2ATransportJSONRPC A2ATransport = "jsonrpc"
+	// A2ATransportGRPC serves A2A as a gRPC service on the HybridServer's own
+	// gRPC port, alongside the process's other services.
+	A2ATransportGRPC A2ATransport = "grpc"
+	// A2ATransportREST serves the HTTP+JSON binding beneath the base path.
+	A2ATransportREST A2ATransport = "rest"
+)
+
+// A2AOptions defines the configuration for the Agent2Agent server.
+type A2AOptions struct {
+	// Host is the network interface the HTTP-based transports listen on.
+	// Defaults to "0.0.0.0".
+	Host string
+	// Port is the port number for the HTTP-based transports (jsonrpc, rest).
+	// Ignored by the gRPC transport, which shares the gRPC server's port.
+	// Defaults to MCP.Port + 1.
+	Port int
+	// Transport is the single-transport form. Transports is the general one;
+	// when both are set Transports wins. Defaults to jsonrpc.
+	Transport  A2ATransport
+	Transports []A2ATransport
+	// BasePath is where JSON-RPC mounts and the prefix REST is served under.
+	// Defaults to "/a2a".
+	BasePath string
+	// PublicURL is the base URL clients should be told to use, for a server
+	// behind a proxy or inside a container. Without it the agent card
+	// advertises the listen address, which is wrong past any hop.
+	PublicURL string
 }
 
 // ServerEnvironment is a type-safe string representing the server's operating mode.
