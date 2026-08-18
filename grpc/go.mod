@@ -11,7 +11,10 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/olekukonko/tablewriter v1.1.4
 	github.com/quic-go/quic-go v0.61.0
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
+	// TODO(maintainer): this pseudo-version still resolves to a commit in the
+	// pre-rename repo (the-protobuf-project/opentelementry). The renamed repo
+	// does not exist yet, so this module cannot build. Re-resolve after rename.
+	github.com/the-protobuf-project/opentelemetry/opentelemetry-go v0.0.0-20260722091843-d33763c88e10
 	github.com/the-protobuf-project/runtime-go/agents v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7

@@ -2,7 +2,7 @@
 // and hand-written code instruments against. It has no dependency on any
 // specific telemetry SDK — OTel, Prometheus, or otherwise — so core runtime-go
 // packages and generated ORM code can hold a Meter without pulling in a
-// concrete backend. A concrete implementation (e.g. the opentelementry-go
+// concrete backend. A concrete implementation (e.g. the opentelemetry-go
 // Telemetry plugin) is wired in by the caller; when none is wired in,
 // [NoopMeter] keeps every call a safe, zero-cost no-op.
 //

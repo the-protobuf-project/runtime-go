@@ -7,7 +7,7 @@
 package shared
 
 import (
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
+	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
 	"github.com/the-protobuf-project/runtime-go/observability"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
@@ -25,7 +25,7 @@ var obs = observability.Lazy("runtime-go-grpc", "1.0.0")
 // helpers (Debugf, Errorf) that the backend-agnostic [telemetry.Logger]
 // contract does not carry — so this exposes the client directly rather than
 // fronting it. New code should prefer [Log].
-func Telemetry() *opentelementry.Opentelementry {
+func Telemetry() *opentelemetry.Opentelemetry {
 	return obs().Otel()
 }
 

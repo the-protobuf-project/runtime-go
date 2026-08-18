@@ -3,7 +3,10 @@ module github.com/the-protobuf-project/runtime-go/observability
 go 1.26.4
 
 require (
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
+	// TODO(maintainer): this pseudo-version still resolves to a commit in the
+	// pre-rename repo (the-protobuf-project/opentelementry). The renamed repo
+	// does not exist yet, so this module cannot build. Re-resolve after rename.
+	github.com/the-protobuf-project/opentelemetry/opentelemetry-go v0.0.0-20260722091843-d33763c88e10
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 )
 

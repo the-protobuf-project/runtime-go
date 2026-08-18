@@ -1,0 +1,136 @@
+# Standalone module verification.
+#
+# ci.yml builds every module with the go.work workspace active. That masks a
+# specific and serious bug class: a module's own go.mod can be missing a
+# requirement and still build, because the workspace resolves it from a sibling
+# directory. A consumer running `go get` on that one module gets a hard
+# failure. Everything here runs with GOWORK=off so each module is resolved the
+# way the module proxy will resolve it.
+#
+# These jobs are in their own workflow rather than ci.yml so branch protection
+# can adopt them independently. ci.yml's `ci-gate` cannot depend on them
+# (GitHub `needs` does not span workflows) -- add "Isolated build" as a
+# required status check directly.
+name: Modules
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  detect-modules:
+    name: Detect modules
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Parse go.work and emit matrix
+        id: set-matrix
+        run: |
+          modules=$(grep -E '^\s+\./[a-z]' go.work | tr -d ' \t' | sed 's|^\./||')
+          valid=()
+          for m in $modules; do
+            if [ -f "$m/go.mod" ]; then
+              valid+=("$m")
+            fi
+          done
+          json=$(printf '%s\n' "${valid[@]}" | jq -R . | jq -cs .)
+          echo "matrix={\"module\":$json}" >> "$GITHUB_OUTPUT"
+
+  # ------------------------------------------------------------------
+  # Build, test and verify each module as a consumer would: no workspace.
+  # ------------------------------------------------------------------
+  isolated:
+    name: Isolated build (${{ matrix.module }})
+    needs: detect-modules
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-modules.outputs.matrix) }}
+
+    env:
+      GOWORK: "off"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      # Deliberately no `go work sync` here -- that is the whole point.
+
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...
+
+      # The streams Redis and RabbitMQ suites skip when no broker is reachable,
+      # which is fine here: this job exists to prove the module's go.mod is
+      # self-sufficient, not to re-run the integration coverage ci.yml already
+      # provides with its service containers.
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test ./... -timeout 120s
+
+      - name: Verify module checksums
+        working-directory: ${{ matrix.module }}
+        run: go mod verify
+
+      # Catches the inverse failure: go.mod satisfies the build only because it
+      # lists requirements the workspace supplied. If tidy changes anything, the
+      # committed go.mod does not match what the source actually imports.
+      - name: go.mod is tidy
+        working-directory: ${{ matrix.module }}
+        run: |
+          cp go.mod go.mod.bak
+          cp go.sum go.sum.bak 2>/dev/null || true
+          go mod tidy
+          if ! diff -q go.mod go.mod.bak >/dev/null; then
+            echo "::error::${{ matrix.module }}/go.mod is not tidy. Diff:"
+            diff go.mod.bak go.mod || true
+            exit 1
+          fi
+
+  # ------------------------------------------------------------------
+  # Vulnerability scan. Non-blocking on this first pass: it reports what it
+  # finds so the backlog is visible, and does not fail the build yet. Flip
+  # continue-on-error to false once the findings are triaged.
+  # ------------------------------------------------------------------
+  govulncheck:
+    name: govulncheck (${{ matrix.module }})
+    needs: detect-modules
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-modules.outputs.matrix) }}
+
+    env:
+      GOWORK: "off"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Scan
+        working-directory: ${{ matrix.module }}
+        run: govulncheck ./...

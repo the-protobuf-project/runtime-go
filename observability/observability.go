@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
+	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -15,7 +15,7 @@ import (
 // The zero Client is usable: its Log and Meter return the no-op contracts, so
 // a caller that never set one up still works.
 type Client struct {
-	otel         *opentelementry.Opentelementry
+	otel         *opentelemetry.Opentelemetry
 	closeTimeout time.Duration
 
 	logOnce sync.Once
@@ -71,10 +71,10 @@ func Setup(opts Options) (*Client, error) {
 		opts.Version = "0.0.0"
 	}
 
-	build := func(withExporters bool) (*opentelementry.Opentelementry, error) {
-		b := opentelementry.New().
+	build := func(withExporters bool) (*opentelemetry.Opentelemetry, error) {
+		b := opentelemetry.New().
 			WithService(opts.Service, opts.Version).
-			WithLogLevel(opentelementry.ModuleLevel_2)
+			WithLogLevel(opentelemetry.ModuleLevel_2)
 		if withExporters {
 			if opts.OTLPHost != "" {
 				b = b.WithOTLP(opts.OTLPHost, opts.OTLPPort)
@@ -166,7 +166,7 @@ func (c *Client) Log() telemetry.Logger {
 
 // Meter returns the [telemetry.Meter] for this client.
 //
-// opentelementry implements the contract itself, so this is a pass-through
+// opentelemetry implements the contract itself, so this is a pass-through
 // rather than an adapter. It is safe on a zero Client, returning
 // [telemetry.NoopMeter].
 func (c *Client) Meter() telemetry.Meter {
@@ -180,7 +180,7 @@ func (c *Client) Meter() telemetry.Meter {
 // not front — tracing and profiling.
 //
 // It returns nil for a zero Client, so check before use.
-func (c *Client) Otel() *opentelementry.Opentelementry {
+func (c *Client) Otel() *opentelemetry.Opentelemetry {
 	if c == nil {
 		return nil
 	}

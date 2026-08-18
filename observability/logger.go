@@ -4,11 +4,11 @@ import (
 	"context"
 	"maps"
 
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
+	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
-// logger adapts opentelementry's logger to [telemetry.Logger].
+// logger adapts opentelemetry's logger to [telemetry.Logger].
 //
 // Two shape differences are reconciled here. The SDK's logger takes no context
 // per call — it carries one, set with WithContext — while the contract passes a
@@ -20,13 +20,13 @@ import (
 // type lives in an internal package: its methods are callable, but the type
 // cannot be named from out here.
 type logger struct {
-	otel  *opentelementry.Opentelementry
+	otel  *opentelemetry.Opentelemetry
 	bound telemetry.Fields
 }
 
 var _ telemetry.Logger = logger{}
 
-func newLogger(o *opentelementry.Opentelementry) telemetry.Logger {
+func newLogger(o *opentelemetry.Opentelemetry) telemetry.Logger {
 	return logger{otel: o}
 }
 
@@ -106,7 +106,7 @@ func (l logger) Error(ctx context.Context, msg string, err error, fields telemet
 // formatting but never loses a log line. Reporting false would silently
 // suppress records the SDK would have kept.
 //
-// If opentelementry later exposes its level, this should return the real
+// If opentelemetry later exposes its level, this should return the real
 // answer so debug-guarded paths can be skipped outright.
 func (l logger) Enabled(context.Context, telemetry.Level) bool {
 	return true

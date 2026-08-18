@@ -56,7 +56,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/examples/websocket`](network/examples/websocket) | `github.com/the-protobuf-project/runtime-go/network/examples/websocket` | Command websocket is a runnable example of using the network package's WebSocket client for full-duplex Send/Receive with auto-reconnect and keepalive. |
 | [`network/graphql`](network/graphql) | `github.com/the-protobuf-project/runtime-go/network/graphql` | Package graphql provides small helpers and scalar types for generated GraphQL clients: pointer constructors for optional (nullable) arguments, and scalar types that tolerate engine-specific JSON encodings. |
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
-| [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
+| [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelemetry SDK. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
 | [`streams/codec/protobuf`](streams/codec/protobuf) | `github.com/the-protobuf-project/runtime-go/streams/codec/protobuf` | Package protobuf encodes stream payloads as protocol buffers. |
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |

@@ -1,0 +1,11 @@
+# Code owners for runtime-go.
+#
+# Every pull request requires review from an owner listed here. This file only
+# has effect once branch protection on `main` enables "Require review from Code
+# Owners" — on its own it requests reviews but does not block merge.
+#
+# The maintainer is currently the sole committer, so a single catch-all rule is
+# the honest representation. Add per-directory owners below it as the project
+# takes on additional maintainers; the last matching pattern wins.
+
+* @oh-tarnished
