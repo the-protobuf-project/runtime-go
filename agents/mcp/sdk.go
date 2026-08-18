@@ -96,6 +96,12 @@ type CallToolResult = mcp.CallToolResult
 // Tool is an MCP tool descriptor. Build one with [MustCreateTool].
 type Tool = mcp.Tool
 
+// ToolAnnotations carries the behavioral hints a client uses to decide whether
+// a tool call needs user confirmation: whether it only reads, whether it may
+// destroy data, whether repeating it is harmless, and whether it reaches outside
+// a closed domain.
+type ToolAnnotations = mcp.ToolAnnotations
+
 // TextContent is a plain-text content block.
 type TextContent = mcp.TextContent
 
