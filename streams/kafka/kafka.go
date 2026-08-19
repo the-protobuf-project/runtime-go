@@ -3,11 +3,11 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
@@ -17,8 +17,8 @@ type Option func(*config)
 
 type config struct {
 	codec      streams.Codec
-	log        telemetry.Logger
-	meter      telemetry.Meter
+	log        observability.Logger
+	meter      observability.Meter
 	prefix     string
 	partitions int32
 	replicas   int16
@@ -26,14 +26,14 @@ type config struct {
 }
 
 // WithLogger sets where these streams write their own records. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -90,15 +90,15 @@ func WithCodec(c streams.Codec) Option {
 // a provider when the cluster is unreachable — a misconfigured broker list is
 // worth hearing about at startup rather than at the first publish.
 func Connect(ctx context.Context, seeds []string, opts ...Option) (streams.Streams, error) {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, partitions: 1, replicas: 1}
+	cfg := config{log: observability.NoopLogger, meter: observability.NoopMeter, partitions: 1, replicas: 1}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 	if len(seeds) == 0 {
 		return nil, fmt.Errorf("kafka: no seed brokers given")

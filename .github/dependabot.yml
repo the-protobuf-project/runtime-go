@@ -1,3 +1,10 @@
+# Dependency updates.
+#
+# One gomod entry per module in go.work, plus tools/docgen (its own module,
+# deliberately outside the workspace), plus the workflow actions themselves.
+# Keep this in sync when go.work gains or loses a `use` line -- Dependabot
+# silently ignores a directory that has no go.mod, so a stale entry buys no
+# coverage and a missing entry is invisible.
 version: 2
 updates:
   # GitHub Actions
@@ -12,38 +19,47 @@ updates:
 
   # Go modules — one entry per workspace module
   - package-ecosystem: gomod
-    directory: /ulid
+    directory: /agents
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/ulid)"
+      prefix: "chore(deps/agents)"
     labels:
       - dependencies
 
   - package-ecosystem: gomod
-    directory: /resourcename
+    directory: /blockchain
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/resourcename)"
+      prefix: "chore(deps/blockchain)"
     labels:
       - dependencies
 
   - package-ecosystem: gomod
-    directory: /config
+    directory: /cache
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/config)"
+      prefix: "chore(deps/cache)"
     labels:
       - dependencies
 
   - package-ecosystem: gomod
-    directory: /network
+    directory: /database
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/network)"
+      prefix: "chore(deps/database)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /database/examples
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/database/examples)"
     labels:
       - dependencies
 
@@ -57,10 +73,65 @@ updates:
       - dependencies
 
   - package-ecosystem: gomod
-    directory: /system
+    directory: /interfaces
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/system)"
+      prefix: "chore(deps/interfaces)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /network
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/network)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /observability
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/observability)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /streams
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/streams)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /streams/examples
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/streams/examples)"
+    labels:
+      - dependencies
+
+  - package-ecosystem: gomod
+    directory: /ulid
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/ulid)"
+    labels:
+      - dependencies
+
+  # Docs generator — a separate module, not part of the go.work workspace
+  - package-ecosystem: gomod
+    directory: /tools/docgen
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/tools/docgen)"
     labels:
       - dependencies

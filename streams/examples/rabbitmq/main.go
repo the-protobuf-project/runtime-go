@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"log"
 	"log/slog"
 	"os"
@@ -9,7 +10,6 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/rabbitmq"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // job is this program's model.
@@ -22,8 +22,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelInfo)})))
+	logger := observability.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
+		&slog.HandlerOptions{Level: slog.Level(observability.LevelInfo)})))
 
 	const subject = "job.queued"
 

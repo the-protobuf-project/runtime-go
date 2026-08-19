@@ -3,25 +3,24 @@ package cache
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"maps"
 	"testing"
 	"time"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // capturedRecord is one log line the fake logger kept.
 type capturedRecord struct {
-	level  telemetry.Level
+	level  observability.Level
 	msg    string
 	err    error
-	fields telemetry.Fields
+	fields observability.Fields
 }
 
 // captureLogger records everything written to it.
 type captureLogger struct {
 	records *[]capturedRecord
-	bound   telemetry.Fields
+	bound   observability.Fields
 }
 
 func newCaptureLogger() (*captureLogger, *[]capturedRecord) {
@@ -29,35 +28,35 @@ func newCaptureLogger() (*captureLogger, *[]capturedRecord) {
 	return &captureLogger{records: recs}, recs
 }
 
-func (c *captureLogger) add(level telemetry.Level, msg string, err error, fields telemetry.Fields) {
-	merged := telemetry.Fields{}
+func (c *captureLogger) add(level observability.Level, msg string, err error, fields observability.Fields) {
+	merged := observability.Fields{}
 	maps.Copy(merged, c.bound)
 	maps.Copy(merged, fields)
 	*c.records = append(*c.records, capturedRecord{level: level, msg: msg, err: err, fields: merged})
 }
 
-func (c *captureLogger) Debug(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelDebug, msg, nil, f)
+func (c *captureLogger) Debug(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelDebug, msg, nil, f)
 }
-func (c *captureLogger) Info(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelInfo, msg, nil, f)
+func (c *captureLogger) Info(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelInfo, msg, nil, f)
 }
-func (c *captureLogger) Warn(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelWarn, msg, nil, f)
+func (c *captureLogger) Warn(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelWarn, msg, nil, f)
 }
-func (c *captureLogger) Error(_ context.Context, msg string, err error, f telemetry.Fields) {
-	c.add(telemetry.LevelError, msg, err, f)
+func (c *captureLogger) Error(_ context.Context, msg string, err error, f observability.Fields) {
+	c.add(observability.LevelError, msg, err, f)
 }
-func (c *captureLogger) Enabled(context.Context, telemetry.Level) bool { return true }
-func (c *captureLogger) With(f telemetry.Fields) telemetry.Logger {
-	merged := telemetry.Fields{}
+func (c *captureLogger) Enabled(context.Context, observability.Level) bool { return true }
+func (c *captureLogger) With(f observability.Fields) observability.Logger {
+	merged := observability.Fields{}
 	maps.Copy(merged, c.bound)
 	maps.Copy(merged, f)
 	return &captureLogger{records: c.records, bound: merged}
 }
 
 // only returns the single record at the given level, failing otherwise.
-func only(t *testing.T, recs []capturedRecord, level telemetry.Level) capturedRecord {
+func only(t *testing.T, recs []capturedRecord, level observability.Level) capturedRecord {
 	t.Helper()
 
 	var found []capturedRecord
@@ -80,7 +79,7 @@ func TestLoggingRecordsSuccessAtDebug(t *testing.T) {
 		t.Fatalf("Get: %v", err)
 	}
 
-	rec := only(t, *recs, telemetry.LevelDebug)
+	rec := only(t, *recs, observability.LevelDebug)
 	if rec.fields["operation"] != "get" {
 		t.Errorf("operation = %v, want get", rec.fields["operation"])
 	}
@@ -102,12 +101,12 @@ func TestLoggingRecordsMissAtWarnNotError(t *testing.T) {
 		t.Fatalf("Get error = %v", err)
 	}
 
-	rec := only(t, *recs, telemetry.LevelWarn)
+	rec := only(t, *recs, observability.LevelWarn)
 	if rec.msg != "cache miss" {
 		t.Errorf("msg = %q, want %q", rec.msg, "cache miss")
 	}
 	for _, r := range *recs {
-		if r.level == telemetry.LevelError {
+		if r.level == observability.LevelError {
 			t.Error("a miss was also logged at error level")
 		}
 	}
@@ -122,7 +121,7 @@ func TestLoggingRecordsFailureAtError(t *testing.T) {
 		t.Fatalf("Get error = %v", err)
 	}
 
-	rec := only(t, *recs, telemetry.LevelError)
+	rec := only(t, *recs, observability.LevelError)
 	if !errors.Is(rec.err, boom) {
 		t.Errorf("logged error = %v, want %v", rec.err, boom)
 	}
@@ -138,7 +137,7 @@ func TestLoggingRecordsTheAssignedID(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if rec := only(t, *recs, telemetry.LevelDebug); rec.fields["id"] != "generated" {
+	if rec := only(t, *recs, observability.LevelDebug); rec.fields["id"] != "generated" {
 		t.Errorf("id = %v, want generated", rec.fields["id"])
 	}
 }
@@ -166,13 +165,13 @@ func TestWithLoggingToleratesNilLogger(t *testing.T) {
 // Fields bound with With must survive onto the decorator's records.
 func TestLoggingKeepsBoundFields(t *testing.T) {
 	log, recs := newCaptureLogger()
-	c := WithLogging(&fakeCache{}, log.With(telemetry.Fields{"component": "cache"}))
+	c := WithLogging(&fakeCache{}, log.With(observability.Fields{"component": "cache"}))
 
 	if err := c.Get(t.Context(), "abc", &struct{}{}); err != nil {
 		t.Fatalf("Get: %v", err)
 	}
 
-	if rec := only(t, *recs, telemetry.LevelDebug); rec.fields["component"] != "cache" {
+	if rec := only(t, *recs, observability.LevelDebug); rec.fields["component"] != "cache" {
 		t.Errorf("bound field missing: %+v", rec.fields)
 	}
 }

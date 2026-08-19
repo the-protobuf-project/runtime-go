@@ -3,8 +3,8 @@ module github.com/the-protobuf-project/runtime-go/observability
 go 1.26.4
 
 require (
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260818025400-e63524c03160
+	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20260817061725-884f94d7858d
 )
 
 require (
@@ -77,7 +77,3 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// telemetry is versioned alongside this module in runtime-go; the published
-// version predates the Logger contract. Drop this once it is released.
-replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry

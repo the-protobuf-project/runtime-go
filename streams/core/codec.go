@@ -1,8 +1,8 @@
 package core
 
 import (
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"github.com/the-protobuf-project/runtime-go/streams"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Resolve turns a provider's configured codec into the pair every provider
@@ -21,7 +21,7 @@ func Resolve(codec streams.Codec) (streams.Codec, *streams.Registry) {
 
 // ResolveAll is [Resolve] plus the metrics every provider reports through, so a
 // constructor wires the whole encoding-and-measurement half in one line.
-func ResolveAll(codec streams.Codec, meter telemetry.Meter) (streams.Codec, *streams.Registry, *Metrics) {
+func ResolveAll(codec streams.Codec, meter observability.Meter) (streams.Codec, *streams.Registry, *Metrics) {
 	c, r := Resolve(codec)
 	return c, r, NewMetrics(meter)
 }

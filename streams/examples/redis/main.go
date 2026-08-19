@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"log"
 	"log/slog"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/redis"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // event is this program's model.
@@ -27,8 +27,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelInfo)})))
+	logger := observability.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
+		&slog.HandlerOptions{Level: slog.Level(observability.LevelInfo)})))
 
 	runImmediate(ctx, logger)
 	runScheduled(ctx, logger)
@@ -38,7 +38,7 @@ func main() {
 }
 
 // runImmediate shows delivery at publish time, over pub/sub.
-func runImmediate(ctx context.Context, logger telemetry.Logger) {
+func runImmediate(ctx context.Context, logger observability.Logger) {
 	log.Println("--- immediate ---")
 
 	const subject = "user.created"
@@ -110,7 +110,7 @@ func runImmediate(ctx context.Context, logger telemetry.Logger) {
 }
 
 // runScheduled shows delivery when a TTL expires, over keyspace events.
-func runScheduled(ctx context.Context, logger telemetry.Logger) {
+func runScheduled(ctx context.Context, logger observability.Logger) {
 	log.Println("--- scheduled ---")
 
 	const subject = "reminder"
@@ -161,7 +161,7 @@ func runScheduled(ctx context.Context, logger telemetry.Logger) {
 }
 
 // runDurable shows delivery that survives a consumer dying, over Redis Streams.
-func runDurable(ctx context.Context, logger telemetry.Logger) {
+func runDurable(ctx context.Context, logger observability.Logger) {
 	log.Println("--- durable ---")
 
 	const subject = "order.placed"

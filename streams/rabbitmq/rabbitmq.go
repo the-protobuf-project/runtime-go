@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"net"
 	"slices"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Option configures a [Connect].
@@ -20,8 +20,8 @@ type Option func(*config)
 
 type config struct {
 	codec    streams.Codec
-	log      telemetry.Logger
-	meter    telemetry.Meter
+	log      observability.Logger
+	meter    observability.Meter
 	prefix   string
 	prefetch int
 }
@@ -38,14 +38,14 @@ const defaultPrefetch = 32
 const dialTimeout = 10 * time.Second
 
 // WithLogger sets where these streams write their own records. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -88,15 +88,15 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 		return nil, fmt.Errorf("rabbitmq: no broker URL given")
 	}
 
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, prefetch: defaultPrefetch}
+	cfg := config{log: observability.NoopLogger, meter: observability.NoopMeter, prefetch: defaultPrefetch}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 
 	// amqp.Dial has no context form, so the deadline is applied to the dialer
@@ -140,7 +140,7 @@ type store struct {
 	registry *streams.Registry
 	metrics  *core.Metrics
 	cfg      config
-	log      telemetry.Logger
+	log      observability.Logger
 	conn     *amqp.Connection
 
 	// mu guards ch as well as declared: an amqp.Channel is not safe for
@@ -217,11 +217,11 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.mu.Unlock()
 
 	if err != nil {
-		s.log.Error(ctx, "could not declare the exchange", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not declare the exchange", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("rabbitmq: cannot create stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
+	s.log.Info(ctx, "stream created", observability.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
 	return out, nil
 }
 
@@ -265,7 +265,7 @@ func (s *store) Update(ctx context.Context, id string, in streams.Stream) (strea
 	s.declared[id] = out
 	s.mu.Unlock()
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": id})
+	s.log.Info(ctx, "stream updated", observability.Fields{"id": id})
 	return out, nil
 }
 
@@ -293,7 +293,7 @@ func (s *store) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("rabbitmq: cannot delete stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	s.log.Info(ctx, "stream deleted", observability.Fields{"id": id})
 	return nil
 }
 

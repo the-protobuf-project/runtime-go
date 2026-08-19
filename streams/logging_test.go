@@ -3,18 +3,17 @@ package streams
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"maps"
 	"testing"
 	"time"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 type capturedRecord struct {
-	level  telemetry.Level
+	level  observability.Level
 	msg    string
 	err    error
-	fields telemetry.Fields
+	fields observability.Fields
 }
 
 // captureLogger records everything written to it. It is safe for the one
@@ -22,7 +21,7 @@ type capturedRecord struct {
 // reading.
 type captureLogger struct {
 	records *[]capturedRecord
-	bound   telemetry.Fields
+	bound   observability.Fields
 	done    chan struct{}
 }
 
@@ -31,31 +30,31 @@ func newCaptureLogger() (*captureLogger, *[]capturedRecord) {
 	return &captureLogger{records: recs, done: make(chan struct{})}, recs
 }
 
-func (c *captureLogger) add(level telemetry.Level, msg string, err error, fields telemetry.Fields) {
-	merged := telemetry.Fields{}
+func (c *captureLogger) add(level observability.Level, msg string, err error, fields observability.Fields) {
+	merged := observability.Fields{}
 	maps.Copy(merged, c.bound)
 	maps.Copy(merged, fields)
 	*c.records = append(*c.records, capturedRecord{level: level, msg: msg, err: err, fields: merged})
 }
 
-func (c *captureLogger) Debug(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelDebug, msg, nil, f)
+func (c *captureLogger) Debug(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelDebug, msg, nil, f)
 }
-func (c *captureLogger) Info(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelInfo, msg, nil, f)
+func (c *captureLogger) Info(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelInfo, msg, nil, f)
 	if msg == "subscription closed" {
 		close(c.done)
 	}
 }
-func (c *captureLogger) Warn(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelWarn, msg, nil, f)
+func (c *captureLogger) Warn(_ context.Context, msg string, f observability.Fields) {
+	c.add(observability.LevelWarn, msg, nil, f)
 }
-func (c *captureLogger) Error(_ context.Context, msg string, err error, f telemetry.Fields) {
-	c.add(telemetry.LevelError, msg, err, f)
+func (c *captureLogger) Error(_ context.Context, msg string, err error, f observability.Fields) {
+	c.add(observability.LevelError, msg, err, f)
 }
-func (c *captureLogger) Enabled(context.Context, telemetry.Level) bool { return true }
-func (c *captureLogger) With(f telemetry.Fields) telemetry.Logger {
-	merged := telemetry.Fields{}
+func (c *captureLogger) Enabled(context.Context, observability.Level) bool { return true }
+func (c *captureLogger) With(f observability.Fields) observability.Logger {
+	merged := observability.Fields{}
 	maps.Copy(merged, c.bound)
 	maps.Copy(merged, f)
 	return &captureLogger{records: c.records, bound: merged, done: c.done}
@@ -82,7 +81,7 @@ func TestPublisherLoggingRecordsSuccessAtDebug(t *testing.T) {
 	if !ok {
 		t.Fatalf("no publish record: %+v", *recs)
 	}
-	if rec.level != telemetry.LevelDebug {
+	if rec.level != observability.LevelDebug {
 		t.Errorf("level = %v, want debug", rec.level)
 	}
 	if rec.fields["subject"] != "user.login" {
@@ -111,7 +110,7 @@ func TestPublisherLoggingRecordsUnknownSubjectAtError(t *testing.T) {
 	if !ok {
 		t.Fatalf("no rejection record: %+v", *recs)
 	}
-	if rec.level != telemetry.LevelError {
+	if rec.level != observability.LevelError {
 		t.Errorf("level = %v, want error", rec.level)
 	}
 }

@@ -12,6 +12,5 @@ use (
 	./observability
 	./streams
 	./streams/examples
-	./telemetry
 	./ulid
 )

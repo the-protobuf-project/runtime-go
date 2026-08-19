@@ -3,34 +3,33 @@ package streams
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // loggingPublisher records every publish.
 type loggingPublisher struct {
 	next Publisher
-	log  telemetry.Logger
+	log  observability.Logger
 }
 
 // WithPublisherLogging logs each publish: a debug record on success and an
 // error record on failure.
 //
 // The logger is injected rather than resolved from a package-level global, so a
-// binary that never wires logging pays nothing. Pass [telemetry.NoopLogger] to
+// binary that never wires logging pays nothing. Pass [observability.NoopLogger] to
 // disable logging without unwrapping.
 //
-//	pub = streams.WithPublisherLogging(m, log.With(telemetry.Fields{"component": "streams"}))
-func WithPublisherLogging(next Publisher, log telemetry.Logger) Publisher {
+//	pub = streams.WithPublisherLogging(m, log.With(observability.Fields{"component": "streams"}))
+func WithPublisherLogging(next Publisher, log observability.Logger) Publisher {
 	if log == nil {
-		log = telemetry.NoopLogger
+		log = observability.NoopLogger
 	}
 	return &loggingPublisher{next: next, log: log}
 }
 
 // WithPublisherLoggingMiddleware is [WithPublisherLogging] as a middleware.
-func WithPublisherLoggingMiddleware(log telemetry.Logger) PublisherMiddleware {
+func WithPublisherLoggingMiddleware(log observability.Logger) PublisherMiddleware {
 	return func(p Publisher) Publisher { return WithPublisherLogging(p, log) }
 }
 
@@ -43,7 +42,7 @@ func (l *loggingPublisher) Publish(ctx context.Context, subject string, value an
 	start := time.Now()
 	id, err := l.next.Publish(ctx, subject, value, opts...)
 
-	fields := telemetry.Fields{
+	fields := observability.Fields{
 		"subject":  subject,
 		"duration": time.Since(start).String(),
 	}
@@ -70,7 +69,7 @@ func (l *loggingPublisher) Publish(ctx context.Context, subject string, value an
 // loggingSubscriber records subscription lifecycle and delivery.
 type loggingSubscriber struct {
 	next Subscriber
-	log  telemetry.Logger
+	log  observability.Logger
 }
 
 // WithSubscriberLogging logs when a subscription opens, each message it
@@ -78,9 +77,9 @@ type loggingSubscriber struct {
 //
 // The close record is the useful one: a subscription ends only when its context
 // is canceled, so its absence in a log is how you spot a consumer that leaked.
-func WithSubscriberLogging(next Subscriber, log telemetry.Logger) Subscriber {
+func WithSubscriberLogging(next Subscriber, log observability.Logger) Subscriber {
 	if log == nil {
-		log = telemetry.NoopLogger
+		log = observability.NoopLogger
 	}
 	return &loggingSubscriber{next: next, log: log}
 }
@@ -88,10 +87,10 @@ func WithSubscriberLogging(next Subscriber, log telemetry.Logger) Subscriber {
 func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts ...Option) (<-chan Message, error) {
 	msgs, err := l.next.Subscribe(ctx, subject, opts...)
 	if err != nil {
-		l.log.Error(ctx, "subscribe failed", err, telemetry.Fields{"subject": subject})
+		l.log.Error(ctx, "subscribe failed", err, observability.Fields{"subject": subject})
 		return nil, err
 	}
-	l.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	l.log.Info(ctx, "subscribed", observability.Fields{"subject": subject})
 
 	// The messages are relayed through a goroutine so delivery can be counted
 	// and the close observed. It inherits the caller's cancellation: when the
@@ -103,7 +102,7 @@ func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts 
 
 		delivered := 0
 		defer func() {
-			l.log.Info(ctx, "subscription closed", telemetry.Fields{
+			l.log.Info(ctx, "subscription closed", observability.Fields{
 				"subject":   subject,
 				"delivered": delivered,
 			})
@@ -111,8 +110,8 @@ func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts 
 
 		for msg := range msgs {
 			delivered++
-			if l.log.Enabled(ctx, telemetry.LevelDebug) {
-				l.log.Debug(ctx, "delivered", telemetry.Fields{
+			if l.log.Enabled(ctx, observability.LevelDebug) {
+				l.log.Debug(ctx, "delivered", observability.Fields{
 					"subject": subject,
 					"id":      msg.ID,
 				})

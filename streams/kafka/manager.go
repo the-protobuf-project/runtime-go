@@ -3,11 +3,11 @@ package kafka
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -31,7 +31,7 @@ func (m *manager) checkSubject(ctx context.Context, subject string) error {
 	if core.Declares(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.store.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.store.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -69,11 +69,11 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 	}
 
 	if err := m.store.cl.ProduceSync(ctx, rec).FirstErr(); err != nil {
-		m.store.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.store.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("kafka: cannot publish on %q: %w", subject, err)
 	}
 
-	m.store.log.Debug(ctx, "published", telemetry.Fields{
+	m.store.log.Debug(ctx, "published", observability.Fields{
 		"subject": subject, "id": id, "partition_key": o.PartitionKey, "bytes": len(body),
 	})
 	return id, nil
@@ -130,7 +130,7 @@ func (m *manager) PublishBatch(ctx context.Context, subject string, values []any
 	}
 	wg.Wait()
 
-	m.store.log.Debug(ctx, "published a batch", telemetry.Fields{
+	m.store.log.Debug(ctx, "published a batch", observability.Fields{
 		"subject": subject, "entries": len(values), "partition_key": o.PartitionKey,
 	})
 	return ids, core.BatchError(subject, len(values), compact(failures))
@@ -163,7 +163,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	m.store.log.Info(ctx, "subscribed", observability.Fields{"subject": subject})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -173,7 +173,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		delivered := 0
 		defer func() {
 			m.store.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -183,7 +183,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 			}
 			if errs := fetches.Errors(); len(errs) > 0 {
 				m.store.log.Error(ctx, "could not read the topic", errs[0].Err,
-					telemetry.Fields{"subject": subject})
+					observability.Fields{"subject": subject})
 				return
 			}
 
@@ -193,7 +193,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 				msg, derr := core.Unpack(m.store.registry, subject, rec.Value)
 				if derr != nil {
 					m.store.log.Warn(ctx, "dropping a malformed message",
-						telemetry.Fields{"subject": subject, "offset": rec.Offset, "error": derr.Error()})
+						observability.Fields{"subject": subject, "offset": rec.Offset, "error": derr.Error()})
 					continue
 				}
 				delivered++
@@ -277,7 +277,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{
+	m.store.log.Info(ctx, "consuming", observability.Fields{
 		"subject": subject, "consumer": consumer, "from": at,
 	})
 
@@ -288,7 +288,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.store.log.Info(ctx, "consumer stopped", observability.Fields{
 				"subject": subject, "consumer": consumer, "delivered": delivered,
 			})
 		}()
@@ -300,7 +300,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 			}
 			if errs := fetches.Errors(); len(errs) > 0 {
 				m.store.log.Error(ctx, "could not read as the consumer group", errs[0].Err,
-					telemetry.Fields{"subject": subject, "consumer": consumer})
+					observability.Fields{"subject": subject, "consumer": consumer})
 				return
 			}
 
@@ -314,7 +314,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 					// acknowledge it and the group would stall on it forever.
 					// Commit past it and say so.
 					m.store.log.Warn(ctx, "committing past a malformed message",
-						telemetry.Fields{"subject": subject, "offset": rec.Offset, "error": derr.Error()})
+						observability.Fields{"subject": subject, "offset": rec.Offset, "error": derr.Error()})
 					_ = cl.CommitRecords(ctx, rec)
 					continue
 				}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,30 +13,29 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/the-protobuf-project/runtime-go/database/store"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // recorder captures what the instrumentation emitted, so these assert the
 // signals a dashboard would actually read rather than that the code ran.
 type recorder struct {
 	mu       sync.Mutex
-	counters map[string][]telemetry.Labels
+	counters map[string][]observability.Labels
 }
 
 func newRecorder() *recorder {
-	return &recorder{counters: map[string][]telemetry.Labels{}}
+	return &recorder{counters: map[string][]observability.Labels{}}
 }
 
-func (r *recorder) Counter(name string, _ ...telemetry.InstrumentOption) telemetry.Counter {
+func (r *recorder) Counter(name string, _ ...observability.InstrumentOption) observability.Counter {
 	return &recCounter{r: r, name: name}
 }
-func (r *recorder) UpDownCounter(string, ...telemetry.InstrumentOption) telemetry.UpDownCounter {
-	return telemetry.NoopMeter.UpDownCounter("")
+func (r *recorder) UpDownCounter(string, ...observability.InstrumentOption) observability.UpDownCounter {
+	return observability.NoopMeter.UpDownCounter("")
 }
-func (r *recorder) Gauge(string, ...telemetry.InstrumentOption) telemetry.Gauge {
-	return telemetry.NoopMeter.Gauge("")
+func (r *recorder) Gauge(string, ...observability.InstrumentOption) observability.Gauge {
+	return observability.NoopMeter.Gauge("")
 }
-func (r *recorder) Histogram(name string, _ ...telemetry.InstrumentOption) telemetry.Histogram {
+func (r *recorder) Histogram(name string, _ ...observability.InstrumentOption) observability.Histogram {
 	return &recHistogram{r: r, name: name}
 }
 
@@ -44,7 +44,7 @@ type recCounter struct {
 	name string
 }
 
-func (c *recCounter) Add(_ context.Context, _ float64, labels telemetry.Labels) {
+func (c *recCounter) Add(_ context.Context, _ float64, labels observability.Labels) {
 	c.r.mu.Lock()
 	defer c.r.mu.Unlock()
 	c.r.counters[c.name] = append(c.r.counters[c.name], labels)
@@ -55,16 +55,16 @@ type recHistogram struct {
 	name string
 }
 
-func (h *recHistogram) Record(_ context.Context, _ float64, labels telemetry.Labels) {
+func (h *recHistogram) Record(_ context.Context, _ float64, labels observability.Labels) {
 	h.r.mu.Lock()
 	defer h.r.mu.Unlock()
 	h.r.counters[h.name] = append(h.r.counters[h.name], labels)
 }
 
-func (r *recorder) labelsFor(metric string) []telemetry.Labels {
+func (r *recorder) labelsFor(metric string) []observability.Labels {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return append([]telemetry.Labels(nil), r.counters[metric]...)
+	return append([]observability.Labels(nil), r.counters[metric]...)
 }
 
 // stub is a driver whose outcomes a test chooses.

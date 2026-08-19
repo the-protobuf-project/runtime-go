@@ -3,11 +3,10 @@ package store
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
 
 	"google.golang.org/protobuf/proto"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Instrument returns db with every operation measured and recorded.
@@ -31,7 +30,7 @@ func Instrument(db *DB, opts ...ObserveOption) *DB {
 	if db == nil {
 		return nil
 	}
-	cfg := observeConfig{meter: telemetry.NoopMeter, logger: telemetry.NoopLogger}
+	cfg := observeConfig{meter: observability.NoopMeter, logger: observability.NoopLogger}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(&cfg)
@@ -69,8 +68,8 @@ func Instrument(db *DB, opts ...ObserveOption) *DB {
 type ObserveOption func(*observeConfig)
 
 type observeConfig struct {
-	meter  telemetry.Meter
-	logger telemetry.Logger
+	meter  observability.Meter
+	logger observability.Logger
 	wanted bool
 }
 
@@ -79,10 +78,10 @@ type observeConfig struct {
 // The meter is injected rather than resolved from a package-level global, so a
 // binary that never wires telemetry pays nothing and no import can start a
 // background exporter behind the caller's back.
-func WithMeter(m telemetry.Meter) ObserveOption {
+func WithMeter(m observability.Meter) ObserveOption {
 	return func(c *observeConfig) {
 		if m == nil {
-			m = telemetry.NoopMeter
+			m = observability.NoopMeter
 		}
 		c.meter = m
 		c.wanted = true
@@ -91,10 +90,10 @@ func WithMeter(m telemetry.Meter) ObserveOption {
 
 // WithLogger records one line per operation: debug on success, warn on a record
 // that was not there, error on a real failure.
-func WithLogger(l telemetry.Logger) ObserveOption {
+func WithLogger(l observability.Logger) ObserveOption {
 	return func(c *observeConfig) {
 		if l == nil {
-			l = telemetry.NoopLogger
+			l = observability.NoopLogger
 		}
 		c.logger = l
 		c.wanted = true
@@ -105,11 +104,11 @@ func WithLogger(l telemetry.Logger) ObserveOption {
 type observer struct {
 	next    Driver
 	backend string
-	log     telemetry.Logger
+	log     observability.Logger
 
-	ops  telemetry.Counter
-	dur  telemetry.Histogram
-	rows telemetry.Counter
+	ops  observability.Counter
+	dur  observability.Histogram
+	rows observability.Counter
 }
 
 var _ Driver = (*observer)(nil)
@@ -119,9 +118,9 @@ func newObserver(next Driver, backend string, cfg observeConfig) *observer {
 		next:    next,
 		backend: backend,
 		log:     cfg.logger,
-		ops:     cfg.meter.Counter("database_operations_total", telemetry.WithUnit("1")),
-		dur:     cfg.meter.Histogram("database_operation_duration_seconds", telemetry.WithUnit("s")),
-		rows:    cfg.meter.Counter("database_rows_read_total", telemetry.WithUnit("1")),
+		ops:     cfg.meter.Counter("database_operations_total", observability.WithUnit("1")),
+		dur:     cfg.meter.Histogram("database_operation_duration_seconds", observability.WithUnit("s")),
+		rows:    cfg.meter.Counter("database_rows_read_total", observability.WithUnit("1")),
 	}
 }
 
@@ -153,7 +152,7 @@ func (o *observer) record(ctx context.Context, op string, res *Resource, start t
 		outcome = "error"
 	}
 
-	labels := telemetry.Labels{
+	labels := observability.Labels{
 		"backend":   o.backend,
 		"operation": op,
 		"resource":  resourceName(res),
@@ -162,7 +161,7 @@ func (o *observer) record(ctx context.Context, op string, res *Resource, start t
 	o.ops.Add(ctx, 1, labels)
 	o.dur.Record(ctx, time.Since(start).Seconds(), labels)
 
-	fields := telemetry.Fields{
+	fields := observability.Fields{
 		"backend":   o.backend,
 		"operation": op,
 		"resource":  resourceName(res),
@@ -223,7 +222,7 @@ func (o *observer) List(ctx context.Context, res *Resource, opts ListOptions) (L
 	out, err := o.next.List(ctx, res, opts)
 	o.record(ctx, "list", res, start, err)
 	if err == nil {
-		o.rows.Add(ctx, float64(len(out.Items)), telemetry.Labels{
+		o.rows.Add(ctx, float64(len(out.Items)), observability.Labels{
 			"backend": o.backend, "resource": resourceName(res),
 		})
 	}
@@ -267,7 +266,7 @@ func (o *observedBatcher) GetMany(ctx context.Context, res *Resource, keys []str
 	out, err := o.b.GetMany(ctx, res, keys)
 	o.record(ctx, "get_many", res, start, err)
 	if err == nil {
-		o.rows.Add(ctx, float64(len(out)), telemetry.Labels{
+		o.rows.Add(ctx, float64(len(out)), observability.Labels{
 			"backend": o.backend, "resource": resourceName(res),
 		})
 	}

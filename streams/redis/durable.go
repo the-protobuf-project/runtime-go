@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"os"
 	"strconv"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // durableManager publishes to and consumes from a Redis stream.
@@ -54,7 +54,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 		// A Redis stream delivers when it is read, not on a timer. Saying so
 		// beats appending now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "a durable stream cannot schedule a delivery", nil,
-			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
+			observability.Fields{"subject": subject, "ttl": o.TTL.String()})
 		return "", fmt.Errorf("%w: a durable stream delivers when it is read, not on a timer; use ConnectScheduled or UseScheduled for a TTL", streams.ErrUnsupported)
 	}
 
@@ -66,7 +66,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 	body, err := core.Pack(m.handler.codec, id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return "", err
 	}
 
@@ -79,13 +79,13 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 		args.Approx = true
 	}
 
-	m.handler.log.Debug(ctx, "appending", telemetry.Fields{
+	m.handler.log.Debug(ctx, "appending", observability.Fields{
 		"subject": subject, "id": id, "key": key, "bytes": len(body),
 	})
 
 	if err := m.handler.rdb.XAdd(ctx, args).Err(); err != nil {
 		m.handler.log.Error(ctx, "could not append", err,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("redis: cannot append to %q: %w", subject, err)
 	}
 	return id, nil
@@ -112,7 +112,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 		return nil, err
 	}
 
-	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.handler.log.Info(ctx, "subscribed", observability.Fields{
 		"subject": subject, "key": key, "from": last,
 	})
 
@@ -123,7 +123,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 		delivered := 0
 		defer func() {
 			m.handler.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -145,7 +145,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 					return
 				}
 				m.handler.log.Error(ctx, "could not read the stream", rerr,
-					telemetry.Fields{"subject": subject})
+					observability.Fields{"subject": subject})
 				return
 			}
 
@@ -155,7 +155,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 					msg, derr := decodeEntry(m.handler.registry, subject, entry)
 					if derr != nil {
 						m.handler.log.Warn(ctx, "dropping a malformed message",
-							telemetry.Fields{"subject": subject, "entry": entry.ID, "error": derr.Error()})
+							observability.Fields{"subject": subject, "entry": entry.ID, "error": derr.Error()})
 						continue
 					}
 					delivered++
@@ -214,12 +214,12 @@ func (m *durableManager) ConsumeFrom(ctx context.Context, subject, consumer stri
 	// without it, consuming a quiet subject fails until the first publish.
 	if err := m.handler.rdb.XGroupCreateMkStream(ctx, key, consumer, start).Err(); err != nil && !isBusyGroup(err) {
 		m.handler.log.Error(ctx, "could not create the consumer group", err,
-			telemetry.Fields{"subject": subject, "consumer": consumer})
+			observability.Fields{"subject": subject, "consumer": consumer})
 		return nil, fmt.Errorf("redis: cannot create consumer %q on %q: %w", consumer, subject, err)
 	}
 
 	name := consumerName()
-	m.handler.log.Info(ctx, "consuming", telemetry.Fields{
+	m.handler.log.Info(ctx, "consuming", observability.Fields{
 		"subject": subject, "consumer": consumer, "identity": name, "from": start,
 	})
 
@@ -235,7 +235,7 @@ func (m *durableManager) consume(ctx context.Context, key, subject, group, name 
 
 	delivered := 0
 	defer func() {
-		m.handler.log.Info(ctx, "consumer stopped", telemetry.Fields{
+		m.handler.log.Info(ctx, "consumer stopped", observability.Fields{
 			"subject": subject, "consumer": group, "delivered": delivered,
 		})
 		// Best effort, and deliberately not on ctx: the context that ended this
@@ -288,7 +288,7 @@ func (m *durableManager) consume(ctx context.Context, key, subject, group, name 
 				return
 			}
 			m.handler.log.Error(ctx, "could not read as the consumer group", err,
-				telemetry.Fields{"subject": subject, "consumer": group})
+				observability.Fields{"subject": subject, "consumer": group})
 			return
 		}
 
@@ -326,7 +326,7 @@ func (m *durableManager) reclaim(ctx context.Context, key, subject, group, name 
 		}
 		// A reclaim that fails is not a reason to stop consuming new messages.
 		m.handler.log.Warn(ctx, "could not reclaim abandoned messages",
-			telemetry.Fields{"subject": subject, "consumer": group, "error": err.Error()})
+			observability.Fields{"subject": subject, "consumer": group, "error": err.Error()})
 		return 0, true
 	}
 	if len(entries) == 0 {
@@ -343,7 +343,7 @@ func (m *durableManager) reclaim(ctx context.Context, key, subject, group, name 
 			// least twice by definition, so say so rather than claim it is new.
 			attempt = 2
 		}
-		m.handler.log.Debug(ctx, "reclaimed an abandoned message", telemetry.Fields{
+		m.handler.log.Debug(ctx, "reclaimed an abandoned message", observability.Fields{
 			"subject": subject, "consumer": group, "entry": entry.ID, "attempt": attempt,
 		})
 		if !m.deliver(ctx, key, subject, group, entry, attempt, out) {
@@ -387,7 +387,7 @@ func (m *durableManager) deliver(ctx context.Context, key, subject, group string
 		// A message nobody can decode will never be acknowledged by a handler,
 		// so it would be reclaimed forever. Acknowledge it here and say so.
 		m.handler.log.Warn(ctx, "acknowledging a malformed message so it does not redeliver forever",
-			telemetry.Fields{"subject": subject, "entry": entry.ID, "error": err.Error()})
+			observability.Fields{"subject": subject, "entry": entry.ID, "error": err.Error()})
 		_ = m.handler.rdb.XAck(ctx, key, group, entry.ID).Err()
 		return true
 	}

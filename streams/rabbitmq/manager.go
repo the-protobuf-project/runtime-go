@@ -3,11 +3,11 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // manager publishes to and consumes from one stream.
@@ -31,7 +31,7 @@ func (m *manager) checkSubject(ctx context.Context, subject string) error {
 	if declares(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.store.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.store.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -77,11 +77,11 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 	m.store.mu.Unlock()
 
 	if err != nil {
-		m.store.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.store.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("rabbitmq: cannot publish on %q: %w", subject, err)
 	}
 
-	m.store.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
+	m.store.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id, "bytes": len(body)})
 	return id, nil
 }
 
@@ -101,7 +101,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	m.store.log.Info(ctx, "subscribed", observability.Fields{"subject": subject})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -111,14 +111,14 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		delivered := 0
 		defer func() {
 			m.store.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for d := range deliveries {
 			msg, derr := core.Unpack(m.store.registry, d.RoutingKey, d.Body)
 			if derr != nil {
 				m.store.log.Warn(ctx, "dropping a malformed message",
-					telemetry.Fields{"subject": subject, "error": derr.Error()})
+					observability.Fields{"subject": subject, "error": derr.Error()})
 				continue
 			}
 			delivered++
@@ -167,7 +167,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{"subject": subject, "consumer": consumer})
+	m.store.log.Info(ctx, "consuming", observability.Fields{"subject": subject, "consumer": consumer})
 
 	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {
@@ -176,7 +176,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.store.log.Info(ctx, "consumer stopped", observability.Fields{
 				"subject": subject, "consumer": consumer, "delivered": delivered,
 			})
 		}()
@@ -189,7 +189,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 				// one case where discarding is right: requeueing would hand the
 				// same undecodable bytes to the next consumer forever.
 				m.store.log.Warn(ctx, "rejecting a malformed message",
-					telemetry.Fields{"subject": subject, "error": derr.Error()})
+					observability.Fields{"subject": subject, "error": derr.Error()})
 				_ = d.Reject(false)
 				continue
 			}

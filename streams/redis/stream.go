@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"slices"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // streamHandler manages stream lifecycle and hands out publishers and
@@ -30,7 +30,7 @@ type streamHandler struct {
 	keys     keys
 	kind     kind
 	db       int
-	log      telemetry.Logger
+	log      observability.Logger
 	maxLen   int64
 	reclaim  time.Duration
 
@@ -65,7 +65,7 @@ func (s *streamHandler) declares(ctx context.Context, stream streams.Stream, sub
 	if core.Declares(stream.Subjects, subject) {
 		return nil
 	}
-	s.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	s.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": stream.ID, "declared": stream.Subjects,
 	})
 	return core.ErrSubject(stream.ID, subject, stream.Subjects)
@@ -85,7 +85,7 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
-		s.log.Debug(ctx, "generated a stream id", telemetry.Fields{"id": id})
+		s.log.Debug(ctx, "generated a stream id", observability.Fields{"id": id})
 	}
 
 	out := streams.Stream{
@@ -99,11 +99,11 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 
 	body, err := json.Marshal(out)
 	if err != nil {
-		s.log.Error(ctx, "could not encode the stream metadata", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not encode the stream metadata", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("redis: cannot encode stream %s: %w", id, err)
 	}
 
-	s.log.Debug(ctx, "creating stream", telemetry.Fields{
+	s.log.Debug(ctx, "creating stream", observability.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects, "scheduled": s.scheduled(),
 	})
 
@@ -111,11 +111,11 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 		Stream: s.keys.stream(id),
 		Values: map[string]any{metadataField: body},
 	}).Err(); err != nil {
-		s.log.Error(ctx, "could not create the stream", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not create the stream", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("redis: cannot create stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
+	s.log.Info(ctx, "stream created", observability.Fields{"id": id, "name": in.Name})
 	return out, nil
 }
 
@@ -131,11 +131,11 @@ func (s *streamHandler) read(ctx context.Context, key, id string) (streams.Strea
 		if errors.Is(err, goredis.Nil) {
 			return streams.Stream{}, fmt.Errorf("%w: stream %s", streams.ErrNotFound, id)
 		}
-		s.log.Error(ctx, "could not read the stream", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not read the stream", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("redis: cannot read stream %s: %w", id, err)
 	}
 	if len(entries) == 0 {
-		s.log.Debug(ctx, "stream not found", telemetry.Fields{"id": id})
+		s.log.Debug(ctx, "stream not found", observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("%w: stream %s", streams.ErrNotFound, id)
 	}
 
@@ -146,7 +146,7 @@ func (s *streamHandler) read(ctx context.Context, key, id string) (streams.Strea
 
 	var out streams.Stream
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
-		s.log.Error(ctx, "stream metadata is malformed", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "stream metadata is malformed", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("redis: stream %s has invalid metadata: %w", id, err)
 	}
 	out.ID = id
@@ -163,7 +163,7 @@ func (s *streamHandler) Bind(ctx context.Context, id string) (streams.Manager, e
 	if err != nil {
 		return nil, err
 	}
-	s.log.Debug(ctx, "bound to stream", telemetry.Fields{"id": id, "subjects": stream.Subjects})
+	s.log.Debug(ctx, "bound to stream", observability.Fields{"id": id, "subjects": stream.Subjects})
 
 	// The two managers are separate types rather than one type with a mode
 	// flag, because the difference is visible through the contract:
@@ -201,18 +201,18 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 		return streams.Stream{}, fmt.Errorf("redis: cannot encode stream %s: %w", id, err)
 	}
 
-	s.log.Debug(ctx, "updating stream", telemetry.Fields{"id": id, "subjects": out.Subjects})
+	s.log.Debug(ctx, "updating stream", observability.Fields{"id": id, "subjects": out.Subjects})
 
 	key := s.keys.stream(id)
 	pipe := s.rdb.TxPipeline()
 	pipe.XAdd(ctx, &goredis.XAddArgs{Stream: key, Values: map[string]any{metadataField: body}})
 	pipe.XTrimMaxLen(ctx, key, 1)
 	if _, err := pipe.Exec(ctx); err != nil {
-		s.log.Error(ctx, "could not update the stream", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not update the stream", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("redis: cannot update stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": id})
+	s.log.Info(ctx, "stream updated", observability.Fields{"id": id})
 	return out, nil
 }
 
@@ -221,19 +221,19 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 // A stream that is not there is reported rather than treated as success: a
 // silent nil here once made a failed delete look like a completed one.
 func (s *streamHandler) Delete(ctx context.Context, id string) error {
-	s.log.Debug(ctx, "deleting stream", telemetry.Fields{"id": id})
+	s.log.Debug(ctx, "deleting stream", observability.Fields{"id": id})
 
 	removed, err := s.rdb.Del(ctx, s.keys.stream(id)).Result()
 	if err != nil {
-		s.log.Error(ctx, "could not delete the stream", err, telemetry.Fields{"id": id})
+		s.log.Error(ctx, "could not delete the stream", err, observability.Fields{"id": id})
 		return fmt.Errorf("redis: cannot delete stream %s: %w", id, err)
 	}
 	if removed == 0 {
-		s.log.Debug(ctx, "stream not found, nothing deleted", telemetry.Fields{"id": id})
+		s.log.Debug(ctx, "stream not found, nothing deleted", observability.Fields{"id": id})
 		return fmt.Errorf("%w: stream %s", streams.ErrNotFound, id)
 	}
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	s.log.Info(ctx, "stream deleted", observability.Fields{"id": id})
 	return nil
 }
 
@@ -284,6 +284,6 @@ func (s *streamHandler) List(ctx context.Context) ([]streams.Stream, error) {
 	}
 
 	slices.SortFunc(out, func(a, b streams.Stream) int { return strings.Compare(a.ID, b.ID) })
-	s.log.Debug(ctx, "listed streams", telemetry.Fields{"count": len(out)})
+	s.log.Debug(ctx, "listed streams", observability.Fields{"count": len(out)})
 	return out, nil
 }

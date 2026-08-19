@@ -2,7 +2,6 @@ package shared
 
 import (
 	"github.com/the-protobuf-project/runtime-go/observability"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Obs is this module's telemetry client.
@@ -14,11 +13,11 @@ var Obs = observability.Lazy("runtime-go-streams", "1.0.0")
 
 // Log returns this module's logger, tagged with the component so its records
 // stand out in a mixed stream.
-func Log() telemetry.Logger {
-	return Obs().Log().With(telemetry.Fields{"component": "streams"})
+func Log() observability.Logger {
+	return Obs().Log().With(observability.Fields{"component": "streams"})
 }
 
 // Meter returns this module's meter.
-func Meter() telemetry.Meter {
+func Meter() observability.Meter {
 	return Obs().Meter()
 }

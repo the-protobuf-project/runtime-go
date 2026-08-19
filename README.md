@@ -56,7 +56,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`network/examples/websocket`](network/examples/websocket) | `github.com/the-protobuf-project/runtime-go/network/examples/websocket` | Command websocket is a runnable example of using the network package's WebSocket client for full-duplex Send/Receive with auto-reconnect and keepalive. |
 | [`network/graphql`](network/graphql) | `github.com/the-protobuf-project/runtime-go/network/graphql` | Package graphql provides small helpers and scalar types for generated GraphQL clients: pointer constructors for optional (nullable) arguments, and scalar types that tolerate engine-specific JSON encodings. |
 | [`network/runtime`](network/runtime) | `github.com/the-protobuf-project/runtime-go/network/runtime` | Package runtime is the stable, single-import facade that generated GraphQL clients depend on. |
-| [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability wires runtime-go modules to the opentelementry SDK. |
+| [`observability`](observability) | `github.com/the-protobuf-project/runtime-go/observability` | Package observability is the single telemetry surface for runtime-go: logging, metrics and tracing, plus the wiring that binds them to a backend. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
 | [`streams/codec/protobuf`](streams/codec/protobuf) | `github.com/the-protobuf-project/runtime-go/streams/codec/protobuf` | Package protobuf encodes stream payloads as protocol buffers. |
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
@@ -73,7 +73,6 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
 | [`streams/zeromq`](streams/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/zeromq` | Package zeromq delivers streams over ZeroMQ PUB/SUB. |
-| [`telemetry`](telemetry) | `github.com/the-protobuf-project/runtime-go/telemetry` | Package telemetry defines the backend-agnostic Meter contract that generated and hand-written code instruments against. |
 | [`ulid`](ulid) | `github.com/the-protobuf-project/runtime-go/ulid` | Package ulid generates sortable, collision-resistant identifiers for runtime-go modules. |
 | [`network/examples/graphql/server`](network/examples/graphql/server) | `server` | Command server is a minimal GraphQL server used by the GraphQL client example; it serves a generated schema so the example queries, mutations, and subscriptions have a live endpoint to run against. |
 <!-- END PACKAGES -->

@@ -3,15 +3,14 @@ package cache
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // loggingCache records every operation.
 type loggingCache struct {
 	next Document
-	log  telemetry.Logger
+	log  observability.Logger
 }
 
 // WithLogging logs each operation: a debug record on success, an error record
@@ -23,18 +22,18 @@ type loggingCache struct {
 //
 // The logger is injected rather than resolved from a package-level global, so a
 // binary that never wires logging pays nothing and no import can start writing
-// to stderr behind the caller's back. Pass [telemetry.NoopLogger] to disable
+// to stderr behind the caller's back. Pass [observability.NoopLogger] to disable
 // logging without unwrapping.
-func WithLogging(next Document, log telemetry.Logger) Document {
+func WithLogging(next Document, log observability.Logger) Document {
 	if log == nil {
-		log = telemetry.NoopLogger
+		log = observability.NoopLogger
 	}
 	return &loggingCache{next: next, log: log}
 }
 
 // WithLoggingMiddleware is [WithLogging] as a [Middleware], for use with
 // [Chain].
-func WithLoggingMiddleware(log telemetry.Logger) Middleware {
+func WithLoggingMiddleware(log observability.Logger) Middleware {
 	return func(c Document) Document { return WithLogging(c, log) }
 }
 
@@ -45,7 +44,7 @@ func WithLoggingMiddleware(log telemetry.Logger) Middleware {
 // duration is always included — a slow cache is the usual thing you are looking
 // for when you turn these on.
 func (l *loggingCache) record(ctx context.Context, op, id string, start time.Time, err error) {
-	fields := telemetry.Fields{
+	fields := observability.Fields{
 		"operation": op,
 		"duration":  time.Since(start).String(),
 	}
@@ -99,8 +98,8 @@ func (l *loggingCache) Keys(ctx context.Context) ([]string, error) {
 	keys, err := l.next.Keys(ctx)
 	l.record(ctx, "keys", "", start, err)
 
-	if err == nil && l.log.Enabled(ctx, telemetry.LevelDebug) {
-		l.log.Debug(ctx, "cache keys returned", telemetry.Fields{"count": len(keys)})
+	if err == nil && l.log.Enabled(ctx, observability.LevelDebug) {
+		l.log.Debug(ctx, "cache keys returned", observability.Fields{"count": len(keys)})
 	}
 	return keys, err
 }

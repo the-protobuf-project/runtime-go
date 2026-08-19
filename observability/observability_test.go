@@ -83,7 +83,7 @@ func TestLoggerEnabledIsPermissive(t *testing.T) {
 	}
 }
 
-// Meter is a pass-through — opentelementry implements the contract itself — but
+// Meter is a pass-through — opentelemetry implements the contract itself — but
 // it still has to be usable without a collector.
 func TestMeterRecordsWithoutACollector(t *testing.T) {
 	c, err := observability.Setup(observability.Options{Service: "test", Version: "1.0.0", CloseTimeout: 50 * time.Millisecond})

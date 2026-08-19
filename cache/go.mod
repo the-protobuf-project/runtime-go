@@ -6,7 +6,6 @@ require (
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-00010101000000-000000000000
 )
 
@@ -55,7 +54,8 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10 // indirect
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260818025400-e63524c03160 // indirect
+	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20260817061725-884f94d7858d // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.45.0 // indirect
@@ -89,7 +89,5 @@ require (
 // These are versioned alongside this module in runtime-go and have no tagged
 // release carrying the current contracts yet. Drop them once published.
 replace github.com/the-protobuf-project/runtime-go/observability => ../observability
-
-replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
 
 replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid
