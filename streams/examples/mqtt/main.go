@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"log"
 	"log/slog"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/mqtt"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // reading is this program's model.
@@ -23,8 +23,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelInfo)})))
+	logger := observability.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
+		&slog.HandlerOptions{Level: slog.Level(observability.LevelInfo)})))
 
 	const subject = "sensor/temperature"
 

@@ -1,7 +1,6 @@
 # Release blockers
 
 Findings from auditing every `go.work` module for standalone consumability.
-Nothing here has been changed — each item needs a maintainer decision.
 
 A tag alone does not make a module consumable. When someone runs
 `go get github.com/the-protobuf-project/runtime-go/<mod>@v0.1.0`, Go reads that
@@ -9,7 +8,11 @@ module's own `go.mod` and **ignores its `replace` directives** — `replace` onl
 applies in the main module. So a require that resolves only inside the
 workspace fails immediately for the consumer.
 
-Modules safe to tag today: `agents`, `network`, `telemetry`, `ulid`.
+**Status: all 12 modules build, vet and test cleanly with `GOWORK=off`.** What
+remains is the require-version problem, which `go build` cannot surface locally
+because the `replace` directives cover it.
+
+Modules safe to tag today: `agents`, `network`, `ulid`, `observability`.
 
 ## 1. Placeholder versions that do not exist on the proxy
 
@@ -19,12 +22,14 @@ resolves nowhere.
 
 | Module | Unresolvable requires |
 | --- | --- |
+| `blockchain` | `observability` |
 | `cache` | `observability`, `ulid` |
-| `database` | `cache`, `ulid` |
+| `database` | `cache`, `observability`, `ulid` |
 | `grpc` | `agents`, `observability` |
+| `interfaces` | `observability` |
 | `streams` | `observability`, `ulid` |
-| `database/examples` | `cache`, `ulid` |
-| `streams/examples` | `ulid` |
+| `database/examples` | `cache`, `observability`, `ulid` |
+| `streams/examples` | `observability`, `ulid` |
 
 ## 2. Bare `v0.0.0` requires
 
@@ -37,45 +42,28 @@ Equally unresolvable — no `v0.0.0` tag exists in this repo.
 | `database/examples` | `database v0.0.0` |
 | `streams/examples` | `streams v0.0.0` |
 
-## 3. `replace`-masked API skew in `observability`
+## 3. Resolved
 
-`observability/go.mod` carries, with its own comment:
-
-```
-// telemetry is versioned alongside this module in runtime-go; the published
-// version predates the Logger contract. Drop this once it is released.
-replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
-```
-
-The require pins `telemetry v0.0.0-20260722084318-b90e81eeadb7`, a real
-published version that **lacks the `Logger` contract**. In the workspace the
-`replace` hides this. A consumer gets the published telemetry and fails to
-compile. Releasing `telemetry/v0.1.0` first, then repointing this require, is
-the fix.
-
-## 4. The `opentelemetry` dependency does not exist
-
-Per the requested rename, these modules now require:
-
-```
-github.com/the-protobuf-project/opentelemetry/opentelemetry-go
-```
-
-That repository does not exist yet (the published one is
-`.../opentelementry/opentelementry-go`, with the typo). Affected:
-`observability`, `grpc`, `cache`, `streams`. These cannot build at all until
-the sibling repo is renamed and republished. See the `TODO(maintainer)` notes
-in `observability/go.mod` and `grpc/go.mod`.
+- **The telemetry SDK path.** Modules briefly required
+  `the-protobuf-project/opentelemetry/opentelemetry-go`, which does not exist.
+  The real module is `the-protobuf-project/telemetry/telemetry-go` — the
+  `opentelementry` repo was renamed to `telemetry`. All requires now resolve.
+- **Incomplete `go.sum` files.** `GOWORK=off go mod tidy` per module added the
+  entries `go.work.sum` had been supplying. This was 9 of 13 modules.
+- **`replace`-masked API skew in `observability`.** It required a published
+  `telemetry` that predated the `Logger` contract, hidden by a local `replace`.
+  The `runtime-go/telemetry` module is no longer developed in this repo; every
+  module now pins the published `v0.0.0-20260818025400-e63524c03160`, which
+  carries the full contract, and no `replace` masks it. `observability` is
+  releasable as a result.
 
 ## Suggested order
 
-1. Rename + republish the `opentelementry` repo as `opentelemetry`; re-resolve
-   the requires and regenerate the affected `go.sum` files.
-2. Tag `telemetry`, `ulid`, `agents`, `network` at `v0.1.0`.
-3. In `observability`, drop the `telemetry` replace and require
-   `telemetry v0.1.0`. Tag `observability/v0.1.0`.
-4. Repeat outward through `cache`/`streams` -> `database` ->
-   `blockchain`/`interfaces`/`grpc` -> the two `examples` modules, dropping each
-   `replace` and pinning real versions as its dependencies get tagged.
-5. Consider whether `database/examples` and `streams/examples` need tags at all
+1. Tag `agents`, `network`, `ulid`, `observability` at `v0.1.0`.
+2. In `cache` and `streams`, drop the `observability`/`ulid` replaces and pin
+   the `v0.1.0` versions just tagged. Tag both.
+3. Work outward — `database` → `blockchain`/`interfaces`/`grpc` → the two
+   `examples` modules — dropping each `replace` and pinning real versions as
+   dependencies get tagged.
+4. Consider whether `database/examples` and `streams/examples` need tags at all
    — both are `package main` and neither is importable as a library.

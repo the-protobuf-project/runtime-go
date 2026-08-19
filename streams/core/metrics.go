@@ -2,8 +2,7 @@ package core
 
 import (
 	"context"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
+	"github.com/the-protobuf-project/runtime-go/observability"
 )
 
 // Metrics is what every provider reports about delivery.
@@ -14,24 +13,24 @@ import (
 // without asking the broker anything: what it handed over, what came back
 // settled, and the difference between them.
 type Metrics struct {
-	delivered telemetry.Counter
-	settled   telemetry.Counter
-	inflight  telemetry.UpDownCounter
-	lag       telemetry.Gauge
+	delivered observability.Counter
+	settled   observability.Counter
+	inflight  observability.UpDownCounter
+	lag       observability.Gauge
 }
 
 // NewMetrics builds the instruments once, so a delivery costs a record rather
 // than a lookup. A nil meter is the caller not wanting any of this, and
-// [telemetry.NoopMeter] makes that free rather than conditional.
-func NewMetrics(m telemetry.Meter) *Metrics {
+// [observability.NoopMeter] makes that free rather than conditional.
+func NewMetrics(m observability.Meter) *Metrics {
 	if m == nil {
-		m = telemetry.NoopMeter
+		m = observability.NoopMeter
 	}
 	return &Metrics{
-		delivered: m.Counter("streams_delivered_total", telemetry.WithUnit("1")),
-		settled:   m.Counter("streams_settled_total", telemetry.WithUnit("1")),
-		inflight:  m.UpDownCounter("streams_inflight", telemetry.WithUnit("1")),
-		lag:       m.Gauge("streams_consumer_lag", telemetry.WithUnit("1")),
+		delivered: m.Counter("streams_delivered_total", observability.WithUnit("1")),
+		settled:   m.Counter("streams_settled_total", observability.WithUnit("1")),
+		inflight:  m.UpDownCounter("streams_inflight", observability.WithUnit("1")),
+		lag:       m.Gauge("streams_consumer_lag", observability.WithUnit("1")),
 	}
 }
 
@@ -41,7 +40,7 @@ func (x *Metrics) Delivered(ctx context.Context, subject, consumer string) {
 	if x == nil {
 		return
 	}
-	labels := telemetry.Labels{"subject": subject, "consumer": consumer}
+	labels := observability.Labels{"subject": subject, "consumer": consumer}
 	x.delivered.Add(ctx, 1, labels)
 	x.inflight.Add(ctx, 1, labels)
 }
@@ -57,10 +56,10 @@ func (x *Metrics) Settled(ctx context.Context, subject, consumer, outcome string
 	if x == nil {
 		return
 	}
-	x.settled.Add(ctx, 1, telemetry.Labels{
+	x.settled.Add(ctx, 1, observability.Labels{
 		"subject": subject, "consumer": consumer, "outcome": outcome,
 	})
-	x.inflight.Add(ctx, -1, telemetry.Labels{"subject": subject, "consumer": consumer})
+	x.inflight.Add(ctx, -1, observability.Labels{"subject": subject, "consumer": consumer})
 }
 
 // Lag records how far behind a named consumer is, in messages.
@@ -74,5 +73,5 @@ func (x *Metrics) Lag(ctx context.Context, subject, consumer string, n int64) {
 	if x == nil {
 		return
 	}
-	x.lag.Set(ctx, float64(n), telemetry.Labels{"subject": subject, "consumer": consumer})
+	x.lag.Set(ctx, float64(n), observability.Labels{"subject": subject, "consumer": consumer})
 }

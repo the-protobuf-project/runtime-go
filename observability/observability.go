@@ -6,8 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
+	"github.com/the-protobuf-project/telemetry/telemetry-go"
 )
 
 // Client is a configured telemetry backend. Build one with [Setup] or [Must].
@@ -15,11 +14,11 @@ import (
 // The zero Client is usable: its Log and Meter return the no-op contracts, so
 // a caller that never set one up still works.
 type Client struct {
-	otel         *opentelemetry.Opentelemetry
+	otel         *telemetry.Telemetry
 	closeTimeout time.Duration
 
 	logOnce sync.Once
-	log     telemetry.Logger
+	log     Logger
 }
 
 // Options configure a [Client]. The zero Options is valid — it produces a
@@ -71,10 +70,10 @@ func Setup(opts Options) (*Client, error) {
 		opts.Version = "0.0.0"
 	}
 
-	build := func(withExporters bool) (*opentelemetry.Opentelemetry, error) {
-		b := opentelemetry.New().
+	build := func(withExporters bool) (*telemetry.Telemetry, error) {
+		b := telemetry.New().
 			WithService(opts.Service, opts.Version).
-			WithLogLevel(opentelemetry.ModuleLevel_2)
+			WithLogLevel(telemetry.ModuleLevel_2)
 		if withExporters {
 			if opts.OTLPHost != "" {
 				b = b.WithOTLP(opts.OTLPHost, opts.OTLPPort)
@@ -151,69 +150,5 @@ func Lazy(service, version string) func() *Client {
 			client = c
 		})
 		return client
-	}
-}
-
-// Log returns the [telemetry.Logger] for this client. It is safe on a zero
-// Client, returning [telemetry.NoopLogger].
-func (c *Client) Log() telemetry.Logger {
-	if c == nil || c.otel == nil || c.otel.Logger == nil {
-		return telemetry.NoopLogger
-	}
-	c.logOnce.Do(func() { c.log = newLogger(c.otel) })
-	return c.log
-}
-
-// Meter returns the [telemetry.Meter] for this client.
-//
-// opentelemetry implements the contract itself, so this is a pass-through
-// rather than an adapter. It is safe on a zero Client, returning
-// [telemetry.NoopMeter].
-func (c *Client) Meter() telemetry.Meter {
-	if c == nil || c.otel == nil {
-		return telemetry.NoopMeter
-	}
-	return c.otel.Meter()
-}
-
-// Otel exposes the underlying SDK client for the parts of it this package does
-// not front — tracing and profiling.
-//
-// It returns nil for a zero Client, so check before use.
-func (c *Client) Otel() *opentelemetry.Opentelemetry {
-	if c == nil {
-		return nil
-	}
-	return c.otel
-}
-
-// Close flushes and shuts down the backend. The main application should call it
-// on shutdown; it is safe on a zero Client.
-//
-// It gives up after [Options.CloseTimeout] and reports that as an error rather
-// than blocking. The SDK's own shutdown takes no context and waits 20 seconds
-// for an OTLP collector it configures by default, so an unbounded Close would
-// stall every exit that happens without one.
-//
-// The flush is left running when it times out: the process is on its way out,
-// and a goroutine parked on a socket is cheaper than a delayed exit.
-func (c *Client) Close() error {
-	if c == nil || c.otel == nil {
-		return nil
-	}
-
-	done := make(chan error, 1) // buffered so the send never blocks after a timeout
-	go func() { done <- c.otel.Close() }()
-
-	timeout := c.closeTimeout
-	if timeout <= 0 {
-		timeout = DefaultCloseTimeout
-	}
-
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(timeout):
-		return fmt.Errorf("observability: shutdown did not finish within %v; some telemetry may be unflushed", timeout)
 	}
 }

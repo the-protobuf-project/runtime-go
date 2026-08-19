@@ -3,9 +3,8 @@ package streams
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
-
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // PublisherMiddleware wraps a Publisher in behavior that applies to any
@@ -23,8 +22,8 @@ func ChainPublisher(p Publisher, mw ...PublisherMiddleware) Publisher {
 // telemetryPublisher counts and times publishes.
 type telemetryPublisher struct {
 	next Publisher
-	ops  telemetry.Counter
-	dur  telemetry.Histogram
+	ops  observability.Counter
+	dur  observability.Histogram
 }
 
 // WithPublisherTelemetry records a publish count and duration histogram,
@@ -32,17 +31,17 @@ type telemetryPublisher struct {
 //
 // The meter is injected rather than resolved from a package-level global, so a
 // binary that never wires telemetry pays nothing and no import can start a
-// background exporter behind the caller's back. Pass [telemetry.NoopMeter] to
+// background exporter behind the caller's back. Pass [observability.NoopMeter] to
 // disable instrumentation without unwrapping.
-func WithPublisherTelemetry(next Publisher, m telemetry.Meter) Publisher {
+func WithPublisherTelemetry(next Publisher, m observability.Meter) Publisher {
 	if m == nil {
-		m = telemetry.NoopMeter
+		m = observability.NoopMeter
 	}
 	return &telemetryPublisher{
 		next: next,
-		ops:  m.Counter("streams_published_total", telemetry.WithUnit("1")),
+		ops:  m.Counter("streams_published_total", observability.WithUnit("1")),
 		dur: m.Histogram("streams_publish_duration_seconds",
-			telemetry.WithUnit("s")),
+			observability.WithUnit("s")),
 	}
 }
 
@@ -54,7 +53,7 @@ func (t *telemetryPublisher) Publish(ctx context.Context, subject string, value 
 	if err != nil {
 		outcome = "error"
 	}
-	labels := telemetry.Labels{"subject": subject, "outcome": outcome}
+	labels := observability.Labels{"subject": subject, "outcome": outcome}
 	t.ops.Add(ctx, 1, labels)
 	t.dur.Record(ctx, time.Since(start).Seconds(), labels)
 	return id, err
@@ -91,7 +90,7 @@ func WithPublisherRetryMiddleware(attempts int, backoff time.Duration) Publisher
 }
 
 // WithPublisherTelemetryMiddleware is [WithPublisherTelemetry] as a middleware.
-func WithPublisherTelemetryMiddleware(m telemetry.Meter) PublisherMiddleware {
+func WithPublisherTelemetryMiddleware(m observability.Meter) PublisherMiddleware {
 	return func(p Publisher) Publisher { return WithPublisherTelemetry(p, m) }
 }
 

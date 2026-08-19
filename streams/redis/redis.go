@@ -3,12 +3,12 @@ package redis
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Option configures a [Connect] or [ConnectScheduled].
@@ -20,8 +20,8 @@ type config struct {
 	db       int
 	username string
 	password string
-	log      telemetry.Logger
-	meter    telemetry.Meter
+	log      observability.Logger
+	meter    observability.Meter
 	maxLen   int64
 	reclaim  time.Duration
 }
@@ -57,14 +57,14 @@ func WithDatabase(index int) Option {
 
 // WithLogger sets where these streams write their own records — which channel a
 // subject resolved to, which expiry events were filtered out. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -150,15 +150,15 @@ func UseDurable(rdb goredis.UniversalClient, opts ...Option) streams.Streams {
 }
 
 func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) streams.Streams {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, reclaim: defaultReclaim}
+	cfg := config{log: observability.NoopLogger, meter: observability.NoopMeter, reclaim: defaultReclaim}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 
 	// A plain client knows its own database; a cluster or failover client does

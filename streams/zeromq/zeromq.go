@@ -3,6 +3,7 @@ package zeromq
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"slices"
 	"strings"
 	"sync"
@@ -11,7 +12,6 @@ import (
 	"github.com/go-zeromq/zmq4"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Option configures a [Publish] or [Subscribe].
@@ -19,8 +19,8 @@ type Option func(*config)
 
 type config struct {
 	codec  streams.Codec
-	log    telemetry.Logger
-	meter  telemetry.Meter
+	log    observability.Logger
+	meter  observability.Meter
 	settle time.Duration
 }
 
@@ -32,14 +32,14 @@ type config struct {
 const defaultSettle = 250 * time.Millisecond
 
 // WithLogger sets where these streams write their own records. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -64,15 +64,15 @@ func WithCodec(c streams.Codec) Option {
 }
 
 func newConfig(opts ...Option) config {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, settle: defaultSettle}
+	cfg := config{log: observability.NoopLogger, meter: observability.NoopMeter, settle: defaultSettle}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 	return cfg
 }
@@ -95,7 +95,7 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 		return nil, fmt.Errorf("zeromq: cannot bind %s: %w", endpoint, err)
 	}
 
-	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
+	cfg.log.Info(ctx, "publishing", observability.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
@@ -112,7 +112,7 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	}
 	cfg := newConfig(opts...)
 
-	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
+	cfg.log.Info(ctx, "subscribing", observability.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
@@ -130,7 +130,7 @@ type store struct {
 	registry *streams.Registry
 	metrics  *core.Metrics
 	cfg      config
-	log      telemetry.Logger
+	log      observability.Logger
 
 	// pub is nil on a subscriber, which is what makes Publish refuse.
 	pub zmq4.Socket
@@ -201,7 +201,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.declared[id] = out
 	s.mu.Unlock()
 
-	s.log.Info(ctx, "stream declared", telemetry.Fields{
+	s.log.Info(ctx, "stream declared", observability.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil

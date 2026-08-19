@@ -3,7 +3,7 @@ package grpc
 import (
 	"context"
 
-	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
+	telemetrysdk "github.com/the-protobuf-project/telemetry/telemetry-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -14,8 +14,8 @@ import (
 // identity. Errors counts only server faults (see IsServerError), never
 // expected client/business rejections like NotFound or FailedPrecondition.
 type rpcMetrics struct {
-	Requests int64 `opentelemetry:"metric:counter:rpc.requests"`
-	Errors   int64 `opentelemetry:"metric:counter:rpc.errors"`
+	Requests int64 `telemetry:"metric:counter:rpc.requests"`
+	Errors   int64 `telemetry:"metric:counter:rpc.errors"`
 }
 
 // Observer wraps RPC handler bodies with a trace span, request/error
@@ -23,11 +23,11 @@ type rpcMetrics struct {
 // application's opentelemetry client and share it across handlers — it is
 // stateless beyond the client handle.
 type Observer struct {
-	o *opentelemetry.Opentelemetry
+	o *telemetrysdk.Telemetry
 }
 
 // NewObserver returns an Observer emitting through o.
-func NewObserver(o *opentelemetry.Opentelemetry) *Observer {
+func NewObserver(o *telemetrysdk.Telemetry) *Observer {
 	return &Observer{o: o}
 }
 
@@ -37,7 +37,7 @@ func NewObserver(o *opentelemetry.Opentelemetry) *Observer {
 // tracing layer can set the span status. Expected client/business rejections
 // are logged at debug, not error, and excluded from the error counter.
 func (ob *Observer) Traced(ctx context.Context, service, method string, fn func(context.Context) error) error {
-	return ob.o.Tracing.Trace(ctx, service+"/"+method, nil, func(ctx context.Context, _ *opentelemetry.Span) error {
+	return ob.o.Tracing.Trace(ctx, service+"/"+method, nil, func(ctx context.Context, _ *telemetrysdk.Span) error {
 		err := fn(ctx)
 		ob.record(service, method, err)
 		switch {
@@ -61,9 +61,9 @@ func (ob *Observer) record(service, method string, err error) {
 	if IsServerError(err) {
 		m.Errors = 1
 	}
-	_ = ob.o.Metrics.Record(m, opentelemetry.WithAttributes(
-		opentelemetry.StringAttribute("service", service),
-		opentelemetry.StringAttribute("method", method),
+	_ = ob.o.Metrics.Record(m, telemetrysdk.WithAttributes(
+		telemetrysdk.StringAttribute("service", service),
+		telemetrysdk.StringAttribute("method", method),
 	))
 }
 

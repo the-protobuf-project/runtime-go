@@ -87,7 +87,6 @@ line:
 | `network` | unreleased | — |
 | `observability` | unreleased | — |
 | `streams` | unreleased | — |
-| `telemetry` | unreleased | — |
 | `ulid` | unreleased | — |
 
 The `database/examples` and `streams/examples` modules are runnable examples

@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"slices"
 	"strings"
 	"sync"
@@ -10,7 +11,6 @@ import (
 	gonats "github.com/nats-io/nats.go"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // plainStreams is core NATS: publish, subscribe, and nothing kept.
@@ -24,7 +24,7 @@ type plainStreams struct {
 	codec    streams.Codec
 	registry *streams.Registry
 	metrics  *core.Metrics
-	log      telemetry.Logger
+	log      observability.Logger
 	queue    string
 
 	// owned says this package dialed the connection and must close it. One
@@ -71,7 +71,7 @@ func (p *plainStreams) Create(ctx context.Context, in streams.Stream) (streams.S
 	p.declared[id] = out
 	p.mu.Unlock()
 
-	p.log.Info(ctx, "stream declared", telemetry.Fields{
+	p.log.Info(ctx, "stream declared", observability.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil
@@ -160,7 +160,7 @@ func (m *plainManager) checkSubject(ctx context.Context, subject string) error {
 	if core.DeclaresPattern(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.p.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.p.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -194,11 +194,11 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 	}
 
 	if err := m.p.nc.Publish(subject, body); err != nil {
-		m.p.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.p.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("nats: cannot publish on %q: %w", subject, err)
 	}
 
-	m.p.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
+	m.p.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id, "bytes": len(body)})
 	return id, nil
 }
 
@@ -236,7 +236,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 		sub, err = m.p.nc.ChanSubscribe(subject, raw)
 	}
 	if err != nil {
-		m.p.log.Error(ctx, "could not subscribe", err, telemetry.Fields{"subject": subject})
+		m.p.log.Error(ctx, "could not subscribe", err, observability.Fields{"subject": subject})
 		return nil, fmt.Errorf("nats: cannot subscribe to %q: %w", subject, err)
 	}
 
@@ -249,7 +249,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 		return nil, fmt.Errorf("nats: cannot establish the subscription to %q: %w", subject, err)
 	}
 
-	m.p.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.p.log.Info(ctx, "subscribed", observability.Fields{
 		"subject": subject, "queue": queue,
 	})
 
@@ -261,7 +261,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 		delivered := 0
 		defer func() {
 			m.p.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -277,7 +277,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 					// One bad message is not a reason to tear down a healthy
 					// subscription.
 					m.p.log.Warn(ctx, "dropping a malformed message",
-						telemetry.Fields{"subject": raw.Subject, "error": derr.Error()})
+						observability.Fields{"subject": raw.Subject, "error": derr.Error()})
 					continue
 				}
 				delivered++

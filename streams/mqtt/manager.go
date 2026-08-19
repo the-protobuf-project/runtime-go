@@ -3,12 +3,12 @@ package mqtt
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"hash/fnv"
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // manager publishes to and subscribes from one stream.
@@ -30,7 +30,7 @@ func (m *manager) checkSubject(ctx context.Context, subject string) error {
 	if declares(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.store.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.store.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -67,11 +67,11 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 		QoS:     m.store.cfg.qos,
 		Payload: body,
 	}); err != nil {
-		m.store.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.store.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("mqtt: cannot publish on %q: %w", subject, err)
 	}
 
-	m.store.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
+	m.store.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id, "bytes": len(body)})
 	return id, nil
 }
 
@@ -155,7 +155,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{
+	m.store.log.Info(ctx, "consuming", observability.Fields{
 		"subject": subject, "consumer": consumer, "group": o.Group, "client_id": clientID,
 	})
 
@@ -166,7 +166,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.store.log.Info(ctx, "consumer stopped", observability.Fields{
 				"subject": subject, "consumer": consumer, "delivered": delivered,
 			})
 		}()
@@ -217,7 +217,7 @@ func (m *manager) attach(ctx context.Context, subject, group, clientID string, d
 			// subscription, but it must be acknowledged or a durable session
 			// would be handed it again forever.
 			m.store.log.Warn(ctx, "acknowledging a malformed message",
-				telemetry.Fields{"subject": subject, "error": derr.Error()})
+				observability.Fields{"subject": subject, "error": derr.Error()})
 			_ = pr.Client.Ack(pr.Packet)
 			// Reporting the decode failure back to paho would be reporting it
 			// to the wrong place: this is one bad payload, not a fault in the
@@ -245,7 +245,7 @@ func (m *manager) attach(ctx context.Context, subject, group, clientID string, d
 	// to exactly this filter.
 	if resumed {
 		m.store.log.Debug(ctx, "resumed a session; its subscription was restored",
-			telemetry.Fields{"subject": subject, "client_id": clientID})
+			observability.Fields{"subject": subject, "client_id": clientID})
 		go func() {
 			<-ctx.Done()
 			close(raw)

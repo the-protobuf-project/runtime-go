@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"net"
 	"slices"
 	"strings"
@@ -12,7 +13,6 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Option configures a [Connect].
@@ -20,8 +20,8 @@ type Option func(*config)
 
 type config struct {
 	codec    streams.Codec
-	log      telemetry.Logger
-	meter    telemetry.Meter
+	log      observability.Logger
+	meter    observability.Meter
 	prefix   string
 	qos      byte
 	expiry   uint32
@@ -45,14 +45,14 @@ const (
 )
 
 // WithLogger sets where these streams write their own records. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -114,17 +114,17 @@ func WithCodec(c streams.Codec) Option {
 // the typo rather than landing somewhere nobody subscribes.
 func Connect(ctx context.Context, address string, opts ...Option) (streams.Streams, error) {
 	cfg := config{
-		log: telemetry.NoopLogger, meter: telemetry.NoopMeter,
+		log: observability.NoopLogger, meter: observability.NoopMeter,
 		qos: defaultQoS, expiry: defaultExpiry, dial: defaultDial,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 	if cfg.clientID == "" {
 		cfg.clientID = "runtime-go-" + core.NewID()
@@ -154,7 +154,7 @@ type store struct {
 	registry *streams.Registry
 	metrics  *core.Metrics
 	cfg      config
-	log      telemetry.Logger
+	log      observability.Logger
 	client   *paho.Client
 
 	mu       sync.RWMutex
@@ -259,7 +259,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.declared[id] = out
 	s.mu.Unlock()
 
-	s.log.Info(ctx, "stream declared", telemetry.Fields{
+	s.log.Info(ctx, "stream declared", observability.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil

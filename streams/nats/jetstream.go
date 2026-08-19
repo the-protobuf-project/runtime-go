@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"slices"
 	"strings"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // JetStream keeps a stream's name, subjects and description of its own accord,
@@ -29,7 +29,7 @@ type jsStreams struct {
 	codec    streams.Codec
 	registry *streams.Registry
 	metrics  *core.Metrics
-	log      telemetry.Logger
+	log      observability.Logger
 
 	// owned is the connection this package dialed, if it did. One handed in
 	// through UseJetStream belongs to the caller and is left alone.
@@ -60,16 +60,16 @@ func (p *jsStreams) Create(ctx context.Context, in streams.Stream) (streams.Stre
 	}
 	id = safeName(id)
 
-	p.log.Debug(ctx, "creating stream", telemetry.Fields{
+	p.log.Debug(ctx, "creating stream", observability.Fields{
 		"id": id, "name": in.Name, "subjects": in.Subjects,
 	})
 
 	if _, err := p.js.CreateStream(ctx, p.configFor(id, in)); err != nil {
-		p.log.Error(ctx, "could not create the stream", err, telemetry.Fields{"id": id})
+		p.log.Error(ctx, "could not create the stream", err, observability.Fields{"id": id})
 		return streams.Stream{}, fmt.Errorf("nats: cannot create stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
+	p.log.Info(ctx, "stream created", observability.Fields{"id": id, "name": in.Name})
 	return p.streamFrom(id, in), nil
 }
 
@@ -118,7 +118,7 @@ func (p *jsStreams) Bind(ctx context.Context, id string) (streams.Manager, error
 	}
 
 	stream := toStream(&info.Config)
-	p.log.Debug(ctx, "bound to stream", telemetry.Fields{"id": name, "subjects": stream.Subjects})
+	p.log.Debug(ctx, "bound to stream", observability.Fields{"id": name, "subjects": stream.Subjects})
 	return &jsManager{p: p, handle: handle, stream: stream}, nil
 }
 
@@ -133,7 +133,7 @@ func (p *jsStreams) Update(ctx context.Context, id string, in streams.Stream) (s
 		return streams.Stream{}, fmt.Errorf("nats: cannot update stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream updated", telemetry.Fields{"id": name})
+	p.log.Info(ctx, "stream updated", observability.Fields{"id": name})
 	return p.streamFrom(name, in), nil
 }
 
@@ -146,7 +146,7 @@ func (p *jsStreams) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("nats: cannot delete stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	p.log.Info(ctx, "stream deleted", observability.Fields{"id": id})
 	return nil
 }
 
@@ -164,7 +164,7 @@ func (p *jsStreams) List(ctx context.Context) ([]streams.Stream, error) {
 	}
 
 	slices.SortFunc(out, func(a, b streams.Stream) int { return strings.Compare(a.ID, b.ID) })
-	p.log.Debug(ctx, "listed streams", telemetry.Fields{"count": len(out)})
+	p.log.Debug(ctx, "listed streams", observability.Fields{"count": len(out)})
 	return out, nil
 }
 
@@ -239,7 +239,7 @@ func (m *jsManager) checkSubject(ctx context.Context, subject string) error {
 	if core.DeclaresPattern(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.p.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.p.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -275,11 +275,11 @@ func (m *jsManager) Publish(ctx context.Context, subject string, value any, opts
 	}
 
 	if _, err := m.p.js.Publish(ctx, subject, body, jetstream.WithMsgID(id)); err != nil {
-		m.p.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.p.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("nats: cannot publish on %q: %w", subject, err)
 	}
 
-	m.p.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
+	m.p.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id, "bytes": len(body)})
 	return id, nil
 }
 
@@ -300,7 +300,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 	})
 	if err != nil {
 		m.p.log.Error(ctx, "could not create an ordered consumer", err,
-			telemetry.Fields{"subject": subject})
+			observability.Fields{"subject": subject})
 		return nil, fmt.Errorf("nats: cannot subscribe to %q: %w", subject, err)
 	}
 
@@ -309,7 +309,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 		return nil, fmt.Errorf("nats: cannot subscribe to %q: %w", subject, err)
 	}
 
-	m.p.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	m.p.log.Info(ctx, "subscribed", observability.Fields{"subject": subject})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -322,7 +322,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 		delivered := 0
 		defer func() {
 			m.p.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -331,7 +331,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 				// The iterator closing is how a canceled subscription ends.
 				if !errors.Is(err, jetstream.ErrMsgIteratorClosed) && ctx.Err() == nil {
 					m.p.log.Error(ctx, "could not read the stream", err,
-						telemetry.Fields{"subject": subject})
+						observability.Fields{"subject": subject})
 				}
 				return
 			}
@@ -339,7 +339,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 			msg, derr := core.Unpack(m.p.registry, raw.Subject(), raw.Data())
 			if derr != nil {
 				m.p.log.Warn(ctx, "dropping a malformed message",
-					telemetry.Fields{"subject": raw.Subject(), "error": derr.Error()})
+					observability.Fields{"subject": raw.Subject(), "error": derr.Error()})
 				continue
 			}
 			delivered++
@@ -403,7 +403,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 	}
 	if err != nil {
 		m.p.log.Error(ctx, "could not attach the consumer", err,
-			telemetry.Fields{"subject": subject, "consumer": name})
+			observability.Fields{"subject": subject, "consumer": name})
 		return nil, fmt.Errorf("nats: cannot consume %q as %q: %w", subject, consumer, err)
 	}
 
@@ -412,7 +412,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 		return nil, fmt.Errorf("nats: cannot consume %q as %q: %w", subject, consumer, err)
 	}
 
-	m.p.log.Info(ctx, "consuming", telemetry.Fields{
+	m.p.log.Info(ctx, "consuming", observability.Fields{
 		"subject": subject, "consumer": name, "from": policy,
 	})
 
@@ -424,7 +424,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 
 		delivered := 0
 		defer func() {
-			m.p.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.p.log.Info(ctx, "consumer stopped", observability.Fields{
 				"subject": subject, "consumer": name, "delivered": delivered,
 			})
 		}()
@@ -434,7 +434,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 			if err != nil {
 				if !errors.Is(err, jetstream.ErrMsgIteratorClosed) && ctx.Err() == nil {
 					m.p.log.Error(ctx, "could not read as the consumer", err,
-						telemetry.Fields{"subject": subject, "consumer": name})
+						observability.Fields{"subject": subject, "consumer": name})
 				}
 				return
 			}
@@ -446,7 +446,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 				// unlike Ack, that records the message as undeliverable rather
 				// than as handled.
 				m.p.log.Warn(ctx, "terminating a malformed message",
-					telemetry.Fields{"subject": raw.Subject(), "error": derr.Error()})
+					observability.Fields{"subject": raw.Subject(), "error": derr.Error()})
 				_ = raw.Term()
 				continue
 			}

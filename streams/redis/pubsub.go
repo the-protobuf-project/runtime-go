@@ -3,12 +3,12 @@ package redis
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"strconv"
 	"strings"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // streamManager publishes to and subscribes from one stream.
@@ -48,7 +48,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 	body, err := core.Pack(m.handler.codec, id, value)
 	if err != nil {
 		m.handler.log.Error(ctx, "could not encode the value", err,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return "", err
 	}
 
@@ -60,12 +60,12 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 		// An immediate stream cannot honor a delay. Saying so beats publishing
 		// now and letting the caller believe it was scheduled.
 		m.handler.log.Error(ctx, "this stream delivers immediately and cannot schedule", nil,
-			telemetry.Fields{"subject": subject, "ttl": o.TTL.String()})
+			observability.Fields{"subject": subject, "ttl": o.TTL.String()})
 		return "", fmt.Errorf("%w: stream %s delivers immediately; use ConnectScheduled or UseScheduled for a TTL", streams.ErrUnsupported, m.stream.ID)
 	}
 
 	channel := m.handler.keys.channel(m.stream.ID, subject)
-	m.handler.log.Debug(ctx, "publishing", telemetry.Fields{
+	m.handler.log.Debug(ctx, "publishing", observability.Fields{
 		"subject": subject, "id": id, "channel": channel, "bytes": len(body),
 	})
 
@@ -74,11 +74,11 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 	// message twice.
 	if err := m.handler.rdb.Publish(ctx, channel, body).Err(); err != nil {
 		m.handler.log.Error(ctx, "could not publish", err,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("redis: cannot publish on %q: %w", subject, err)
 	}
 
-	m.handler.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id})
+	m.handler.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id})
 	return id, nil
 }
 
@@ -94,14 +94,14 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 		// A zero TTL would never expire, so the notification could never fire.
 		// Accepting it silently would strand the subscriber.
 		m.handler.log.Error(ctx, "a scheduled message needs a positive TTL", nil,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return fmt.Errorf("%w: a scheduled message needs a positive TTL, got %v", streams.ErrUnsupported, o.TTL)
 	}
 
 	pending := m.handler.keys.pending(m.stream.ID, subject, id)
 	payload := m.handler.keys.payload(id)
 
-	m.handler.log.Debug(ctx, "scheduling", telemetry.Fields{
+	m.handler.log.Debug(ctx, "scheduling", observability.Fields{
 		"subject": subject, "id": id, "ttl": o.TTL.String(), "pending": pending,
 	})
 
@@ -112,11 +112,11 @@ func (m *streamManager) schedule(ctx context.Context, subject, id string, body [
 	pipe.Set(ctx, pending, id, o.TTL)
 	if _, err := pipe.Exec(ctx); err != nil {
 		m.handler.log.Error(ctx, "could not schedule the message", err,
-			telemetry.Fields{"subject": subject, "id": id})
+			observability.Fields{"subject": subject, "id": id})
 		return fmt.Errorf("redis: cannot schedule on %q: %w", subject, err)
 	}
 
-	m.handler.log.Debug(ctx, "scheduled", telemetry.Fields{"subject": subject, "id": id})
+	m.handler.log.Debug(ctx, "scheduled", observability.Fields{"subject": subject, "id": id})
 	return nil
 }
 
@@ -141,11 +141,11 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...s
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
 		m.handler.log.Error(ctx, "could not subscribe", err,
-			telemetry.Fields{"subject": subject, "channel": channel})
+			observability.Fields{"subject": subject, "channel": channel})
 		return nil, fmt.Errorf("redis: cannot subscribe to %q: %w", subject, err)
 	}
 
-	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject, "channel": channel})
+	m.handler.log.Info(ctx, "subscribed", observability.Fields{"subject": subject, "channel": channel})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -155,7 +155,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...s
 		delivered := 0
 		defer func() {
 			m.handler.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -171,7 +171,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...s
 					// A malformed payload is one bad message, not a reason to
 					// tear down a healthy subscription.
 					m.handler.log.Warn(ctx, "dropping a malformed message",
-						telemetry.Fields{"subject": subject, "error": err.Error()})
+						observability.Fields{"subject": subject, "error": err.Error()})
 					continue
 				}
 				delivered++
@@ -200,12 +200,12 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, 
 	if _, err := sub.Receive(ctx); err != nil {
 		_ = sub.Close()
 		m.handler.log.Error(ctx, "could not subscribe to keyspace events", err,
-			telemetry.Fields{"subject": subject, "channel": channel})
+			observability.Fields{"subject": subject, "channel": channel})
 		return nil, fmt.Errorf("redis: cannot subscribe to keyspace events: %w", err)
 	}
 
 	want := m.handler.keys.pendingPrefix(m.stream.ID, subject)
-	m.handler.log.Info(ctx, "subscribed to scheduled deliveries", telemetry.Fields{
+	m.handler.log.Info(ctx, "subscribed to scheduled deliveries", observability.Fields{
 		"subject": subject, "channel": channel, "prefix": want,
 	})
 
@@ -217,7 +217,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, 
 		delivered := 0
 		defer func() {
 			m.handler.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -239,7 +239,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, 
 				msg, err := m.claim(ctx, subject, id)
 				if err != nil {
 					m.handler.log.Warn(ctx, "could not claim a scheduled payload",
-						telemetry.Fields{"subject": subject, "id": id, "error": err.Error()})
+						observability.Fields{"subject": subject, "id": id, "error": err.Error()})
 					continue
 				}
 				delivered++

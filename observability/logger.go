@@ -4,11 +4,10 @@ import (
 	"context"
 	"maps"
 
-	"github.com/the-protobuf-project/opentelemetry/opentelemetry-go"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
+	telemetrysdk "github.com/the-protobuf-project/telemetry/telemetry-go"
 )
 
-// logger adapts opentelemetry's logger to [telemetry.Logger].
+// logger adapts opentelemetry's logger to [Logger].
 //
 // Two shape differences are reconciled here. The SDK's logger takes no context
 // per call — it carries one, set with WithContext — while the contract passes a
@@ -20,13 +19,13 @@ import (
 // type lives in an internal package: its methods are callable, but the type
 // cannot be named from out here.
 type logger struct {
-	otel  *opentelemetry.Opentelemetry
-	bound telemetry.Fields
+	otel  *telemetrysdk.Telemetry
+	bound Fields
 }
 
-var _ telemetry.Logger = logger{}
+var _ Logger = logger{}
 
-func newLogger(o *opentelemetry.Opentelemetry) telemetry.Logger {
+func newLogger(o *telemetrysdk.Telemetry) Logger {
 	return logger{otel: o}
 }
 
@@ -35,7 +34,7 @@ func newLogger(o *opentelemetry.Opentelemetry) telemetry.Logger {
 //
 // It returns nil when there is nothing to record, so the SDK takes its no-data
 // path rather than emitting an empty attribute set.
-func (l logger) merge(fields telemetry.Fields) map[string]any {
+func (l logger) merge(fields Fields) map[string]any {
 	if len(l.bound) == 0 && len(fields) == 0 {
 		return nil
 	}
@@ -47,7 +46,7 @@ func (l logger) merge(fields telemetry.Fields) map[string]any {
 
 // data adapts merged fields to the variadic the SDK takes. It passes a single
 // map, which is the shape the SDK formats and converts to OTLP attributes.
-func (l logger) data(fields telemetry.Fields) []any {
+func (l logger) data(fields Fields) []any {
 	m := l.merge(fields)
 	if m == nil {
 		return nil
@@ -71,23 +70,23 @@ func (l logger) bind(ctx context.Context) interface {
 	return l.otel.Logger.WithContext(ctx)
 }
 
-func (l logger) Debug(ctx context.Context, msg string, fields telemetry.Fields) {
+func (l logger) Debug(ctx context.Context, msg string, fields Fields) {
 	l.bind(ctx).Debug(msg, l.data(fields)...)
 }
 
-func (l logger) Info(ctx context.Context, msg string, fields telemetry.Fields) {
+func (l logger) Info(ctx context.Context, msg string, fields Fields) {
 	l.bind(ctx).Info(msg, l.data(fields)...)
 }
 
-func (l logger) Warn(ctx context.Context, msg string, fields telemetry.Fields) {
+func (l logger) Warn(ctx context.Context, msg string, fields Fields) {
 	l.bind(ctx).Warn(msg, l.data(fields)...)
 }
 
 // Error records the error under the conventional "error" key, so a handler can
 // find it without knowing which field the caller chose.
-func (l logger) Error(ctx context.Context, msg string, err error, fields telemetry.Fields) {
+func (l logger) Error(ctx context.Context, msg string, err error, fields Fields) {
 	if err != nil {
-		withErr := make(telemetry.Fields, len(fields)+1)
+		withErr := make(Fields, len(fields)+1)
 		maps.Copy(withErr, fields)
 		withErr["error"] = err.Error()
 		fields = withErr
@@ -108,11 +107,11 @@ func (l logger) Error(ctx context.Context, msg string, err error, fields telemet
 //
 // If opentelemetry later exposes its level, this should return the real
 // answer so debug-guarded paths can be skipped outright.
-func (l logger) Enabled(context.Context, telemetry.Level) bool {
+func (l logger) Enabled(context.Context, Level) bool {
 	return true
 }
 
-func (l logger) With(fields telemetry.Fields) telemetry.Logger {
+func (l logger) With(fields Fields) Logger {
 	if len(fields) == 0 {
 		return l
 	}

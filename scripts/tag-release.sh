@@ -42,32 +42,30 @@ cd "$(dirname "$0")/.."
 #   ----  ------              ------------------------------
 #   0     agents              -
 #   0     network             -
-#   0     telemetry           -
 #   0     ulid                -
-#   1     observability       telemetry
-#   2     cache               observability, telemetry, ulid
-#   2     streams             observability, telemetry, ulid
-#   3     database            cache, telemetry, ulid
-#   4     blockchain          database, telemetry
-#   4     interfaces          database, telemetry
-#   4     grpc                agents, observability, telemetry
-#   5     database/examples   cache, database, telemetry, ulid
-#   5     streams/examples    streams, observability, telemetry, ulid
+#   0     observability       -   (telemetry is consumed from the proxy)
+#   1     cache               observability, ulid
+#   1     streams             observability, ulid
+#   2     database            cache, observability, ulid
+#   3     blockchain          database, observability
+#   3     interfaces          database, observability
+#   3     grpc                agents, observability
+#   4     database/examples   cache, database, observability, ulid
+#   4     streams/examples    streams, observability, ulid
 # ---------------------------------------------------------------------------
 
 # Modules whose go.mod resolves entirely from the public proxy today.
 READY=(
   agents
   network
-  telemetry
   ulid
+  observability
 )
 
 # Modules with at least one sibling require that cannot resolve outside the
 # workspace -- either the placeholder v0.0.0-00010101000000-000000000000 or a
 # bare v0.0.0. Tagging these produces artifacts that fail `go get` immediately.
 BLOCKED=(
-  observability
   cache
   streams
   database

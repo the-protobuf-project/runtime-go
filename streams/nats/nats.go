@@ -3,13 +3,13 @@ package nats
 import (
 	"context"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
 
 	gonats "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Option configures a [Connect] or [ConnectJetStream].
@@ -17,21 +17,21 @@ type Option func(*config)
 
 type config struct {
 	codec streams.Codec
-	log   telemetry.Logger
-	meter telemetry.Meter
+	log   observability.Logger
+	meter observability.Meter
 	queue string
 }
 
 // WithLogger sets where these streams write their own records — which subject a
 // publish went to, which consumer attached where. Defaults to
-// [telemetry.NoopLogger].
-func WithLogger(log telemetry.Logger) Option {
+// [observability.NoopLogger].
+func WithLogger(log observability.Logger) Option {
 	return func(c *config) { c.log = log }
 }
 
 // WithMeter sets where these streams report their own measurements. Defaults to
-// [telemetry.NoopMeter].
-func WithMeter(m telemetry.Meter) Option {
+// [observability.NoopMeter].
+func WithMeter(m observability.Meter) Option {
 	return func(c *config) { c.meter = m }
 }
 
@@ -62,15 +62,15 @@ func WithCodec(c streams.Codec) Option {
 }
 
 func newConfig(opts ...Option) config {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter}
+	cfg := config{log: observability.NoopLogger, meter: observability.NoopMeter}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	if cfg.log == nil {
-		cfg.log = telemetry.NoopLogger
+		cfg.log = observability.NoopLogger
 	}
 	if cfg.meter == nil {
-		cfg.meter = telemetry.NoopMeter
+		cfg.meter = observability.NoopMeter
 	}
 	return cfg
 }

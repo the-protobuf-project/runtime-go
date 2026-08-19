@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"log"
 	"log/slog"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/nats"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 type event struct {
@@ -24,8 +24,8 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	logger := telemetry.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
-		&slog.HandlerOptions{Level: slog.Level(telemetry.LevelInfo)})))
+	logger := observability.NewSlogLogger(slog.New(slog.NewTextHandler(os.Stdout,
+		&slog.HandlerOptions{Level: slog.Level(observability.LevelInfo)})))
 
 	runCore(ctx, logger)
 	runJetStream(ctx, logger)
@@ -34,7 +34,7 @@ func main() {
 }
 
 // runCore shows core NATS: delivery to whoever is listening, and nothing kept.
-func runCore(ctx context.Context, logger telemetry.Logger) {
+func runCore(ctx context.Context, logger observability.Logger) {
 	log.Println("--- core NATS ---")
 
 	const subject = "user.created"
@@ -98,7 +98,7 @@ func runCore(ctx context.Context, logger telemetry.Logger) {
 }
 
 // runJetStream shows the same contract backed by a stored log.
-func runJetStream(ctx context.Context, logger telemetry.Logger) {
+func runJetStream(ctx context.Context, logger observability.Logger) {
 	log.Println("--- JetStream ---")
 
 	const subject = "order.placed"

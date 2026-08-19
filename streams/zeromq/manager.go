@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"time"
 
 	"github.com/go-zeromq/zmq4"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // manager publishes to and subscribes from one stream.
@@ -28,7 +28,7 @@ func (m *manager) checkSubject(ctx context.Context, subject string) error {
 	if core.Declares(m.stream.Subjects, subject) {
 		return nil
 	}
-	m.store.log.Error(ctx, "subject is not declared by this stream", nil, telemetry.Fields{
+	m.store.log.Error(ctx, "subject is not declared by this stream", nil, observability.Fields{
 		"subject": subject, "stream": m.stream.ID, "declared": m.stream.Subjects,
 	})
 	return core.ErrSubject(m.stream.ID, subject, m.stream.Subjects)
@@ -79,11 +79,11 @@ func (m *manager) Publish(ctx context.Context, subject string, value any, opts .
 	}
 
 	if err := m.store.pub.SendMulti(zmq4.NewMsgFrom([]byte(m.topic(subject)), body)); err != nil {
-		m.store.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
+		m.store.log.Error(ctx, "could not publish", err, observability.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("zeromq: cannot publish on %q: %w", subject, err)
 	}
 
-	m.store.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
+	m.store.log.Debug(ctx, "published", observability.Fields{"subject": subject, "id": id, "bytes": len(body)})
 	return id, nil
 }
 
@@ -121,7 +121,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, ctx.Err()
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.store.log.Info(ctx, "subscribed", observability.Fields{
 		"subject": subject, "endpoint": m.store.endpoint, "topic": topic,
 	})
 
@@ -137,7 +137,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		delivered := 0
 		defer func() {
 			m.store.log.Info(ctx, "subscription closed",
-				telemetry.Fields{"subject": subject, "delivered": delivered})
+				observability.Fields{"subject": subject, "delivered": delivered})
 		}()
 
 		for {
@@ -146,13 +146,13 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 				// A closed socket is how a canceled subscription ends.
 				if ctx.Err() == nil && !errors.Is(err, context.Canceled) {
 					m.store.log.Error(ctx, "could not receive", err,
-						telemetry.Fields{"subject": subject})
+						observability.Fields{"subject": subject})
 				}
 				return
 			}
 			if len(msg.Frames) < 2 {
 				m.store.log.Warn(ctx, "dropping a message with no payload frame",
-					telemetry.Fields{"subject": subject, "frames": len(msg.Frames)})
+					observability.Fields{"subject": subject, "frames": len(msg.Frames)})
 				continue
 			}
 
@@ -161,7 +161,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 				// One bad message is not a reason to tear down a healthy
 				// subscription.
 				m.store.log.Warn(ctx, "dropping a malformed message",
-					telemetry.Fields{"subject": subject, "error": derr.Error()})
+					observability.Fields{"subject": subject, "error": derr.Error()})
 				continue
 			}
 

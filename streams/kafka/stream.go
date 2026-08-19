@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/the-protobuf-project/runtime-go/observability"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/core"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -38,7 +38,7 @@ type streamStore struct {
 	cfg      config
 	cl       *kgo.Client
 	admin    *kadm.Client
-	log      telemetry.Logger
+	log      observability.Logger
 }
 
 var (
@@ -124,7 +124,7 @@ func (s *streamStore) Create(ctx context.Context, in streams.Stream) (streams.St
 		return streams.Stream{}, err
 	}
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
+	s.log.Info(ctx, "stream created", observability.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
 	return out, nil
 }
 
@@ -222,7 +222,7 @@ func (s *streamStore) readMetaAll(ctx context.Context) (map[string]streams.Strea
 			var stream streams.Stream
 			if err := json.Unmarshal(rec.Value, &stream); err != nil {
 				s.log.Warn(ctx, "skipping malformed stream metadata",
-					telemetry.Fields{"id": id, "error": err.Error()})
+					observability.Fields{"id": id, "error": err.Error()})
 				return
 			}
 			out[id] = stream
@@ -250,7 +250,7 @@ func (s *streamStore) Bind(ctx context.Context, id string) (streams.Manager, err
 	if err != nil {
 		return nil, err
 	}
-	s.log.Debug(ctx, "bound to stream", telemetry.Fields{"id": stream.ID, "subjects": stream.Subjects})
+	s.log.Debug(ctx, "bound to stream", observability.Fields{"id": stream.ID, "subjects": stream.Subjects})
 	return &manager{store: s, stream: stream}, nil
 }
 
@@ -280,7 +280,7 @@ func (s *streamStore) Update(ctx context.Context, id string, in streams.Stream) 
 		return streams.Stream{}, err
 	}
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": name})
+	s.log.Info(ctx, "stream updated", observability.Fields{"id": name})
 	return out, nil
 }
 
@@ -306,7 +306,7 @@ func (s *streamStore) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": name})
+	s.log.Info(ctx, "stream deleted", observability.Fields{"id": name})
 	return nil
 }
 
@@ -323,7 +323,7 @@ func (s *streamStore) List(ctx context.Context) ([]streams.Stream, error) {
 	}
 	slices.SortFunc(out, func(a, b streams.Stream) int { return strings.Compare(a.ID, b.ID) })
 
-	s.log.Debug(ctx, "listed streams", telemetry.Fields{"count": len(out)})
+	s.log.Debug(ctx, "listed streams", observability.Fields{"count": len(out)})
 	return out, nil
 }
 
