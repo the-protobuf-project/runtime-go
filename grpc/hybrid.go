@@ -24,6 +24,7 @@ type HybridServer struct {
 	grpcServer       *grpc.Server                  // gRPC server instance
 	httpServer       *http.Server                  // HTTP/1.1 server
 	mux              *runtime.ServeMux             // grpc-gateway mux
+	httpHandler      http.Handler                  // replaces the gateway mux when set (WithHTTPHandler)
 	http3Server      *http3.Server                 // experimental HTTP/3 server
 	agentRuntime     *agents.Runtime               // the one runtime serving MCP and A2A (nil when neither is on)
 	agentCancel      context.CancelFunc            // stops the agent protocols' goroutines
@@ -96,7 +97,7 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 		shared.Telemetry().Logger.Debugf("NewHybridServer: HTTP/3 experimental enabled — pre-creating http3.Server on port %d", opts.HTTP.Port+1)
 		s.http3Server = &http3.Server{
 			Addr:    fmt.Sprintf("%s:%d", opts.HTTP.Host, opts.HTTP.Port+1),
-			Handler: s.mux,
+			Handler: s.serveHandler(),
 		}
 	}
 

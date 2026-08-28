@@ -3,7 +3,6 @@ package grpc
 import (
 	"crypto/tls"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"time"
 
@@ -50,7 +49,7 @@ func (s *HybridServer) startHTTPGateway() error {
 		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
 		s.httpServer = &http.Server{
 			Addr:              httpAddr,
-			Handler:           s.mux,
+			Handler:           s.serveHandler(),
 			ReadHeaderTimeout: 30 * time.Second,
 			TLSConfig: &tls.Config{
 				Certificates: []tls.Certificate{*s.cert},
@@ -66,7 +65,7 @@ func (s *HybridServer) startHTTPGateway() error {
 		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTP server on %s (plaintext)", httpAddr)
 		s.httpServer = &http.Server{
 			Addr:              httpAddr,
-			Handler:           s.mux,
+			Handler:           s.serveHandler(),
 			ReadHeaderTimeout: 30 * time.Second,
 		}
 		go func() {
@@ -83,23 +82,15 @@ func (s *HybridServer) startHTTPGateway() error {
 	return nil
 }
 
-// registerHealthzHandler adds GET /health to the grpc-gateway mux. It always
-// returns 200 with a small JSON payload and a randomized friendly message.
+// registerHealthzHandler adds GET /health to the grpc-gateway mux.
+//
+// The handler is the same one [serveHandler] mounts for a replaced gateway, so the endpoint
+// answers identically whichever HTTP layer is in front of it.
 func (s *HybridServer) registerHealthzHandler(gw *runtime.ServeMux) error {
-	messages := []string{
-		"I'm doing fine, bro. Don't worry. 🌱",
-		"Still alive and kicking. 🚀",
-		"All systems nominal. 👍",
-		"Healthy as a horse. 🐴",
-		"Feeling great, thanks for asking. 😎",
-	}
-
+	healthz := healthzHandler()
 	return gw.HandlePath("GET", "/health",
 		func(w http.ResponseWriter, r *http.Request, _ map[string]string) {
-			shared.Telemetry().Logger.Debugf("HTTP/1.1: GET /health from %s", r.RemoteAddr)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_, _ = fmt.Fprintf(w, `{"status":"ok","message":"%s"}`, messages[rand.Intn(len(messages))])
+			healthz(w, r)
 		},
 	)
 }
