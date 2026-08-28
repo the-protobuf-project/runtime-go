@@ -41,10 +41,10 @@ require (
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260811033724-b8e7523ac75a // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.13.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
-	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )
 
 replace github.com/the-protobuf-project/runtime-go/streams => ../
