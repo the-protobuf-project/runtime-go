@@ -33,7 +33,7 @@ func (s *HybridServer) startHTTP3ExperimentalServer() {
 
 	s.http3Server = &http3.Server{
 		Addr:      addr,
-		Handler:   s.mux,
+		Handler:   s.serveHandler(),
 		TLSConfig: tlsConf,
 	}
 	shared.Telemetry().Logger.Debugf("HTTP/3: server instance created, reusing grpc-gateway mux")

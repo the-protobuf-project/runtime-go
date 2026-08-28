@@ -19,6 +19,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`agents/shared`](agents/shared) | `github.com/the-protobuf-project/runtime-go/agents/shared` | Package shared holds what every protocol runtime in this module would otherwise copy. |
 | [`blockchain/evm`](blockchain/evm) | `github.com/the-protobuf-project/runtime-go/blockchain/evm` | Package evm implements the backend-agnostic store.Driver against an EVM chain, driving the Solidity storage contracts protorm generates. |
 | [`blockchain/fabric`](blockchain/fabric) | `github.com/the-protobuf-project/runtime-go/blockchain/fabric` | Package fabric is a placeholder store.Driver for Hyperledger Fabric chaincode. |
+| [`buffers`](buffers) | `github.com/the-protobuf-project/runtime-go/buffers` | Package buffers is the Go runtime for the converters protoc-gen-buffers generates: the half of a proto-to-FlatBuffers-or-Cap'n-Proto conversion that does not depend on which message is being converted. |
 | [`cache`](cache) | `github.com/the-protobuf-project/runtime-go/cache` | Package cache is the contract for runtime-go's cache layer: the interfaces, and nothing that implements them. |
 | [`cache/core`](cache/core) | `github.com/the-protobuf-project/runtime-go/cache/core` | Package core implements every cache strategy once, over a Driver. |
 | [`cache/dragonfly`](cache/dragonfly) | `github.com/the-protobuf-project/runtime-go/cache/dragonfly` | Package dragonfly is the Dragonfly preset. |

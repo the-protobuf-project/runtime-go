@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"io/fs"
+	"net/http"
 
 	"github.com/the-protobuf-project/runtime-go/agents/a2a"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
@@ -135,4 +136,28 @@ func (s *HybridServer) WithGrafanaFS(fsys fs.FS, dir string) *HybridServer {
 	s.dashboardFS = fsys
 	s.dashboardFSDir = dir
 	return s
+}
+
+// WithHTTPHandler serves h instead of the grpc-gateway mux on the HTTP/1.1 and HTTP/3
+// listeners.
+//
+// It is the seam for a generated HTTP/JSON layer — the route table
+// [github.com/the-protobuf-project/http] emits is an http.Handler, so it mounts here — and for
+// any other handler a caller would rather serve. GET /health is kept alongside it, because a
+// caller replacing the gateway should not have to remember to re-add the endpoint a load
+// balancer probes.
+//
+// Handlers registered with [WithHTTPGateways] are not served while this is set: the two are
+// alternative HTTP layers over the same gRPC services, and running both would leave which one
+// answered a path depending on registration order. A caller wanting both composes them and
+// passes the result here.
+//
+//	srv := grpc.NewHybridServer(opts,
+//	    grpc.WithHTTPHandler(transcode.New(routes.Table, codecs, dispatcher, "example.com")),
+//	)
+func WithHTTPHandler(h http.Handler) Option {
+	return func(s *HybridServer) {
+		shared.Telemetry().Logger.Debugf("WithHTTPHandler: serving a caller-supplied HTTP handler")
+		s.httpHandler = h
+	}
 }
