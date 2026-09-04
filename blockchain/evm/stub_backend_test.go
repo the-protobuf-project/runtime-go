@@ -51,6 +51,9 @@ func (stubBackend) EstimateGas(context.Context, ethereum.CallMsg) (uint64, error
 func (stubBackend) SendTransaction(context.Context, *types.Transaction) error {
 	return errUnexpectedCall
 }
+func (stubBackend) TransactionByHash(context.Context, common.Hash) (*types.Transaction, bool, error) {
+	return nil, false, errUnexpectedCall
+}
 
 // ContractFilterer.
 func (stubBackend) FilterLogs(context.Context, ethereum.FilterQuery) ([]types.Log, error) {
