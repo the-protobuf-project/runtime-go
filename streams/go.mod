@@ -6,14 +6,14 @@ require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
-	github.com/nats-io/nats-server/v2 v2.14.4
-	github.com/nats-io/nats.go v1.52.0
-	github.com/rabbitmq/amqp091-go v1.13.0
-	github.com/redis/go-redis/v9 v9.18.0
+	github.com/nats-io/nats-server/v2 v2.14.6
+	github.com/nats-io/nats.go v1.53.1
+	github.com/rabbitmq/amqp091-go v1.14.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
 	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-00010101000000-000000000000
-	github.com/twmb/franz-go v1.21.5
+	github.com/twmb/franz-go v1.21.6
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260811033724-b8e7523ac75a
 	google.golang.org/protobuf v1.36.12
@@ -32,7 +32,6 @@ require (
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/foxglove/mcap/go/mcap v1.9.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
@@ -46,8 +45,7 @@ require (
 	github.com/grafana/pyroscope-go v1.4.1 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.12 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
-	github.com/klauspost/compress v1.19.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/knadh/koanf/parsers/json v1.0.0 // indirect
 	github.com/knadh/koanf/parsers/toml v0.1.0 // indirect
