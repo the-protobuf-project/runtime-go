@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"testing"
 	"time"
 
@@ -26,38 +25,37 @@ type event struct {
 const subject = "user/created"
 
 // testBroker starts a broker on a free port and returns its address.
+//
+// The port comes from mochi rather than being reserved here. AddListener calls
+// the listener's Init, which binds the socket synchronously, and TCP.Address
+// then reports the port the kernel chose -- so by the time this returns the
+// socket is bound and the backlog is accepting, whether or not Serve's accept
+// loop has been scheduled yet.
+//
+// The two things that replaced were both races. Reserving a port with our own
+// listener and closing it before handing mochi the address left a window for
+// anything else on the machine to take it. Dialing afterwards to check the
+// broker was up was worse: it left a connection that sent no CONNECT packet,
+// so mochi was still inside EstablishConnection for it when the cleanup below
+// called Close, and those two race on the server's own fields inside the
+// library (server.go:401 against server.go:1499 in v2.7.9). That surfaced as
+// an intermittent "race detected during execution of test" in CI, on
+// whichever test happened to finish fastest.
 func testBroker(t *testing.T) string {
 	t.Helper()
-
-	var lc net.ListenConfig
-	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve a port: %v", err)
-	}
-	addr := ln.Addr().String()
-	_ = ln.Close()
 
 	srv := mochi.New(&mochi.Options{InlineClient: true})
 	if err := srv.AddHook(new(auth.AllowHook), nil); err != nil {
 		t.Fatalf("AddHook: %v", err)
 	}
-	if err := srv.AddListener(listeners.NewTCP(listeners.Config{ID: "t", Address: addr})); err != nil {
+	ln := listeners.NewTCP(listeners.Config{ID: "t", Address: "127.0.0.1:0"})
+	if err := srv.AddListener(ln); err != nil {
 		t.Fatalf("AddListener: %v", err)
 	}
 	go func() { _ = srv.Serve() }()
 	t.Cleanup(func() { _ = srv.Close() })
 
-	// Wait for it to accept, so Connect does not race the listener.
-	for range 50 {
-		d := net.Dialer{Timeout: 200 * time.Millisecond}
-		if c, derr := d.DialContext(t.Context(), "tcp", addr); derr == nil {
-			_ = c.Close()
-			return addr
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatal("the broker never came up")
-	return ""
+	return ln.Address()
 }
 
 func testStreams(t *testing.T, opts ...streamsmqtt.Option) streams.Streams {
