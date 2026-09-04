@@ -34,8 +34,12 @@ jobs:
     name: Enable auto-merge
     runs-on: ubuntu-latest
     # The actor check is the security boundary: it is what stops this from
-    # arming auto-merge on a pull request opened by anyone else.
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # arming auto-merge on a pull request opened by anyone else. The
+    # repository check keeps it from running in a fork, where it would fail
+    # noisily on every Dependabot pull request the fork receives.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'the-protobuf-project/runtime-go'
 
     steps:
       - name: Enable auto-merge
