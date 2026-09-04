@@ -31,7 +31,7 @@ func TestServeHandler_MountsTheSuppliedHandler(t *testing.T) {
 	s := NewHybridServer(options.Options{ServiceName: "test"}, WithHTTPHandler(stubHandler()))
 
 	rec := httptest.NewRecorder()
-	s.serveHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/artists", nil))
+	s.serveHandler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/artists", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("generated route should answer, got %d", rec.Code)
@@ -45,7 +45,7 @@ func TestServeHandler_KeepsHealthAlongsideIt(t *testing.T) {
 	s := NewHybridServer(options.Options{ServiceName: "test"}, WithHTTPHandler(stubHandler()))
 
 	rec := httptest.NewRecorder()
-	s.serveHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
+	s.serveHandler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/health", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/health must survive a replaced gateway, got %d", rec.Code)
@@ -69,7 +69,7 @@ func TestServeHandler_UnroutedPathIsNotFound(t *testing.T) {
 	s := NewHybridServer(options.Options{ServiceName: "test"}, WithHTTPHandler(stubHandler()))
 
 	rec := httptest.NewRecorder()
-	s.serveHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/v1/nothing", nil))
+	s.serveHandler().ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/v1/nothing", nil))
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("an unrouted path should 404, got %d", rec.Code)
@@ -83,10 +83,10 @@ func TestServeHandler_IsTheSameForEveryTransport(t *testing.T) {
 
 	for _, path := range []string{"/v1/artists", "/health", "/v1/nothing"} {
 		first := httptest.NewRecorder()
-		s.serveHandler().ServeHTTP(first, httptest.NewRequest(http.MethodGet, path, nil))
+		s.serveHandler().ServeHTTP(first, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 
 		second := httptest.NewRecorder()
-		s.serveHandler().ServeHTTP(second, httptest.NewRequest(http.MethodGet, path, nil))
+		s.serveHandler().ServeHTTP(second, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
 
 		if first.Code != second.Code {
 			t.Fatalf("%s: transports disagree (%d vs %d)", path, first.Code, second.Code)

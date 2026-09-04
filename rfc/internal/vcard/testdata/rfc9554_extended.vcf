@@ -1,0 +1,8 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:Jane Maria Rodríguez García
+N:Rodríguez;Jane;Maria;Dr;PhD;García;Jr
+ADR;TYPE=billing:;;1 Example Way;Springfield;IL;62704;USA;Room 4;Apt 2B;3;1;E
+ xample Way;Tower A;Block C;Northside;Sangamon;By the fountain;NW
+ADR;TYPE=home:;;9 Plain Street;Springfield;IL;62704;USA
+END:VCARD

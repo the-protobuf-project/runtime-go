@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Test//EN
+BEGIN:VEVENT
+UID:escapes@example.com
+DTSTART:20260101T120000Z
+DURATION:P1DT2H30M
+SUMMARY:Escapes\, semicolons\; and\nnewlines
+DESCRIPTION:Line one\nLine two with a backslash \\ and a comma\, here
+END:VEVENT
+END:VCALENDAR

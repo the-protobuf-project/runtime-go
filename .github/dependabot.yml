@@ -1,6 +1,19 @@
 version: 2
+
+# One entry per workspace module, because Dependabot keys updates on a
+# directory containing a go.mod and go.work does not make it look inside.
+# The list must track go.work: an entry naming a directory that no longer
+# exists fails its update run every week, and a module missing from the list
+# is silently never updated at all. Both had happened -- /config,
+# /resourcename and /system were failing runs, and eleven live modules were
+# getting nothing.
+#
+# Updates are grouped so one run produces one pull request per module rather
+# than one per dependency. With auto-merge enabled (see
+# .github/workflows/dependabot-auto-merge.yml) that is the difference between
+# a handful of merges a week and several dozen.
+
 updates:
-  # GitHub Actions
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -9,43 +22,88 @@ updates:
       prefix: "chore(ci)"
     labels:
       - dependencies
+    groups:
+      actions:
+        patterns:
+          - "*"
 
-  # Go modules — one entry per workspace module
   - package-ecosystem: gomod
-    directory: /ulid
+    directory: /agents
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/ulid)"
+      prefix: "chore(deps/agents)"
     labels:
       - dependencies
+    groups:
+      agents:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
-    directory: /resourcename
+    directory: /blockchain
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/resourcename)"
+      prefix: "chore(deps/blockchain)"
     labels:
       - dependencies
+    groups:
+      blockchain:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
-    directory: /config
+    directory: /buffers
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/config)"
+      prefix: "chore(deps/buffers)"
     labels:
       - dependencies
+    groups:
+      buffers:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
-    directory: /network
+    directory: /cache
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/network)"
+      prefix: "chore(deps/cache)"
     labels:
       - dependencies
+    groups:
+      cache:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /database
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/database)"
+    labels:
+      - dependencies
+    groups:
+      database:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /database/examples
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/database/examples)"
+    labels:
+      - dependencies
+    groups:
+      database-examples:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
     directory: /grpc
@@ -55,12 +113,111 @@ updates:
       prefix: "chore(deps/grpc)"
     labels:
       - dependencies
+    groups:
+      grpc:
+        patterns:
+          - "*"
 
   - package-ecosystem: gomod
-    directory: /system
+    directory: /interfaces
     schedule:
       interval: weekly
     commit-message:
-      prefix: "chore(deps/system)"
+      prefix: "chore(deps/interfaces)"
     labels:
       - dependencies
+    groups:
+      interfaces:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /network
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/network)"
+    labels:
+      - dependencies
+    groups:
+      network:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /observability
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/observability)"
+    labels:
+      - dependencies
+    groups:
+      observability:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /rfc
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/rfc)"
+    labels:
+      - dependencies
+    groups:
+      rfc:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /streams
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/streams)"
+    labels:
+      - dependencies
+    groups:
+      streams:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /streams/examples
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/streams/examples)"
+    labels:
+      - dependencies
+    groups:
+      streams-examples:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /telemetry
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/telemetry)"
+    labels:
+      - dependencies
+    groups:
+      telemetry:
+        patterns:
+          - "*"
+
+  - package-ecosystem: gomod
+    directory: /ulid
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "chore(deps/ulid)"
+    labels:
+      - dependencies
+    groups:
+      ulid:
+        patterns:
+          - "*"

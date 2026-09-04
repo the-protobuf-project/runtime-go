@@ -1,0 +1,51 @@
+name: Dependabot auto-merge
+
+# Arms GitHub's native auto-merge on Dependabot's pull requests, so each one
+# merges by itself once the CI gate reports green and stays open if it does
+# not. Nothing here decides whether the code is good; the required status
+# check on main does that, and this only says "merge when it passes".
+#
+# Two settings outside this file are load-bearing and it stops working if
+# either is turned off:
+#
+#   - "Allow auto-merge" on the repository. Without it `gh pr merge --auto`
+#     fails outright.
+#   - A required status check on main. Auto-merge can only be armed on a pull
+#     request that something is currently blocking -- with no required check a
+#     PR is already mergeable and GitHub rejects the request rather than
+#     merging. `CI gate` is that check; it is the ci.yml job that depends on
+#     every test, lint and docs job.
+#
+# Requiring a review would break this: Dependabot cannot approve its own pull
+# request, so main requires a PR with zero approvals rather than one.
+
+on: pull_request
+
+# Workflow runs that Dependabot triggers get a read-only GITHUB_TOKEN by
+# default, which cannot enable auto-merge. This grants the two scopes it
+# needs and nothing else. No repository code is checked out or executed here,
+# so the elevated token never runs anything from the pull request.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    runs-on: ubuntu-latest
+    # The actor check is the security boundary: it is what stops this from
+    # arming auto-merge on a pull request opened by anyone else.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+
+    steps:
+      - name: Enable auto-merge
+        # Every update type, majors included -- a deliberate choice, on the
+        # basis that the CI gate runs the full test and lint suite for every
+        # module. A major bump that compiles, passes and lints still merges
+        # without a human reading the changelog, so if that ever stops being
+        # acceptable, gate this step on dependabot/fetch-metadata's
+        # update-type output.
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

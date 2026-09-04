@@ -11,6 +11,7 @@ use (
 	./interfaces
 	./network
 	./observability
+	./rfc
 	./streams
 	./streams/examples
 	./telemetry
