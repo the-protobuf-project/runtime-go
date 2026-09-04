@@ -12,7 +12,7 @@ go 1.26.4
 
 require (
 	github.com/glebarez/sqlite v1.11.0
-	github.com/redis/go-redis/v9 v9.18.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/database v0.0.0
 	google.golang.org/protobuf v1.36.12
@@ -24,9 +24,7 @@ require (
 	github.com/arangodb/go-driver/v2 v2.3.1 // indirect
 	github.com/arangodb/go-velocypack v0.0.0-20200318135517-5af53c29c67e // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
