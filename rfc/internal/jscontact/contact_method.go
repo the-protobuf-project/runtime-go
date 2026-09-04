@@ -5,6 +5,7 @@ package jscontact
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go/protobuf/rfc6350/vcard/v1"
@@ -241,13 +242,45 @@ func featuresToVcard(fs []cardv1.PhoneFeature) []vcardv1.Feature {
 // different order each run would make every round-trip comparison flaky. This
 // repository has already shipped that bug once, in the VAVAILABILITY codec --
 // see docs/codec-findings-calendar.md.
+// sortedKeys orders map keys deterministically, digits compared by value.
+//
+// Plain lexicographic order is wrong for the keys id() generates: "e1", "e2",
+// ... "e10" sorts as e1, e10, e2, so a contact with ten or more emails came
+// back out in a different order than it went in. Splitting the trailing digits
+// and comparing them numerically keeps e9 before e10 while leaving keys that
+// are not of that shape in ordinary lexicographic order.
 func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	sort.Slice(keys, func(i, j int) bool {
+		pi, ni, oki := splitTrailingNumber(keys[i])
+		pj, nj, okj := splitTrailingNumber(keys[j])
+		if oki && okj && pi == pj {
+			return ni < nj
+		}
+		return keys[i] < keys[j]
+	})
 	return keys
+}
+
+// splitTrailingNumber splits a key into its leading text and trailing digits.
+// ok is false when there are no trailing digits, or so many that the suffix is
+// not a number worth comparing.
+func splitTrailingNumber(s string) (prefix string, n int, ok bool) {
+	i := len(s)
+	for i > 0 && s[i-1] >= '0' && s[i-1] <= '9' {
+		i--
+	}
+	if i == len(s) {
+		return s, 0, false
+	}
+	n, err := strconv.Atoi(s[i:])
+	if err != nil {
+		return s, 0, false
+	}
+	return s[:i], n, true
 }
 
 func firstNonEmpty(vs ...string) string {

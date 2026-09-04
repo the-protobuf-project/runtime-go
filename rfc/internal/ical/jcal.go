@@ -121,7 +121,11 @@ func jcalProperty(l contentline.Line) ([]any, error) {
 		}
 		return append(prop, vals...), nil
 	case "recur":
-		return append(prop, recurToObject(l.Value)), nil
+		obj, err := recurToObject(l.Value)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", l.Name, err)
+		}
+		return append(prop, obj), nil
 	case "integer":
 		n, err := strconv.ParseInt(strings.TrimSpace(l.Value), 10, 32)
 		if err != nil {

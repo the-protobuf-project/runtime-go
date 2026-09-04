@@ -98,7 +98,7 @@ func extendedToBasic(v string) (string, error) {
 
 // recurToObject turns an RRULE string into jCal's object form, section 3.5.10.
 // Rule-part names are lowercased; a part with several values becomes an array.
-func recurToObject(v string) map[string]any {
+func recurToObject(v string) (map[string]any, error) {
 	obj := map[string]any{}
 	for _, part := range strings.Split(v, ";") {
 		k, val, ok := strings.Cut(part, "=")
@@ -106,6 +106,23 @@ func recurToObject(v string) map[string]any {
 			continue
 		}
 		k = strings.ToLower(k)
+
+		// Section 3.5.10: "The value of the 'until' rule part MUST be a date
+		// or date-time value formatted in accordance to the rules for date or
+		// date-time specified in this document" -- so extended form, and a
+		// string either way. It has to be taken before numberOrString, which
+		// parsed the DATE form "20131001" as the JSON number 20131001, and
+		// left the DATE-TIME form in iCalendar's basic form because Atoi
+		// happened to fail on it.
+		if k == "until" {
+			ext, err := basicToExtended(val)
+			if err != nil {
+				return nil, fmt.Errorf("RRULE UNTIL: %w", err)
+			}
+			obj[k] = ext
+			continue
+		}
+
 		vals := strings.Split(val, ",")
 		if len(vals) == 1 {
 			obj[k] = numberOrString(vals[0])
@@ -117,7 +134,7 @@ func recurToObject(v string) map[string]any {
 		}
 		obj[k] = arr
 	}
-	return obj
+	return obj, nil
 }
 
 // numberOrString keeps numeric rule parts numeric. Section 3.5.10 types
@@ -132,7 +149,7 @@ func numberOrString(s string) any {
 
 // objectToRecur is the inverse. Parts are emitted in a fixed order so output
 // is diffable; section 3.3.10 fixes no order.
-func objectToRecur(obj map[string]any) string {
+func objectToRecur(obj map[string]any) (string, error) {
 	order := []string{
 		"freq", "until", "count", "interval",
 		"bysecond", "byminute", "byhour", "byday",
@@ -140,13 +157,25 @@ func objectToRecur(obj map[string]any) string {
 	}
 	seen := map[string]bool{}
 	var parts []string
+	var err error
 	emit := func(k string) {
 		v, ok := obj[k]
-		if !ok || seen[k] {
+		if !ok || seen[k] || err != nil {
 			return
 		}
 		seen[k] = true
-		parts = append(parts, strings.ToUpper(k)+"="+recurValue(v))
+		val := recurValue(v)
+		// The inverse of the UNTIL rule above: jCal carries it extended, the
+		// content line carries it basic.
+		if k == "until" {
+			var b string
+			if b, err = extendedToBasic(val); err != nil {
+				err = fmt.Errorf("RRULE UNTIL: %w", err)
+				return
+			}
+			val = b
+		}
+		parts = append(parts, strings.ToUpper(k)+"="+val)
 	}
 	for _, k := range order {
 		emit(k)
@@ -162,7 +191,10 @@ func objectToRecur(obj map[string]any) string {
 	for _, k := range rest {
 		emit(k)
 	}
-	return strings.Join(parts, ";")
+	if err != nil {
+		return "", err
+	}
+	return strings.Join(parts, ";"), nil
 }
 
 func recurValue(v any) string {

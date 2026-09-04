@@ -79,12 +79,17 @@ func xcardProperty(l contentline.Line) node {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			// Each parameter wraps its values in a type element,
-			// section 3.3: <type><text>work</text></type>.
-			pn := node{XMLName: xml.Name{Local: strings.ToLower(k)}}
+			// Each parameter wraps its values in a value element,
+			// section 3.3: <type><text>work</text></type>. Which element
+			// depends on the parameter -- section 5's schema gives PREF an
+			// <integer> and LANGUAGE a <language-tag>, and writing <text> for
+			// every one produced a document that fails the RELAX NG schema
+			// RFC 6351 appendix A defines.
+			name := strings.ToLower(k)
+			pn := node{XMLName: xml.Name{Local: name}}
 			for _, v := range l.Params[k] {
 				pn.Children = append(pn.Children, node{
-					XMLName:  xml.Name{Local: "text"},
+					XMLName:  xml.Name{Local: xcardParamValueType(name)},
 					Chardata: v,
 				})
 			}
@@ -94,6 +99,16 @@ func xcardProperty(l contentline.Line) node {
 	}
 
 	valueType := xcardValueType(l)
+
+	// An <unknown> value carries the unprocessed value text, so it is neither
+	// split nor unescaped.
+	if valueType == "unknown" {
+		p.Children = append(p.Children, node{
+			XMLName:  xml.Name{Local: "unknown"},
+			Chardata: l.Value,
+		})
+		return p
+	}
 
 	if names, ok := namedComponents[l.Name]; ok {
 		for i, part := range contentline.SplitUnescaped(l.Value, ';') {
@@ -129,6 +144,29 @@ func xcardProperty(l contentline.Line) node {
 	return p
 }
 
+// xcardParamValueType is the value element a parameter's values are wrapped
+// in, from section 5's schema:
+//
+//	5.2  param-pref     = element pref { element integer { 1..100 } }
+//	5.1  param-language = element language { value-language-tag }
+//	5.10 param-geo      = element geo { value-uri }
+//	5.11 param-tz       = element tz { value-text | value-uri }
+//
+// Everything else -- ALTID, PID, TYPE, MEDIATYPE, CALSCALE, SORT-AS -- takes
+// value-text. TZ is given <text>, which its schema permits either way, since
+// a TZ parameter is as often a zone name as a URI.
+func xcardParamValueType(name string) string {
+	switch name {
+	case "pref":
+		return "integer"
+	case "language":
+		return "language-tag"
+	case "geo":
+		return "uri"
+	}
+	return "text"
+}
+
 // xcardValueType is the element a value is wrapped in, section 3.3. Mirrors
 // jcardType's defaulting exactly; the two encodings share the same VALUE
 // semantics, just a different container.
@@ -145,6 +183,14 @@ func xcardValueType(l contentline.Line) string {
 	if l.Name == "LANG" {
 		return "language-tag"
 	}
+	// Section 4: "Any property that does not include a 'VALUE' parameter and
+	// whose default value type is not known MUST be converted using the value
+	// type XML element <unknown>. The content of that element is the
+	// unprocessed value text." The same rule RFC 7095 section 5.1 states for
+	// jCard, and for the same reason -- <text> would re-escape the value.
+	if !knownDefault[l.Name] {
+		return "unknown"
+	}
 	return "text"
 }
 
@@ -157,7 +203,10 @@ func DecodeXCard(data []byte) (*vcardv1.Contact, error) {
 	if doc.XMLName.Local != "vcards" {
 		return nil, fmt.Errorf("xcard root is <%s>, want <vcards>", doc.XMLName.Local)
 	}
-	if ns := doc.XMLName.Space; ns != "" && ns != Namespace {
+	// Section 3.1 puts every xCard element in this namespace, and it is what
+	// stands in for VERSION:4.0 below -- so an unnamespaced <vcards> is not a
+	// lenient case to wave through, it is a document with no version at all.
+	if ns := doc.XMLName.Space; ns != Namespace {
 		return nil, fmt.Errorf("xcard namespace is %q, want %q", ns, Namespace)
 	}
 	card, ok := doc.child("vcard")

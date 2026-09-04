@@ -40,22 +40,45 @@ func Decode(src string) (*vcardv1.Contact, error) {
 // encodings" true of the implementation and not just of the RFCs.
 func decodeLines(lines []contentline.Line) (*vcardv1.Contact, error) {
 	c := &vcardv1.Contact{}
-	seenBegin, seenVersion := false, false
+	seenBegin, seenVersion, seenEnd := false, false, false
 
 	for _, l := range lines {
+		// Section 6.7.9 puts VERSION "directly after BEGIN", and section 6.1.1
+		// closes the card with exactly one matching END. Neither was checked:
+		// VERSION could appear anywhere, a second BEGIN reopened the same
+		// Contact, and everything after END was still decoded into it -- so a
+		// file holding two cards silently merged into one.
+		if seenEnd {
+			return nil, fmt.Errorf("content line %s after END:VCARD", l.Name)
+		}
 		switch l.Name {
 		case "BEGIN":
 			if !strings.EqualFold(l.Value, "VCARD") {
 				return nil, fmt.Errorf("BEGIN is %q, want VCARD", l.Value)
 			}
+			if seenBegin {
+				return nil, fmt.Errorf("a second BEGIN:VCARD: decodeLines reads one card, so a file holding several must be split first")
+			}
 			seenBegin = true
 			continue
 		case "END":
+			if !strings.EqualFold(l.Value, "VCARD") {
+				return nil, fmt.Errorf("END is %q, want VCARD", l.Value)
+			}
+			if !seenBegin {
+				return nil, fmt.Errorf("END:VCARD without a matching BEGIN:VCARD")
+			}
+			seenEnd = true
 			continue
 		case "VERSION":
-			// Section 6.7.9: MUST be 4.0 and MUST come directly after BEGIN.
 			if l.Value != "4.0" {
 				return nil, fmt.Errorf("VERSION is %q, want 4.0", l.Value)
+			}
+			if !seenBegin {
+				return nil, fmt.Errorf("VERSION before BEGIN:VCARD")
+			}
+			if seenVersion {
+				return nil, fmt.Errorf("a second VERSION; section 6.7.9 permits one")
 			}
 			seenVersion = true
 			continue
@@ -63,7 +86,12 @@ func decodeLines(lines []contentline.Line) (*vcardv1.Contact, error) {
 		if !seenBegin {
 			return nil, fmt.Errorf("content line before BEGIN:VCARD: %s", l.Name)
 		}
-		decodeProperty(c, l)
+		if !seenVersion {
+			return nil, fmt.Errorf("%s before VERSION; section 6.7.9 requires VERSION directly after BEGIN:VCARD", l.Name)
+		}
+		if err := decodeProperty(c, l); err != nil {
+			return nil, fmt.Errorf("%s: %w", l.Name, err)
+		}
 	}
 
 	if !seenBegin {
@@ -72,6 +100,9 @@ func decodeLines(lines []contentline.Line) (*vcardv1.Contact, error) {
 	if !seenVersion {
 		return nil, fmt.Errorf("missing VERSION:4.0")
 	}
+	if !seenEnd {
+		return nil, fmt.Errorf("missing END:VCARD")
+	}
 	// Section 6.2.1 makes FN the only mandatory property.
 	if len(c.GetDisplayNames()) == 0 {
 		return nil, fmt.Errorf("missing FN, which section 6.2.1 requires")
@@ -79,7 +110,7 @@ func decodeLines(lines []contentline.Line) (*vcardv1.Contact, error) {
 	return c, nil
 }
 
-func decodeProperty(c *vcardv1.Contact, l contentline.Line) {
+func decodeProperty(c *vcardv1.Contact, l contentline.Line) error {
 	switch l.Name {
 	case "FN":
 		c.DisplayNames = append(c.DisplayNames, contentline.Unescape(l.Value))
@@ -104,9 +135,17 @@ func decodeProperty(c *vcardv1.Contact, l contentline.Line) {
 	case "NOTE":
 		c.Notes = append(c.Notes, contentline.Unescape(l.Value))
 	case "BDAY":
-		c.Birthday = decodeDateOrText(l)
+		d, err := decodeDateOrText(l)
+		if err != nil {
+			return err
+		}
+		c.Birthday = d
 	case "ANNIVERSARY":
-		c.Anniversary = decodeDateOrText(l)
+		d, err := decodeDateOrText(l)
+		if err != nil {
+			return err
+		}
+		c.Anniversary = d
 	case "NICKNAME":
 		c.Nicknames = append(c.Nicknames, decodeNickname(l))
 	case "URL":
@@ -128,6 +167,7 @@ func decodeProperty(c *vcardv1.Contact, l contentline.Line) {
 	default:
 		c.Extensions = append(c.Extensions, extensionOf(l))
 	}
+	return nil
 }
 
 // extensionOf preserves a property this schema does not model. Section 6.10

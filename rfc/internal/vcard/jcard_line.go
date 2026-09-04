@@ -48,18 +48,89 @@ func jcardToLine(raw any) (contentline.Line, error) {
 		}
 	}
 
+	valueType, _ := arr[2].(string)
+	valueType = strings.ToLower(valueType)
+
+	// Section 5.2: "If the value type specified in jCard is set to 'unknown',
+	// the 'VALUE' parameter MUST NOT be specified. The value MUST be taken
+	// over in vCard without processing." So exactly one raw string, copied
+	// through, and no VALUE=unknown invented on the way -- that identifier is
+	// jCard's alone and section 5 reserves it out of vCard entirely.
+	if valueType == "unknown" {
+		if len(arr) != 4 {
+			return contentline.Line{}, fmt.Errorf("%s: an unknown value takes exactly one value, got %d", l.Name, len(arr)-3)
+		}
+		v, ok := arr[3].(string)
+		if !ok {
+			return contentline.Line{}, fmt.Errorf("%s: an unknown value must be a string, got %v", l.Name, arr[3])
+		}
+		l.Value = v
+		return l, nil
+	}
+
 	// arr[2] is the value-type identifier. It is recorded as a VALUE
 	// parameter only when it is not the default, so that a round trip does
-	// not invent a VALUE=text on every property.
-	if t, ok := arr[2].(string); ok && t != "" && t != "text" {
+	// not invent a VALUE=text on every property. date-and-or-time is BDAY and
+	// ANNIVERSARY's own default, so it is not written back either.
+	if valueType != "" && valueType != "text" && valueType != "date-and-or-time" {
 		if _, seen := l.Params["VALUE"]; !seen {
-			l.Params["VALUE"] = []string{t}
+			l.Params["VALUE"] = []string{valueType}
 		}
 	}
 
-	valueType, _ := arr[2].(string)
-	l.Value = jcardValue(l.Name, strings.ToLower(valueType), arr[3:])
+	l.Value = jcardValue(l.Name, valueType, arr[3:])
+	// The inverse of basicToExtendedDate: jCard carries section 3.5.3's
+	// extended form, the content line carries vCard's basic one.
+	if valueType == "date-and-or-time" || valueType == "date" || valueType == "date-time" {
+		l.Value = extendedToBasicDate(l.Value)
+	}
 	return l, nil
+}
+
+// extendedToBasicDate is basicToExtendedDate's inverse. As there, a value it
+// does not recognize passes through unchanged rather than half-converted.
+func extendedToBasicDate(v string) string {
+	d, t, hasTime := strings.Cut(v, "T")
+
+	var out string
+	switch {
+	case strings.HasPrefix(d, "---") && len(d) == 5: // ---DD
+		out = d
+	case strings.HasPrefix(d, "--") && len(d) == 7 && d[4] == '-': // --MM-DD
+		out = "--" + d[2:4] + d[5:7]
+	case strings.HasPrefix(d, "--") && len(d) == 4: // --MM
+		out = d
+	case len(d) == 10 && d[4] == '-' && d[7] == '-': // YYYY-MM-DD
+		out = d[0:4] + d[5:7] + d[8:10]
+	case len(d) == 7 && d[4] == '-': // YYYY-MM
+		out = d
+	case len(d) == 4 && isDigits(d): // YYYY
+		out = d
+	case d == "":
+		out = ""
+	default:
+		return v
+	}
+	if !hasTime {
+		return out
+	}
+
+	zone := ""
+	if i := strings.IndexAny(t, "Z+"); i > 0 {
+		zone, t = t[i:], t[:i]
+	} else if i := strings.LastIndex(t, "-"); i > 0 {
+		zone, t = t[i:], t[:i]
+	}
+	switch {
+	case len(t) == 8 && t[2] == ':' && t[5] == ':': // HH:MM:SS
+		t = t[0:2] + t[3:5] + t[6:8]
+	case len(t) == 5 && t[2] == ':': // HH:MM
+		t = t[0:2] + t[3:5]
+	case len(t) == 2 && isDigits(t):
+	default:
+		return v
+	}
+	return out + "T" + t + strings.ReplaceAll(zone, ":", "")
 }
 
 // jcardValue renders jCard's JSON value back into vCard's text form:

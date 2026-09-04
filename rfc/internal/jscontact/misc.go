@@ -157,8 +157,28 @@ func personalToCard(c *vcardv1.Contact, card *cardv1.Card) {
 		if card.Relations == nil {
 			card.Relations = map[string]*cardv1.Relation{}
 		}
-		card.Relations[key] = &cardv1.Relation{
-			Relations: relationTypesToCard(r.GetRelationTypes()),
+		// Merged, not replaced. vCard permits several RELATED properties
+		// naming the same entity -- RELATED;TYPE=friend and
+		// RELATED;TYPE=colleague for one person is the ordinary way to say
+		// both -- and RFC 9555 section 2.9.5 keys the JSContact map on the
+		// value, so they collide here. Assigning dropped every type but the
+		// last one seen.
+		existing, ok := card.Relations[key]
+		if !ok {
+			card.Relations[key] = &cardv1.Relation{
+				Relations: relationTypesToCard(r.GetRelationTypes()),
+			}
+			continue
+		}
+		have := map[cardv1.RelationType]bool{}
+		for _, t := range existing.GetRelations() {
+			have[t] = true
+		}
+		for _, t := range relationTypesToCard(r.GetRelationTypes()) {
+			if !have[t] {
+				existing.Relations = append(existing.Relations, t)
+				have[t] = true
+			}
 		}
 	}
 }
@@ -187,10 +207,25 @@ func personalToVcard(card *cardv1.Card, c *vcardv1.Contact) {
 	}
 
 	for _, k := range sortedKeys(card.GetRelations()) {
-		c.Relations = append(c.Relations, &vcardv1.Relation{
-			Value:         &vcardv1.Relation_Uri{Uri: k},
+		rel := &vcardv1.Relation{
 			RelationTypes: relationTypesToVcard(card.GetRelations()[k].GetRelations()),
-		})
+		}
+		// RFC 9555 section 2.9.5 maps a RELATED value to the map key in one
+		// direction only, and its own example carries a free-text value --
+		// "Please contact my deputy John for any inquiries." -- into a key
+		// alongside the URI ones. Coming back it says nothing, so telling
+		// them apart is a local decision, not an RFC-derived one: a key with
+		// an RFC 3986 scheme is treated as a URI and anything else as text.
+		//
+		// Emitting every key as a URI, which is what this did, produced
+		// RELATED:Please contact my deputy John... with no VALUE=text, and a
+		// reader is then obliged to parse that sentence as a URI.
+		if isURI(k) {
+			rel.Value = &vcardv1.Relation_Uri{Uri: k}
+		} else {
+			rel.Value = &vcardv1.Relation_Text{Text: k}
+		}
+		c.Relations = append(c.Relations, rel)
 	}
 }
 
@@ -237,4 +272,26 @@ func speechToVcard(card *cardv1.Card, c *vcardv1.Contact) {
 			Types: contextsToVcard(p.GetContexts()),
 		})
 	}
+}
+
+// isURI reports whether s begins with an RFC 3986 section 3.1 scheme
+// <https://www.rfc-editor.org/rfc/rfc3986.html#section-3.1>:
+// ALPHA *( ALPHA / DIGIT / "+" / "-" / "." ) ":".
+//
+// Deliberately only the scheme. A full URI parse would accept the bare text
+// "John" as a relative reference, which is exactly the case this has to
+// reject.
+func isURI(s string) bool {
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		switch {
+		case ch == ':':
+			return i > 0
+		case ch >= 'a' && ch <= 'z', ch >= 'A' && ch <= 'Z':
+		case i > 0 && (ch >= '0' && ch <= '9' || ch == '+' || ch == '-' || ch == '.'):
+		default:
+			return false
+		}
+	}
+	return false
 }

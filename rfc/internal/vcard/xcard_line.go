@@ -44,6 +44,16 @@ func xcardToLine(el node) contentline.Line {
 		valueChildren = append(valueChildren, c)
 	}
 
+	// Section 4: "Any <unknown> property value XML elements are converted
+	// directly into vCard values. The containing property MUST NOT have a
+	// 'VALUE' parameter." So the text is taken through unprocessed and the
+	// element name is not recorded -- <unknown> is xCard's own marker and has
+	// no vCard VALUE spelling.
+	if len(valueChildren) == 1 && valueChildren[0].XMLName.Local == "unknown" {
+		l.Value = valueChildren[0].Chardata
+		return l
+	}
+
 	// The value-type element is recorded as VALUE only when it is not text,
 	// so a round trip does not invent VALUE=text on every property.
 	if len(valueChildren) > 0 {

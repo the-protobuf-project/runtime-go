@@ -19,26 +19,87 @@ import (
 
 // decodeDateOrText parses a BDAY or ANNIVERSARY value. See date_or_text.go
 // for the scope this covers.
-func decodeDateOrText(l contentline.Line) *vcardv1.DateOrText {
+// The error is returned rather than swallowed: a malformed BDAY used to yield
+// a nil DateOrText that decodeProperty assigned straight onto the Contact, so
+// the birthday simply vanished and the vCard decoded "successfully".
+func decodeDateOrText(l contentline.Line) (*vcardv1.DateOrText, error) {
 	if vals := l.Params["VALUE"]; len(vals) > 0 && strings.EqualFold(vals[0], "text") {
-		return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_Text{Text: contentline.Unescape(l.Value)}}
+		return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_Text{Text: contentline.Unescape(l.Value)}}, nil
 	}
 	v := l.Value
 	if strings.Contains(v, "T") {
-		if dt, err := parseDateOrTextDateTime(v); err == nil {
-			return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_DateTime{DateTime: dt}}
+		dt, err := parseDateOrTextDateTime(v)
+		if err != nil {
+			return nil, err
 		}
+		return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_DateTime{DateTime: dt}}, nil
+	}
+	d, err := parsePartialDate(v)
+	if err != nil {
+		return nil, err
+	}
+	return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_Date{Date: d}}, nil
+}
+
+// validPartial range-checks a reduced-accuracy date. A zero component means
+// "not recorded" -- that is what makes "--0415", a birthday with no year,
+// representable -- so only non-zero components are checked.
+//
+// Without this, "20241340" was eight numeric characters and decoded to a
+// date.Date with month 13 and day 40.
+func validPartial(d *date.Date) error {
+	y, m, day := d.GetYear(), d.GetMonth(), d.GetDay()
+	if m != 0 && (m < 1 || m > 12) {
+		return fmt.Errorf("month %d is outside 1-12", m)
+	}
+	if day == 0 {
 		return nil
 	}
-	if d, err := parsePartialDate(v); err == nil {
-		return &vcardv1.DateOrText{Value: &vcardv1.DateOrText_Date{Date: d}}
+	// The day bound needs the month, and a leap day needs the year. With
+	// neither recorded, 29 February is a legitimate date to hold, so the
+	// limit falls back to the longest month.
+	max := int32(31)
+	switch {
+	case m != 0 && y != 0:
+		max = int32(daysInMonth(y, m))
+	case m != 0:
+		max = int32(daysInMonth(2000, m)) // a leap year, so 29 February passes
+	}
+	if day < 1 || day > max {
+		return fmt.Errorf("day %d is outside 1-%d", day, max)
 	}
 	return nil
+}
+
+func daysInMonth(year, month int32) int {
+	switch month {
+	case 1, 3, 5, 7, 8, 10, 12:
+		return 31
+	case 4, 6, 9, 11:
+		return 30
+	case 2:
+		if year%4 == 0 && (year%100 != 0 || year%400 == 0) {
+			return 29
+		}
+		return 28
+	}
+	return 0
 }
 
 // parsePartialDate is encodePartialDate's inverse: year [month day] /
 // year "-" month / "--" month [day] / "--" "-" day.
 func parsePartialDate(v string) (*date.Date, error) {
+	d, err := parsePartialDateFields(v)
+	if err != nil {
+		return nil, err
+	}
+	if err := validPartial(d); err != nil {
+		return nil, fmt.Errorf("date %q: %w", v, err)
+	}
+	return d, nil
+}
+
+func parsePartialDateFields(v string) (*date.Date, error) {
 	switch {
 	case strings.HasPrefix(v, "---") && len(v) == 5:
 		day, err := strconv.ParseInt(v[3:5], 10, 32)
@@ -118,6 +179,17 @@ func parseDateOrTextDateTime(v string) (*datetime.DateTime, error) {
 	sec, err3 := strconv.ParseInt(t[4:6], 10, 32)
 	if err1 != nil || err2 != nil || err3 != nil {
 		return nil, fmt.Errorf("date-time time %q is not numeric", t)
+	}
+	// Section 4.3.2's time is 00-23 / 00-59 / 00-60, the 60 being a leap
+	// second.
+	if h < 0 || h > 23 {
+		return nil, fmt.Errorf("date-time %q has hour %d, outside 0-23", v, h)
+	}
+	if mi < 0 || mi > 59 {
+		return nil, fmt.Errorf("date-time %q has minute %d, outside 0-59", v, mi)
+	}
+	if sec < 0 || sec > 60 {
+		return nil, fmt.Errorf("date-time %q has second %d, outside 0-60", v, sec)
 	}
 	dt := &datetime.DateTime{
 		Year: d.Year, Month: d.Month, Day: d.Day,

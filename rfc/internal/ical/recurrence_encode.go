@@ -61,14 +61,26 @@ func encodeRecurrence(r *eventv1.Recurrence) string {
 	add("BYWEEKNO", r.GetWeekNumbers())
 	if len(r.GetMonths()) > 0 || len(r.GetLeapMonths()) > 0 {
 		ss := make([]string, 0, len(r.GetMonths())+len(r.GetLeapMonths()))
+		// MONTH_UNSPECIFIED is skipped rather than written: its enum number is
+		// 0 and "BYMONTH=0" is not a rule part any consumer can read. The zero
+		// only reaches here from a caller-built Recurrence, since the decoder
+		// now rejects an out-of-range BYMONTH outright.
 		for _, m := range r.GetMonths() {
+			if m == month.Month_MONTH_UNSPECIFIED {
+				continue
+			}
 			ss = append(ss, strconv.Itoa(int(m.Number())))
 		}
 		// RFC 7529 section 4's leap-month suffix.
 		for _, m := range r.GetLeapMonths() {
+			if m == month.Month_MONTH_UNSPECIFIED {
+				continue
+			}
 			ss = append(ss, strconv.Itoa(int(m.Number()))+"L")
 		}
-		parts = append(parts, "BYMONTH="+strings.Join(ss, ","))
+		if len(ss) > 0 {
+			parts = append(parts, "BYMONTH="+strings.Join(ss, ","))
+		}
 	}
 	add("BYSETPOS", r.GetSetPositions())
 

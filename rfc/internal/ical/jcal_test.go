@@ -178,3 +178,47 @@ func TestJCalAllDay(t *testing.T) {
 		t.Error("all-day value did not survive as a Date through jCal")
 	}
 }
+
+// TestJCalRecurUntil pins RFC 7265 section 3.5.10's rule for the UNTIL rule
+// part: "The value of the 'until' rule part MUST be a date or date-time value
+// formatted in accordance to the rules for date or date-time specified in this
+// document" -- so a string, in extended form, both times.
+//
+// Both forms were wrong before, and differently. The DATE form parsed as an
+// integer, because numberOrString reached "20131001" first and strconv.Atoi
+// accepted it, so jCal carried the JSON number 20131001. The DATE-TIME form
+// stayed a string only because Atoi happened to fail on it, and was emitted in
+// iCalendar's basic form rather than jCal's extended one.
+func TestJCalRecurUntil(t *testing.T) {
+	for name, tc := range map[string]struct{ rrule, want string }{
+		"date":          {"FREQ=MONTHLY;UNTIL=20131001", "2013-10-01"},
+		"utc date-time": {"FREQ=DAILY;UNTIL=20260101T090000Z", "2026-01-01T09:00:00Z"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			obj, err := recurToObject(tc.rrule)
+			if err != nil {
+				t.Fatalf("recurToObject: %v", err)
+			}
+			got, ok := obj["until"]
+			if !ok {
+				t.Fatalf("until missing from %v", obj)
+			}
+			s, ok := got.(string)
+			if !ok {
+				t.Fatalf("until = %v (%T), want a string: section 3.5.10 forbids a JSON number here", got, got)
+			}
+			if s != tc.want {
+				t.Errorf("until = %q, want %q", s, tc.want)
+			}
+
+			// And back, so the extended form does not leak into a content line.
+			back, err := objectToRecur(obj)
+			if err != nil {
+				t.Fatalf("objectToRecur: %v", err)
+			}
+			if !strings.Contains(back, "UNTIL="+strings.Split(tc.rrule, "UNTIL=")[1]) {
+				t.Errorf("round trip = %q, want it to carry the original UNTIL", back)
+			}
+		})
+	}
+}

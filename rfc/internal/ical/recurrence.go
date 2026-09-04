@@ -121,6 +121,20 @@ func decodeRecurrence(v string) (*eventv1.Recurrence, error) {
 				if err != nil {
 					return nil, fmt.Errorf("RRULE BYMONTH %q is not a month number", one)
 				}
+				// RFC 7529 section 4 lets BYMONTH exceed 12 -- its own example
+				// is RSCALE=ETHIOPIC;FREQ=MONTHLY;BYMONTH=13, and the Hebrew
+				// calendar reaches 13 in a leap year. Recurrence.months is
+				// typed google.type.Month, a 1-12 enum, so those values have
+				// nowhere to go: monthOf used to fold them to
+				// MONTH_UNSPECIFIED and the encoder then wrote BYMONTH=0.
+				//
+				// Failing is the honest reading of a value this schema cannot
+				// hold. Carrying it properly needs months and leap_months
+				// retyped as integers in the proto, which is a schema change
+				// and not this package's to make.
+				if n < 1 || n > 12 {
+					return nil, fmt.Errorf("RRULE BYMONTH %d is outside 1-12: RFC 7529 section 4 permits it for a non-Gregorian RSCALE, but Recurrence.months is typed google.type.Month and cannot represent it", n)
+				}
 				if leap {
 					r.LeapMonths = append(r.LeapMonths, monthOf(int32(n)))
 				} else {

@@ -26,24 +26,29 @@ func jcalToLine(raw any) (contentline.Line, error) {
 	}
 
 	l := contentline.Line{RawName: name, Name: strings.ToUpper(name), Params: map[string][]string{}}
-	if params, ok := arr[1].(map[string]any); ok {
-		for k, v := range params {
-			key := strings.ToUpper(k)
-			switch t := v.(type) {
-			case string:
-				l.Params[key] = []string{t}
-			case []any:
-				for _, one := range t {
-					if s, ok := one.(string); ok {
-						l.Params[key] = append(l.Params[key], s)
-					}
+	params, ok := arr[1].(map[string]any)
+	if !ok {
+		return contentline.Line{}, fmt.Errorf("%s: jcal property parameters are not an object: %v", l.Name, arr[1])
+	}
+	for k, v := range params {
+		key := strings.ToUpper(k)
+		switch t := v.(type) {
+		case string:
+			l.Params[key] = []string{t}
+		case []any:
+			for _, one := range t {
+				if s, isString := one.(string); isString {
+					l.Params[key] = append(l.Params[key], s)
 				}
 			}
 		}
 	}
 
-	typ, _ := arr[2].(string)
-	typ = strings.ToLower(typ)
+	rawType, ok := arr[2].(string)
+	if !ok {
+		return contentline.Line{}, fmt.Errorf("%s: jcal property type is not a string: %v", l.Name, arr[2])
+	}
+	typ := strings.ToLower(rawType)
 	vals := arr[3:]
 
 	switch typ {
@@ -72,7 +77,11 @@ func jcalToLine(raw any) (contentline.Line, error) {
 		if !ok {
 			return contentline.Line{}, fmt.Errorf("%s: recur value is not an object: %v", name, vals[0])
 		}
-		l.Value = objectToRecur(obj)
+		r, err := objectToRecur(obj)
+		if err != nil {
+			return contentline.Line{}, fmt.Errorf("%s: %w", name, err)
+		}
+		l.Value = r
 	case "integer":
 		l.Value = jcalScalar(vals[0])
 	case "float":

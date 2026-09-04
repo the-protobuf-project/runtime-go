@@ -70,7 +70,20 @@ func jcardProperty(l contentline.Line) []any {
 		}
 	}
 
-	prop := []any{name, params, jcardType(l)}
+	jtype := jcardType(l)
+	prop := []any{name, params, jtype}
+
+	// Section 5.1: an unknown value type carries "the unprocessed value text"
+	// as a single JSON string. Splitting it on commas or unescaping it is
+	// precisely the "additional escaping ... that breaks round-tripping" the
+	// section warns about -- RFC 7095's own example keeps
+	// "Stenophylla;Guinea\\,Africa" intact.
+	if jtype == "unknown" {
+		return append(prop, l.Value)
+	}
+	if jtype == "date-and-or-time" || jtype == "date" || jtype == "date-time" {
+		return append(prop, basicToExtendedDate(l.Value))
+	}
 
 	if structured[l.Name] {
 		comps := []any{}
@@ -121,7 +134,89 @@ func jcardType(l contentline.Line) string {
 	if l.Name == "LANG" {
 		return "language-tag"
 	}
+	// Section 5 of RFC 7095: "BDAY's default value type is
+	// 'date-and-or-time'". Calling it text also meant the value went out in
+	// vCard's basic form, so a birthday read as "19850412" where section 3.5.3
+	// wants "1985-04-12".
+	if l.Name == "BDAY" || l.Name == "ANNIVERSARY" {
+		return "date-and-or-time"
+	}
+	// Section 5.1: a property with no VALUE parameter whose default value type
+	// is not known "MUST be converted to a primitive JSON string ... Also,
+	// value type MUST be set to 'unknown'", and section 5 warns that using
+	// "text" instead lets "additional escaping ... break round-tripping".
+	if !knownDefault[l.Name] {
+		return "unknown"
+	}
 	return "text"
+}
+
+// basicToExtendedDate converts a vCard section 4.3 date or date-time to the
+// ISO 8601 extended form RFC 7095 section 3.5.3 requires, covering the
+// reduced-accuracy forms:
+//
+//	19850412 -> 1985-04-12    --0412 -> --04-12    ---12 -> ---12
+//	1985-04  -> 1985-04       1985   -> 1985
+//	20130214T123000 -> 2013-02-14T12:30:00
+//
+// A value it does not recognize is returned unchanged rather than mangled:
+// section 4.3.4 permits forms this schema does not model, and passing one
+// through intact is better than emitting a half-converted string.
+func basicToExtendedDate(v string) string {
+	d, t, hasTime := strings.Cut(v, "T")
+
+	var out string
+	switch {
+	case strings.HasPrefix(d, "---") && len(d) == 5: // ---DD
+		out = d
+	case strings.HasPrefix(d, "--") && len(d) == 6: // --MMDD
+		out = "--" + d[2:4] + "-" + d[4:6]
+	case strings.HasPrefix(d, "--") && len(d) == 4: // --MM
+		out = d
+	case len(d) == 8 && isDigits(d): // YYYYMMDD
+		out = d[0:4] + "-" + d[4:6] + "-" + d[6:8]
+	case len(d) == 7 && d[4] == '-': // YYYY-MM
+		out = d
+	case len(d) == 4 && isDigits(d): // YYYY
+		out = d
+	case d == "":
+		out = ""
+	default:
+		return v
+	}
+	if !hasTime {
+		return out
+	}
+
+	zone := ""
+	for _, suffix := range []string{"Z", "+", "-"} {
+		if i := strings.LastIndex(t, suffix); i > 0 {
+			zone, t = t[i:], t[:i]
+			break
+		}
+	}
+	if strings.HasSuffix(t, "Z") {
+		zone, t = "Z", strings.TrimSuffix(t, "Z")
+	}
+	switch {
+	case len(t) == 6 && isDigits(t):
+		t = t[0:2] + ":" + t[2:4] + ":" + t[4:6]
+	case len(t) == 4 && isDigits(t):
+		t = t[0:2] + ":" + t[2:4]
+	case len(t) == 2 && isDigits(t):
+	default:
+		return v
+	}
+	return out + "T" + t + zone
+}
+
+func isDigits(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 // DecodeJCard parses application/vcard+json into a Contact.

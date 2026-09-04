@@ -58,7 +58,10 @@ func DecodeJCal(data []byte) (*eventv1.Event, error) {
 		// 9073's components through; not reading one drops it while the
 		// document itself stays correct, which is the failure mode the
 		// cross-format test exists to catch.
-		inner, _ := comp[2].([]any)
+		inner, ok := comp[2].([]any)
+		if !ok {
+			return nil, fmt.Errorf("vevent subcomponents element is not an array: %v", comp[2])
+		}
 		if err := decodeJCalSubcomponents(e, nil, inner); err != nil {
 			return nil, err
 		}
@@ -84,9 +87,18 @@ func decodeJCalSubcomponents(e *eventv1.Event, into *eventv1.Participant, subs [
 		if !ok || len(c) != 3 {
 			return fmt.Errorf("jcal subcomponent is not a 3-element array")
 		}
-		name, _ := c[0].(string)
-		props, _ := c[1].([]any)
-		nested, _ := c[2].([]any)
+		name, ok := c[0].(string)
+		if !ok {
+			return fmt.Errorf("jcal subcomponent name is not a string: %v", c[0])
+		}
+		props, ok := c[1].([]any)
+		if !ok {
+			return fmt.Errorf("%s: jcal properties element is not an array: %v", name, c[1])
+		}
+		nested, ok := c[2].([]any)
+		if !ok {
+			return fmt.Errorf("%s: jcal subcomponents element is not an array: %v", name, c[2])
+		}
 
 		switch name {
 		case "valarm":

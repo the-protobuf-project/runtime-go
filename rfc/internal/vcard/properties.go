@@ -19,6 +19,20 @@ import (
 // jcardType/xcardValueType must not fall back to "text" for them.
 var uriValued = map[string]bool{"URL": true, "GEO": true, "IMPP": true}
 
+// knownDefault lists the properties whose default value type this codec
+// knows, RFC 6350 section 6. Anything else is an extension whose default type
+// is unknown, which RFC 7095 section 5.1 gives its own handling.
+var knownDefault = map[string]bool{
+	"ADR": true, "ANNIVERSARY": true, "BDAY": true, "CATEGORIES": true,
+	"EMAIL": true, "FN": true, "GEO": true, "IMPP": true, "KIND": true,
+	"LANG": true, "N": true, "NICKNAME": true, "NOTE": true, "ORG": true,
+	"RELATED": true, "ROLE": true, "TEL": true, "TITLE": true, "TZ": true,
+	"URL": true, "VERSION": true, "SOURCE": true, "PRODID": true, "UID": true,
+	"REV": true, "MEMBER": true, "PHOTO": true, "LOGO": true, "SOUND": true,
+	"KEY": true, "FBURL": true, "CALADRURI": true, "CALURI": true,
+	"CLIENTPIDMAP": true, "XML": true, "GENDER": true,
+}
+
 // unescapedTypes lists the jCard/xCard value-type identifiers that section
 // 3.4's TEXT escaping does not apply to: URIs, BCP 47 language tags, and the
 // utc-offset token TZ's third form uses.
