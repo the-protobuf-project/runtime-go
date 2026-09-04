@@ -20,7 +20,8 @@ import (
 //
 // Obtained from [VCard].
 type VCardSource struct {
-	text string
+	text     string
+	validate bool
 }
 
 // VCard begins a conversion from a text/vcard document.
@@ -34,10 +35,28 @@ func VCard(text string) *VCardSource {
 	return &VCardSource{text: text}
 }
 
+// Validate requires the parsed message to satisfy its buf.validate rules
+// before this source returns it.
+//
+// The check runs after parsing, because that is when there is a message to
+// check — see validate.go.
+func (s *VCardSource) Validate() *VCardSource {
+	s.validate = true
+	return s
+}
+
 // Contact parses the document into a vCard Contact.
 func (s *VCardSource) Contact() (*vcardv1.Contact, error) {
 	out, err := vcard.Decode(s.text)
-	return out, fail("vcard", "contact", err)
+	if err != nil {
+		return nil, fail("vcard", "contact", err)
+	}
+	if s.validate {
+		if err := check("contact", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Card parses the document and converts it to a JSContact Card.
@@ -53,7 +72,8 @@ func (s *VCardSource) Card() (*cardv1.Card, error) {
 //
 // Obtained from [XCard].
 type XCardSource struct {
-	data []byte
+	data     []byte
+	validate bool
 }
 
 // XCard begins a conversion from an application/vcard+xml document.
@@ -61,10 +81,28 @@ func XCard(data []byte) *XCardSource {
 	return &XCardSource{data: data}
 }
 
+// Validate requires the parsed message to satisfy its buf.validate rules
+// before this source returns it.
+//
+// The check runs after parsing, because that is when there is a message to
+// check — see validate.go.
+func (s *XCardSource) Validate() *XCardSource {
+	s.validate = true
+	return s
+}
+
 // Contact parses the document into a vCard Contact.
 func (s *XCardSource) Contact() (*vcardv1.Contact, error) {
 	out, err := vcard.DecodeXCard(s.data)
-	return out, fail("xcard", "contact", err)
+	if err != nil {
+		return nil, fail("xcard", "contact", err)
+	}
+	if s.validate {
+		if err := check("contact", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Card parses the document and converts it to a JSContact Card.
@@ -80,7 +118,8 @@ func (s *XCardSource) Card() (*cardv1.Card, error) {
 //
 // Obtained from [JCard].
 type JCardSource struct {
-	data []byte
+	data     []byte
+	validate bool
 }
 
 // JCard begins a conversion from an application/vcard+json document.
@@ -88,10 +127,28 @@ func JCard(data []byte) *JCardSource {
 	return &JCardSource{data: data}
 }
 
+// Validate requires the parsed message to satisfy its buf.validate rules
+// before this source returns it.
+//
+// The check runs after parsing, because that is when there is a message to
+// check — see validate.go.
+func (s *JCardSource) Validate() *JCardSource {
+	s.validate = true
+	return s
+}
+
 // Contact parses the document into a vCard Contact.
 func (s *JCardSource) Contact() (*vcardv1.Contact, error) {
 	out, err := vcard.DecodeJCard(s.data)
-	return out, fail("jcard", "contact", err)
+	if err != nil {
+		return nil, fail("jcard", "contact", err)
+	}
+	if s.validate {
+		if err := check("contact", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Card parses the document and converts it to a JSContact Card.

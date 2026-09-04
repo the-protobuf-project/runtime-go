@@ -207,3 +207,118 @@ func TestEncodeRejectsIncomplete(t *testing.T) {
 		t.Error("expected an error for a contact with no FN")
 	}
 }
+
+// TestValidateRunsFieldRules checks the chain reaches protovalidate at all,
+// using a rule that is trivial to violate: RFC 6350 section 6.2.1 makes FN
+// mandatory, and the schema says so with repeated.min_items.
+func TestValidateRunsFieldRules(t *testing.T) {
+	contact, err := rfc.VCard(sampleVCard).Contact()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Valid as parsed.
+	if validErr := rfc.Contact(contact).Validate().Err(); validErr != nil {
+		t.Errorf("a parsed contact should satisfy its own rules: %v", validErr)
+	}
+
+	// And invalid once the mandatory property is removed.
+	contact.DisplayNames = nil
+	err = rfc.Contact(contact).Validate().Err()
+	if err == nil {
+		t.Fatal("expected a violation for a contact with no FN")
+	}
+	var invalid *rfc.ValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("error is not a *rfc.ValidationError: %T", err)
+	}
+	if invalid.Subject != "contact" {
+		t.Errorf("subject = %q, want contact", invalid.Subject)
+	}
+}
+
+// TestValidateGatesTheChain pins that Validate stops a conversion rather than
+// merely reporting alongside it: an invalid message must not produce output.
+func TestValidateGatesTheChain(t *testing.T) {
+	contact, err := rfc.VCard(sampleVCard).Contact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contact.DisplayNames = nil
+
+	if _, err := rfc.Contact(contact).Validate().Card(); err == nil {
+		t.Error("Validate did not stop the conversion")
+	}
+	// Without Validate the same call is the caller's business, not this
+	// package's -- the chain does nothing it was not asked to do.
+	if _, err := rfc.Contact(contact).Card(); err != nil {
+		t.Errorf("an unvalidated conversion should not check: %v", err)
+	}
+}
+
+// TestValidateRunsMessageCEL is the one that matters.
+//
+// The schemas carry message-scoped CEL rules that no gate in the protobuf
+// repository ever executed -- buf build, buf lint and api-linter all pass on a
+// broken expression, because none of them evaluates CEL. This test is the first
+// thing that runs them, which is why it asserts the rule fires *and* that a
+// conforming message passes: an expression that is simply wrong would otherwise
+// look like a working rule.
+//
+// The rule under test is alarm.display_needs_description, RFC 5545 section
+// 3.6.6: a DISPLAY alarm must carry a description.
+func TestValidateRunsMessageCEL(t *testing.T) {
+	const withAlarm = "BEGIN:VCALENDAR\r\n" +
+		"VERSION:2.0\r\n" +
+		"PRODID:-//Example//Test//EN\r\n" +
+		"BEGIN:VEVENT\r\n" +
+		"UID:event-1@example.com\r\n" +
+		"DTSTAMP:20260101T090000Z\r\n" +
+		"DTSTART:20260301T090000Z\r\n" +
+		"SUMMARY:Standup\r\n" +
+		"BEGIN:VALARM\r\n" +
+		"ACTION:DISPLAY\r\n" +
+		"TRIGGER:-PT10M\r\n" +
+		"DESCRIPTION:Standup in 10 minutes\r\n" +
+		"END:VALARM\r\n" +
+		"END:VEVENT\r\n" +
+		"END:VCALENDAR\r\n"
+
+	event, err := rfc.ICalendar(withAlarm).Validate().Event()
+	if err != nil {
+		t.Fatalf("a conforming DISPLAY alarm must pass its CEL rule: %v", err)
+	}
+	if len(event.GetAlarms()) != 1 {
+		t.Fatalf("got %d alarms, want 1", len(event.GetAlarms()))
+	}
+
+	// Now violate it: a DISPLAY alarm with no description.
+	event.GetAlarms()[0].Description = ""
+	err = rfc.Event(event).Validate().Err()
+	if err == nil {
+		t.Fatal("alarm.display_needs_description did not fire; the CEL rule is not being evaluated")
+	}
+	if !strings.Contains(err.Error(), "DISPLAY alarm requires description") {
+		t.Errorf("violation did not name the rule: %v", err)
+	}
+}
+
+// TestValidateIsOptional pins that the chain is unchanged when Validate is not
+// called, so adding it to the API costs an existing caller nothing.
+func TestValidateIsOptional(t *testing.T) {
+	withoutValidate, err := rfc.VCard(sampleVCard).Contact()
+	if err != nil {
+		t.Fatal(err)
+	}
+	withValidate, err := rfc.VCard(sampleVCard).Validate().Contact()
+	if err != nil {
+		t.Fatalf("a valid document should pass: %v", err)
+	}
+	if withoutValidate.GetDisplayNames()[0] != withValidate.GetDisplayNames()[0] {
+		t.Error("Validate changed the parsed result")
+	}
+	// Err on a source that was never asked to validate reports nothing.
+	if err := rfc.Contact(withoutValidate).Err(); err != nil {
+		t.Errorf("Err without Validate = %v, want nil", err)
+	}
+}

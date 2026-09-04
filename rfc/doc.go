@@ -47,6 +47,28 @@
 // as a vCard rendered from a Card is the design, not an accident — see
 // [CardSource.Contact] for what that costs.
 //
+// # Validation
+//
+// Any chain can be asked to check the message against the buf.validate rules
+// the schemas carry, by inserting one link:
+//
+//	card, err := rfc.VCard(text).Validate().Card()
+//	err       := rfc.Contact(c).Validate().Err()
+//
+// It is a link rather than a separate call because a caller holding a document
+// has no message to validate until it is parsed — so the check has to run
+// inside the chain, at the point where one exists. `Err` is the terminal for a
+// caller who wants the verdict and no conversion.
+//
+// Without `Validate` nothing is checked. That is deliberate: a conversion is not
+// the right place to impose a policy the caller did not ask for, and a document
+// that fails its rules may still be worth reading.
+//
+// The rules are message-scoped — ranges, patterns, required fields, enum
+// membership, and the CEL relations a field constraint cannot express, such as
+// RFC 5545 section 3.6.6's "a DISPLAY alarm requires a description". Anything
+// needing state a message does not carry is the server's job.
+//
 // # What does not round-trip, and why
 //
 // Every loss below is the format's, not this package's, and each is asserted by a

@@ -20,7 +20,8 @@ import (
 //
 // Obtained from [Card].
 type CardSource struct {
-	card *cardv1.Card
+	card     *cardv1.Card
+	validate bool
 }
 
 // Card begins a conversion from a JSContact Card.
@@ -41,6 +42,9 @@ func Card(c *cardv1.Card) *CardSource {
 // ROLE are two vCard properties and one JSContact object; PHOTO, SOUND and LOGO
 // are three and one. The data survives, the encoding may not.
 func (s *CardSource) Contact() (*vcardv1.Contact, error) {
+	if err := s.checked(); err != nil {
+		return nil, err
+	}
 	out, err := jscontact.ToVcard(s.card)
 	return out, fail("card", "contact", err)
 }
@@ -50,6 +54,9 @@ func (s *CardSource) Contact() (*vcardv1.Contact, error) {
 // Equivalent to Contact followed by [ContactSource.VCard]; the error names
 // whichever step failed.
 func (s *CardSource) VCard() (string, error) {
+	if err := s.checked(); err != nil {
+		return "", err
+	}
 	c, err := s.Contact()
 	if err != nil {
 		return "", err
@@ -57,8 +64,31 @@ func (s *CardSource) VCard() (string, error) {
 	return Contact(c).VCard()
 }
 
+// Validate requires the card to satisfy its buf.validate rules before any
+// method on this source produces a result.
+//
+// Chainable rather than terminal; see validate.go for why.
+func (s *CardSource) Validate() *CardSource {
+	s.validate = true
+	return s
+}
+
+// Err reports whether the card satisfies its rules, without converting.
+// Returns nil when Validate was not called.
+func (s *CardSource) Err() error { return s.checked() }
+
+func (s *CardSource) checked() error {
+	if !s.validate {
+		return nil
+	}
+	return check("card", s.card)
+}
+
 // XCard converts the Card and renders it as application/vcard+xml.
 func (s *CardSource) XCard() ([]byte, error) {
+	if err := s.checked(); err != nil {
+		return nil, err
+	}
 	c, err := s.Contact()
 	if err != nil {
 		return nil, err
@@ -68,6 +98,9 @@ func (s *CardSource) XCard() ([]byte, error) {
 
 // JCard converts the Card and renders it as application/vcard+json.
 func (s *CardSource) JCard() ([]byte, error) {
+	if err := s.checked(); err != nil {
+		return nil, err
+	}
 	c, err := s.Contact()
 	if err != nil {
 		return nil, err

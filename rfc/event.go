@@ -23,7 +23,8 @@ import (
 //
 // Obtained from [Event].
 type EventSource struct {
-	event *eventv1.Event
+	event    *eventv1.Event
+	validate bool
 }
 
 // Event begins a conversion from an iCalendar Event.
@@ -41,12 +42,38 @@ func Event(e *eventv1.Event) *EventSource {
 //
 // Fails when the event has no DTSTART, which section 3.6.1 requires.
 func (s *EventSource) ICalendar() (string, error) {
+	if err := s.checked(); err != nil {
+		return "", err
+	}
 	out, err := ical.Encode(s.event)
 	return out, fail("event", "icalendar", err)
 }
 
+// Validate requires the event to satisfy its buf.validate rules before any
+// method on this source produces a result.
+//
+// Chainable rather than terminal; see validate.go for why.
+func (s *EventSource) Validate() *EventSource {
+	s.validate = true
+	return s
+}
+
+// Err reports whether the event satisfies its rules, without converting.
+// Returns nil when Validate was not called.
+func (s *EventSource) Err() error { return s.checked() }
+
+func (s *EventSource) checked() error {
+	if !s.validate {
+		return nil
+	}
+	return check("event", s.event)
+}
+
 // JCal renders the event as application/calendar+json, RFC 7265 <https://www.rfc-editor.org/rfc/rfc7265.html>.
 func (s *EventSource) JCal() ([]byte, error) {
+	if err := s.checked(); err != nil {
+		return nil, err
+	}
 	out, err := ical.EncodeJCal(s.event)
 	return out, fail("event", "jcal", err)
 }
@@ -56,6 +83,7 @@ func (s *EventSource) JCal() ([]byte, error) {
 // Obtained from [Availability].
 type AvailabilitySource struct {
 	availability *availabilityv1.Availability
+	validate     bool
 }
 
 // Availability begins a conversion from a VAVAILABILITY Availability.
@@ -63,6 +91,26 @@ type AvailabilitySource struct {
 //	text, err := rfc.Availability(a).ICalendar()
 func Availability(a *availabilityv1.Availability) *AvailabilitySource {
 	return &AvailabilitySource{availability: a}
+}
+
+// Validate requires the availability to satisfy its buf.validate rules before
+// any method on this source produces a result.
+//
+// Chainable rather than terminal; see validate.go for why.
+func (s *AvailabilitySource) Validate() *AvailabilitySource {
+	s.validate = true
+	return s
+}
+
+// Err reports whether the availability satisfies its rules, without
+// converting. Returns nil when Validate was not called.
+func (s *AvailabilitySource) Err() error { return s.checked() }
+
+func (s *AvailabilitySource) checked() error {
+	if !s.validate {
+		return nil
+	}
+	return check("availability", s.availability)
 }
 
 // ICalendar renders the availability as text/calendar, RFC 7953 <https://www.rfc-editor.org/rfc/rfc7953.html>.
@@ -74,6 +122,9 @@ func Availability(a *availabilityv1.Availability) *AvailabilitySource {
 //
 // Fails when the availability has no UID, which section 3.1 requires.
 func (s *AvailabilitySource) ICalendar() (string, error) {
+	if err := s.checked(); err != nil {
+		return "", err
+	}
 	out, err := availability.Encode(s.availability)
 	return out, fail("availability", "icalendar", err)
 }

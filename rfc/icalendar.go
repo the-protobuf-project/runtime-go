@@ -21,7 +21,8 @@ import (
 //
 // Obtained from [ICalendar].
 type ICalendarSource struct {
-	text string
+	text     string
+	validate bool
 }
 
 // ICalendar begins a conversion from a text/calendar document.
@@ -35,13 +36,33 @@ func ICalendar(text string) *ICalendarSource {
 	return &ICalendarSource{text: text}
 }
 
+// Validate requires the parsed message to satisfy its buf.validate rules
+// before this source returns it.
+//
+// The check runs after parsing, because that is when there is a message to
+// check — see validate.go. It applies to whichever component is asked for:
+// [ICalendarSource.Event] validates an Event, [ICalendarSource.Availability]
+// an Availability.
+func (s *ICalendarSource) Validate() *ICalendarSource {
+	s.validate = true
+	return s
+}
+
 // Event parses the document's VEVENT into an Event.
 //
 // Fails when the document holds no VEVENT — including when it holds a
 // VAVAILABILITY instead, which [ICalendarSource.Availability] reads.
 func (s *ICalendarSource) Event() (*eventv1.Event, error) {
 	out, err := ical.Decode(s.text)
-	return out, fail("icalendar", "event", err)
+	if err != nil {
+		return nil, fail("icalendar", "event", err)
+	}
+	if s.validate {
+		if err := check("event", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // Availability parses the document's VAVAILABILITY into an Availability,
@@ -50,14 +71,23 @@ func (s *ICalendarSource) Event() (*eventv1.Event, error) {
 // Fails when the document holds no VAVAILABILITY.
 func (s *ICalendarSource) Availability() (*availabilityv1.Availability, error) {
 	out, err := availability.Decode(s.text)
-	return out, fail("icalendar", "availability", err)
+	if err != nil {
+		return nil, fail("icalendar", "availability", err)
+	}
+	if s.validate {
+		if err := check("availability", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // JCalSource converts an application/calendar+json document, RFC 7265 <https://www.rfc-editor.org/rfc/rfc7265.html>.
 //
 // Obtained from [JCal].
 type JCalSource struct {
-	data []byte
+	data     []byte
+	validate bool
 }
 
 // JCal begins a conversion from an application/calendar+json document.
@@ -65,8 +95,26 @@ func JCal(data []byte) *JCalSource {
 	return &JCalSource{data: data}
 }
 
+// Validate requires the parsed message to satisfy its buf.validate rules
+// before this source returns it.
+//
+// The check runs after parsing, because that is when there is a message to
+// check — see validate.go.
+func (s *JCalSource) Validate() *JCalSource {
+	s.validate = true
+	return s
+}
+
 // Event parses the document's vevent component into an Event.
 func (s *JCalSource) Event() (*eventv1.Event, error) {
 	out, err := ical.DecodeJCal(s.data)
-	return out, fail("jcal", "event", err)
+	if err != nil {
+		return nil, fail("jcal", "event", err)
+	}
+	if s.validate {
+		if err := check("event", out); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
