@@ -105,9 +105,15 @@ func contentLines(c *vcardv1.Contact) ([]string, error) {
 		}
 		p := params(a.GetTypes(), nil, a.GetPref())
 		// LABEL, RFC 9554 section 4.5. EscapeParam quotes it, which it will
-		// always need: a formatted address contains newlines and commas.
+		// always need: a formatted address contains commas. A label holding a
+		// raw newline is refused rather than folded into the parameter, since
+		// section 3.3 gives it no representation there.
 		if lbl := a.GetLabel(); lbl != "" {
-			p += ";LABEL=" + contentline.EscapeParam(lbl)
+			esc, err := contentline.EscapeParam(lbl)
+			if err != nil {
+				return nil, fmt.Errorf("ADR LABEL: %w", err)
+			}
+			p += ";LABEL=" + esc
 		}
 		write("ADR" + p + ":" + strings.Join(parts, ";"))
 	}
@@ -163,7 +169,11 @@ func contentLines(c *vcardv1.Contact) ([]string, error) {
 		write("RELATED" + vp + relationParams(r.GetRelationTypes(), r.GetPref()) + ":" + v)
 	}
 	for _, e := range c.GetExtensions() {
-		write(encodeExtension(e))
+		enc, err := encodeExtension(e)
+		if err != nil {
+			return nil, err
+		}
+		write(enc)
 	}
 	write("END:VCARD")
 	return out, nil
@@ -177,7 +187,7 @@ func encodeTelValue(t *vcardv1.Telephone) string {
 	return contentline.Escape(t.GetText())
 }
 
-func encodeExtension(e *vcardv1.ExtensionProperty) string {
+func encodeExtension(e *vcardv1.ExtensionProperty) (string, error) {
 	var b strings.Builder
 	if g := e.GetGroup(); g != "" {
 		b.WriteString(g)
@@ -192,11 +202,18 @@ func encodeExtension(e *vcardv1.ExtensionProperty) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		b.WriteString(";" + k + "=" + e.GetParameters()[k])
+		// Preserved from the source vCard, so the least trustworthy values in
+		// the codec: section 3.3 forbids DQUOTE outright and a CR or LF here
+		// would end the line and let the rest parse as another property.
+		esc, err := contentline.EscapeParam(e.GetParameters()[k])
+		if err != nil {
+			return "", fmt.Errorf("%s parameter %s: %w", e.GetKey(), k, err)
+		}
+		b.WriteString(";" + k + "=" + esc)
 	}
 	b.WriteByte(':')
 	b.WriteString(contentline.JoinList(e.GetValues()))
-	return b.String()
+	return b.String(), nil
 }
 
 // params renders the TYPE and PREF parameters shared by several properties.
@@ -216,8 +233,10 @@ func params(types []vcardv1.Type, feats []vcardv1.Feature, pref int32) string {
 	if len(vs) > 0 {
 		b.WriteString(";TYPE=" + strings.Join(vs, ","))
 	}
-	// Section 5.3: PREF is 1-100. Zero means unset, not most-preferred.
-	if pref > 0 {
+	// Section 5.3: PREF is 1-100. Zero means unset, not most-preferred, and a
+	// value outside the range is not representable, so it is dropped rather
+	// than written out as an invalid parameter.
+	if pref >= 1 && pref <= 100 {
 		fmt.Fprintf(&b, ";PREF=%d", pref)
 	}
 	return b.String()

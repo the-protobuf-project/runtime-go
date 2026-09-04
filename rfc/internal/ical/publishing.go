@@ -5,6 +5,7 @@ package ical
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go/protobuf/rfc5545/event/v1"
@@ -200,7 +201,7 @@ func participantTypeName(t eventv1.ParticipantType) string {
 
 // encodeParticipant writes a PARTICIPANT component, RFC 9073 section 7.1,
 // with its nested VLOCATION and VRESOURCE sub-components.
-func encodeParticipant(p *eventv1.Participant) []string {
+func encodeParticipant(p *eventv1.Participant) ([]string, error) {
 	out := []string{"BEGIN:PARTICIPANT"}
 	if v := p.GetIcalUid(); v != "" {
 		out = append(out, "UID:"+contentline.Escape(v))
@@ -230,23 +231,39 @@ func encodeParticipant(p *eventv1.Participant) []string {
 		out = append(out, "GEO:"+encodeGeo(g))
 	}
 	for _, d := range p.GetStructuredData() {
-		out = append(out, encodeStructuredData(d))
+		sd, err := encodeStructuredData(d)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sd)
 	}
 	for _, s := range p.GetStyledDescriptions() {
-		out = append(out, encodeStyledDescription(s))
+		sd, err := encodeStyledDescription(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sd)
 	}
 	// Nested, per section 7.1's `partprop *locationc *resourcec`.
 	for _, l := range p.GetStructuredLocations() {
-		out = append(out, encodeLocation(l)...)
+		ls, err := encodeLocation(l)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ls...)
 	}
 	for _, r := range p.GetResources() {
-		out = append(out, encodeResource(r)...)
+		rs, err := encodeResource(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rs...)
 	}
-	return append(out, "END:PARTICIPANT")
+	return append(out, "END:PARTICIPANT"), nil
 }
 
 // encodeLocation writes a VLOCATION component, RFC 9073 section 7.2.
-func encodeLocation(l *eventv1.Location) []string {
+func encodeLocation(l *eventv1.Location) ([]string, error) {
 	out := []string{"BEGIN:VLOCATION"}
 	if v := l.GetIcalUid(); v != "" {
 		out = append(out, "UID:"+contentline.Escape(v))
@@ -264,13 +281,17 @@ func encodeLocation(l *eventv1.Location) []string {
 		out = append(out, "GEO:"+encodeGeo(g))
 	}
 	for _, d := range l.GetStructuredData() {
-		out = append(out, encodeStructuredData(d))
+		sd, err := encodeStructuredData(d)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sd)
 	}
-	return append(out, "END:VLOCATION")
+	return append(out, "END:VLOCATION"), nil
 }
 
 // encodeResource writes a VRESOURCE component, RFC 9073 section 7.3.
-func encodeResource(r *eventv1.Resource) []string {
+func encodeResource(r *eventv1.Resource) ([]string, error) {
 	out := []string{"BEGIN:VRESOURCE"}
 	if v := r.GetIcalUid(); v != "" {
 		out = append(out, "UID:"+contentline.Escape(v))
@@ -288,12 +309,16 @@ func encodeResource(r *eventv1.Resource) []string {
 		out = append(out, "GEO:"+encodeGeo(g))
 	}
 	for _, d := range r.GetStructuredData() {
-		out = append(out, encodeStructuredData(d))
+		sd, err := encodeStructuredData(d)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sd)
 	}
-	return append(out, "END:VRESOURCE")
+	return append(out, "END:VRESOURCE"), nil
 }
 
-func encodeStyledDescription(s *eventv1.StyledDescription) string {
+func encodeStyledDescription(s *eventv1.StyledDescription) (string, error) {
 	var params, value string
 	switch v := s.GetValue().(type) {
 	case *eventv1.StyledDescription_Text:
@@ -302,15 +327,19 @@ func encodeStyledDescription(s *eventv1.StyledDescription) string {
 		params, value = ";VALUE=URI", v.Uri
 	}
 	if f := s.GetFormatType(); f != "" {
-		params += ";FMTTYPE=" + contentline.EscapeParam(f)
+		esc, err := contentline.EscapeParam(f)
+		if err != nil {
+			return "", fmt.Errorf("STYLED-DESCRIPTION FMTTYPE: %w", err)
+		}
+		params += ";FMTTYPE=" + esc
 	}
 	if s.GetDerived() {
 		params += ";DERIVED=TRUE"
 	}
-	return "STYLED-DESCRIPTION" + params + ":" + value
+	return "STYLED-DESCRIPTION" + params + ":" + value, nil
 }
 
-func encodeStructuredData(d *eventv1.StructuredData) string {
+func encodeStructuredData(d *eventv1.StructuredData) (string, error) {
 	var params, value string
 	switch v := d.GetValue().(type) {
 	case *eventv1.StructuredData_Text:
@@ -324,13 +353,21 @@ func encodeStructuredData(d *eventv1.StructuredData) string {
 		value = base64.StdEncoding.EncodeToString(v.Binary)
 	}
 	if f := d.GetFormatType(); f != "" {
-		params += ";FMTTYPE=" + contentline.EscapeParam(f)
+		esc, err := contentline.EscapeParam(f)
+		if err != nil {
+			return "", fmt.Errorf("STRUCTURED-DATA FMTTYPE: %w", err)
+		}
+		params += ";FMTTYPE=" + esc
 	}
 	// SCHEMA is a URI, so it always contains a colon and always needs
 	// quoting -- RFC 5545 section 3.1 requires it, and an unquoted one makes
 	// the parser take the colon as the value separator.
 	if s := d.GetSchema(); s != "" {
-		params += ";SCHEMA=" + contentline.EscapeParam(s)
+		esc, err := contentline.EscapeParam(s)
+		if err != nil {
+			return "", fmt.Errorf("STRUCTURED-DATA SCHEMA: %w", err)
+		}
+		params += ";SCHEMA=" + esc
 	}
-	return "STRUCTURED-DATA" + params + ":" + value
+	return "STRUCTURED-DATA" + params + ":" + value, nil
 }

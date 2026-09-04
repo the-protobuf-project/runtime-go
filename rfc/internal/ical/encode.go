@@ -58,7 +58,11 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 		v, params := encodeTime(t.End)
 		w("DTEND" + params + ":" + v)
 	case *eventv1.Event_Duration:
-		w("DURATION:" + icaltime.EncodeDuration(t.Duration))
+		dur, err := icaltime.EncodeDuration(t.Duration)
+		if err != nil {
+			return nil, err
+		}
+		w("DURATION:" + dur)
 	}
 
 	if v := e.GetSummary(); v != "" {
@@ -81,23 +85,27 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 		w("REFID:" + contentline.Escape(r))
 	}
 	for _, l := range e.GetLinks() {
-		w(encodeLink(l))
+		enc, err := encodeLink(l)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
-	// RFC 9073's content properties, then its components.
+	// RFC 9073's content properties. Its *components* are sub-components and
+	// so are written further down, with the alarms.
 	for _, s := range e.GetStyledDescriptions() {
-		w(encodeStyledDescription(s))
+		enc, err := encodeStyledDescription(s)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
 	for _, d := range e.GetStructuredData() {
-		w(encodeStructuredData(d))
-	}
-	for _, p := range e.GetParticipants() {
-		out = append(out, encodeParticipant(p)...)
-	}
-	for _, l := range e.GetStructuredLocations() {
-		out = append(out, encodeLocation(l)...)
-	}
-	for _, r := range e.GetResources() {
-		out = append(out, encodeResource(r)...)
+		enc, err := encodeStructuredData(d)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
 	if s := encodeConfirmation(e.GetConfirmation()); s != "" {
 		w("STATUS:" + s)
@@ -123,19 +131,58 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 		w("RDATE" + params + ":" + v)
 	}
 	if o := e.GetOrganizer(); o != nil {
-		w(encodeOrganizer(o))
+		enc, err := encodeOrganizer(o)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
 	for _, a := range e.GetAttendees() {
-		w(encodeAttendee(a))
+		enc, err := encodeAttendee(a)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
 	for _, x := range e.GetExtensions() {
-		w(encodeExtension(x))
+		enc, err := encodeExtension(x)
+		if err != nil {
+			return nil, err
+		}
+		w(enc)
 	}
-	// Alarms are sub-components, so they are written last, after every
-	// property of the event itself: section 3.6 requires a component's own
-	// properties to precede its sub-components.
+	// Sub-components go last, after every property of the event itself:
+	// section 3.6 requires a component's own properties to precede its
+	// sub-components. That covers VALARM and equally RFC 9073's PARTICIPANT,
+	// VLOCATION and VRESOURCE, which used to be written up among the
+	// properties and so put STATUS and RRULE after a nested component.
 	for _, a := range e.GetAlarms() {
-		out = append(out, encodeAlarm(a)...)
+		enc, err := encodeAlarm(a)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, enc...)
+	}
+	for _, p := range e.GetParticipants() {
+		enc, err := encodeParticipant(p)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, enc...)
+	}
+	for _, l := range e.GetStructuredLocations() {
+		enc, err := encodeLocation(l)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, enc...)
+	}
+	for _, r := range e.GetResources() {
+		enc, err := encodeResource(r)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, enc...)
 	}
 
 	w("END:VEVENT")
@@ -143,7 +190,7 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 	return out, nil
 }
 
-func encodeExtension(x *eventv1.ExtensionProperty) string {
+func encodeExtension(x *eventv1.ExtensionProperty) (string, error) {
 	var b strings.Builder
 	b.WriteString(x.GetKey())
 
@@ -153,11 +200,18 @@ func encodeExtension(x *eventv1.ExtensionProperty) string {
 	}
 	sort.Strings(keys) // Go map order is not deterministic; output must be.
 	for _, k := range keys {
-		b.WriteString(";" + k + "=" + x.GetParameters()[k])
+		// A preserved extension carries whatever the source file held, so its
+		// parameter values are the least trustworthy in the codec and the ones
+		// most in need of the section 3.1 check.
+		esc, err := contentline.EscapeParam(x.GetParameters()[k])
+		if err != nil {
+			return "", fmt.Errorf("%s parameter %s: %w", x.GetKey(), k, err)
+		}
+		b.WriteString(";" + k + "=" + esc)
 	}
 	b.WriteByte(':')
 	b.WriteString(contentline.JoinList(x.GetValues()))
-	return b.String()
+	return b.String(), nil
 }
 
 // encodeLink writes a LINK property, RFC 9253 section 8.2.
@@ -165,7 +219,7 @@ func encodeExtension(x *eventv1.ExtensionProperty) string {
 // VALUE is emitted for the UID and XML-REFERENCE forms and omitted for URI,
 // which section 8.2 makes the default. LINKREL is always emitted: section 6.1
 // requires it on every LINK.
-func encodeLink(l *eventv1.Link) string {
+func encodeLink(l *eventv1.Link) (string, error) {
 	var params, value string
 	switch v := l.GetValue().(type) {
 	case *eventv1.Link_Uri:
@@ -175,17 +229,22 @@ func encodeLink(l *eventv1.Link) string {
 	case *eventv1.Link_XmlReference:
 		params, value = ";VALUE=XML-REFERENCE", v.XmlReference
 	}
-	if s := l.GetRelation(); s != "" {
-		params += ";LINKREL=" + s
+	// LINKREL and LABEL are both free text in section 6.1, so both routinely
+	// contain the colon or comma that section 3.1 requires quoting for.
+	for _, p := range []struct{ name, value string }{
+		{"LINKREL", l.GetRelation()},
+		{"FMTTYPE", l.GetFormatType()},
+		{"LABEL", l.GetLabel()},
+		{"LANGUAGE", l.GetLanguageCode()},
+	} {
+		if p.value == "" {
+			continue
+		}
+		esc, err := contentline.EscapeParam(p.value)
+		if err != nil {
+			return "", fmt.Errorf("LINK %s: %w", p.name, err)
+		}
+		params += ";" + p.name + "=" + esc
 	}
-	if s := l.GetFormatType(); s != "" {
-		params += ";FMTTYPE=" + s
-	}
-	if s := l.GetLabel(); s != "" {
-		params += ";LABEL=" + s
-	}
-	if s := l.GetLanguageCode(); s != "" {
-		params += ";LANGUAGE=" + s
-	}
-	return "LINK" + params + ":" + contentline.Escape(value)
+	return "LINK" + params + ":" + contentline.Escape(value), nil
 }

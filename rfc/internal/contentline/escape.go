@@ -3,7 +3,10 @@
 
 package contentline
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Unescape reverses TEXT escaping: RFC 6350 section 3.4 and RFC 5545
 // section 3.3.11 define the same escape set.
@@ -103,8 +106,18 @@ func Fold(s string) string {
 		if end >= len(s) {
 			end = len(s)
 		} else {
-			for end > start && s[end]&0xC0 == 0x80 {
-				end--
+			// Walk back to a rune boundary so a multi-byte sequence is never
+			// split across the fold.
+			bound := end
+			for bound > start && s[bound]&0xC0 == 0x80 {
+				bound--
+			}
+			// A window that is entirely continuation bytes is malformed UTF-8
+			// and has no boundary to find. Folding at the byte limit keeps the
+			// loop advancing; walking back to start would leave start
+			// unchanged and spin forever.
+			if bound > start {
+				end = bound
 			}
 		}
 		if start > 0 {
@@ -118,16 +131,24 @@ func Fold(s string) string {
 
 // EscapeParam renders a parameter value, quoting it when the RFC requires.
 //
-// RFC 5545 section 3.1: "Property parameter values that contain the COLON,
-// SEMICOLON, or COMMA character separators MUST be specified as quoted-string
-// text values. Property parameter values MUST NOT contain the DQUOTE
-// character." RFC 6350 section 3.3 says the same. A DQUOTE in the value has
-// nowhere to go, so it is dropped rather than emitted unescaped, which would
-// produce a line no conforming parser could read.
-func EscapeParam(s string) string {
-	s = strings.ReplaceAll(s, `"`, "")
-	if strings.ContainsAny(s, ":;,") {
-		return `"` + s + `"`
+// RFC 5545 section 3.1 <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.1>:
+// "Property parameter values that contain the COLON, SEMICOLON, or COMMA
+// character separators MUST be specified as quoted-string text values.
+// Property parameter values MUST NOT contain the DQUOTE character."
+// RFC 6350 section 3.3 <https://www.rfc-editor.org/rfc/rfc6350.html#section-3.3>
+// says the same.
+//
+// A DQUOTE has no escape form in a parameter value, and CR or LF would end the
+// content line mid-parameter and let the remainder be read as a new property.
+// Neither can be represented, so both are refused. Dropping them instead would
+// silently alter the caller's data -- and for CR/LF would emit a line a parser
+// reads as two, which is how a value becomes a forged property.
+func EscapeParam(s string) (string, error) {
+	if i := strings.IndexAny(s, "\"\r\n"); i >= 0 {
+		return "", fmt.Errorf("parameter value %q contains %q, which RFC 5545 section 3.1 does not permit and no escape form can represent", s, s[i])
 	}
-	return s
+	if strings.ContainsAny(s, ":;,") {
+		return `"` + s + `"`, nil
+	}
+	return s, nil
 }

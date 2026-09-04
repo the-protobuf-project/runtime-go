@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"google.golang.org/genproto/googleapis/type/datetime"
+
 	"buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go/protobuf/rfc7953/availability/v1"
 	"github.com/the-protobuf-project/runtime-go/rfc/internal/contentline"
 	"github.com/the-protobuf-project/runtime-go/rfc/internal/icaltime"
@@ -29,9 +31,62 @@ func Encode(a *availabilityv1.Availability) (string, error) {
 	return b.String(), nil
 }
 
+// reserved names the encoder emits from modeled fields. An extension
+// carrying one of them would produce a second copy of a property section 3.1
+// allows at most once, so it is refused rather than written out.
+var reserved = map[string]bool{
+	"UID": true, "DTSTAMP": true, "DTSTART": true, "DTEND": true, "DURATION": true,
+}
+
+// dtstampOf pulls DTSTAMP out of the preserved extensions.
+//
+// The schema has no field for it -- it stamps the iCalendar object, not the
+// availability -- so the decoder leaves it among the extensions and this reads
+// it back. RFC 5545 section 3.8.7.2
+// <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.8.7.2> fixes its value
+// as a UTC DATE-TIME, so a preserved one is validated before being written back
+// out rather than trusted.
+//
+// required says whether absence is an error. It is on VAVAILABILITY and is not
+// on AVAILABLE; see the note in Decode.
+func dtstampOf(component string, required bool, exts []*availabilityv1.ExtensionProperty) (string, error) {
+	var found string
+	n := 0
+	for _, e := range exts {
+		if !strings.EqualFold(e.GetKey(), "DTSTAMP") {
+			continue
+		}
+		n++
+		if vs := e.GetValues(); len(vs) > 0 {
+			found = vs[0]
+		}
+	}
+	switch {
+	case n == 0:
+		if required {
+			return "", fmt.Errorf("%s has no DTSTAMP; RFC 7953 section 3.1 requires it", component)
+		}
+		return "", nil
+	case n > 1:
+		return "", fmt.Errorf("%s has %d DTSTAMP properties; RFC 7953 section 3.1 allows at most one", component, n)
+	}
+	dt, err := icaltime.ParseDateTime(found)
+	if err != nil {
+		return "", fmt.Errorf("%s DTSTAMP %q: %w", component, found, err)
+	}
+	if _, utc := dt.GetTimeOffset().(*datetime.DateTime_UtcOffset); !utc {
+		return "", fmt.Errorf("%s DTSTAMP %q is not UTC; RFC 5545 section 3.8.7.2 requires a UTC DATE-TIME", component, found)
+	}
+	return found, nil
+}
+
 func contentLines(a *availabilityv1.Availability) ([]string, error) {
 	if a.GetIcalUid() == "" {
 		return nil, fmt.Errorf("availability has no ical_uid; RFC 7953 section 3.1 requires UID")
+	}
+	stamp, err := dtstampOf("VAVAILABILITY", true, a.GetExtensions())
+	if err != nil {
+		return nil, err
 	}
 
 	var out []string
@@ -42,20 +97,31 @@ func contentLines(a *availabilityv1.Availability) ([]string, error) {
 	w("PRODID:-//The Protobuf Project//runtime-go//EN")
 	w("BEGIN:VAVAILABILITY")
 	w("UID:" + contentline.Escape(a.GetIcalUid()))
+	w("DTSTAMP:" + stamp)
 
 	if s := encodeBusyType(a.GetBusyType()); s != "" {
 		w("BUSYTYPE:" + s)
 	}
 	if t := a.GetStart(); t != nil {
-		v, p := encodeTime(t)
-		w("DTSTART" + p + ":" + v)
+		l, err := encodeBound("DTSTART", t)
+		if err != nil {
+			return nil, err
+		}
+		w(l)
 	}
 	switch e := a.GetEndForm().(type) {
 	case *availabilityv1.Availability_End:
-		v, p := encodeTime(e.End)
-		w("DTEND" + p + ":" + v)
+		l, err := encodeBound("DTEND", e.End)
+		if err != nil {
+			return nil, err
+		}
+		w(l)
 	case *availabilityv1.Availability_Duration:
-		w("DURATION:" + icaltime.EncodeDuration(e.Duration))
+		dur, err := icaltime.EncodeDuration(e.Duration)
+		if err != nil {
+			return nil, err
+		}
+		w("DURATION:" + dur)
 	}
 	if v := a.GetSummary(); v != "" {
 		w("SUMMARY:" + contentline.Escape(v))
@@ -75,7 +141,14 @@ func contentLines(a *availabilityv1.Availability) ([]string, error) {
 		w("CATEGORIES:" + contentline.JoinList(v))
 	}
 	for _, e := range a.GetExtensions() {
-		w(encodeExtension(e))
+		enc, err := encodeExtension(e)
+		if err != nil {
+			return nil, err
+		}
+		if enc == "" {
+			continue // DTSTAMP, already written above from the modeled path
+		}
+		w(enc)
 	}
 
 	for _, p := range a.GetAvailablePeriods() {
@@ -95,23 +168,41 @@ func periodLines(p *availabilityv1.AvailablePeriod) ([]string, error) {
 	if p.GetStart() == nil {
 		return nil, fmt.Errorf("available period has no start; RFC 7953 section 3.1 requires DTSTART")
 	}
+	if p.GetIcalUid() == "" {
+		return nil, fmt.Errorf("available period has no ical_uid; RFC 7953 section 3.1 requires UID")
+	}
+	stamp, err := dtstampOf("AVAILABLE", false, p.GetExtensions())
+	if err != nil {
+		return nil, err
+	}
 
 	var out []string
 	w := func(s string) { out = append(out, s) }
 
 	w("BEGIN:AVAILABLE")
-	if v := p.GetIcalUid(); v != "" {
-		w("UID:" + contentline.Escape(v))
+	w("UID:" + contentline.Escape(p.GetIcalUid()))
+	if stamp != "" {
+		w("DTSTAMP:" + stamp)
 	}
-	v, prm := encodeTime(p.GetStart())
-	w("DTSTART" + prm + ":" + v)
+	start, err := encodeBound("DTSTART", p.GetStart())
+	if err != nil {
+		return nil, err
+	}
+	w(start)
 
 	switch e := p.GetEndForm().(type) {
 	case *availabilityv1.AvailablePeriod_End:
-		v, prm := encodeTime(e.End)
-		w("DTEND" + prm + ":" + v)
+		l, err := encodeBound("DTEND", e.End)
+		if err != nil {
+			return nil, err
+		}
+		w(l)
 	case *availabilityv1.AvailablePeriod_Duration:
-		w("DURATION:" + icaltime.EncodeDuration(e.Duration))
+		dur, err := icaltime.EncodeDuration(e.Duration)
+		if err != nil {
+			return nil, err
+		}
+		w("DURATION:" + dur)
 	}
 	if v := p.GetSummary(); v != "" {
 		w("SUMMARY:" + contentline.Escape(v))
@@ -132,7 +223,14 @@ func periodLines(p *availabilityv1.AvailablePeriod) ([]string, error) {
 		w("COMMENT:" + contentline.Escape(c))
 	}
 	for _, e := range p.GetExtensions() {
-		w(encodeExtension(e))
+		enc, err := encodeExtension(e)
+		if err != nil {
+			return nil, err
+		}
+		if enc == "" {
+			continue // DTSTAMP, already written above from the modeled path
+		}
+		w(enc)
 	}
 	w("END:AVAILABLE")
 	return out, nil
@@ -150,7 +248,17 @@ func encodeBusyType(b availabilityv1.BusyType) string {
 	return ""
 }
 
-func encodeExtension(e *availabilityv1.ExtensionProperty) string {
+// encodeExtension writes one preserved property, or "" for the DTSTAMP the
+// caller has already emitted from the modeled path.
+func encodeExtension(e *availabilityv1.ExtensionProperty) (string, error) {
+	key := strings.ToUpper(e.GetKey())
+	if key == "DTSTAMP" {
+		return "", nil
+	}
+	if reserved[key] {
+		return "", fmt.Errorf("extension %s duplicates a property the encoder writes from a modeled field; RFC 7953 section 3.1 allows it at most once", e.GetKey())
+	}
+
 	var b strings.Builder
 	b.WriteString(e.GetKey())
 
@@ -162,9 +270,13 @@ func encodeExtension(e *availabilityv1.ExtensionProperty) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		b.WriteString(";" + k + "=" + e.GetParameters()[k])
+		esc, err := contentline.EscapeParam(e.GetParameters()[k])
+		if err != nil {
+			return "", fmt.Errorf("%s parameter %s: %w", e.GetKey(), k, err)
+		}
+		b.WriteString(";" + k + "=" + esc)
 	}
 	b.WriteByte(':')
 	b.WriteString(contentline.JoinList(e.GetValues()))
-	return b.String()
+	return b.String(), nil
 }

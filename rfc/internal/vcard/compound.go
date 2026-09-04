@@ -104,9 +104,14 @@ func decodeTelephone(l contentline.Line) *vcardv1.Telephone {
 	return t
 }
 
+// decodePref reads PREF, RFC 6350 section 5.3
+// <https://www.rfc-editor.org/rfc/rfc6350.html#section-5.3>, which restricts it
+// to 1-100. A value outside that range is not a preference this schema can
+// represent, so it reads as unset rather than being carried through to an
+// encoder that would then emit an invalid parameter.
 func decodePref(l contentline.Line) int32 {
 	if v := l.Params["PREF"]; len(v) > 0 {
-		if n, err := strconv.ParseInt(v[0], 10, 32); err == nil {
+		if n, err := strconv.ParseInt(v[0], 10, 32); err == nil && n >= 1 && n <= 100 {
 			return int32(n)
 		}
 	}

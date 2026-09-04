@@ -4,6 +4,7 @@
 package ical
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -65,7 +66,7 @@ func decodeAttendee(l contentline.Line) *eventv1.Attendee {
 	return a
 }
 
-func encodeAttendee(a *eventv1.Attendee) string {
+func encodeAttendee(a *eventv1.Attendee) (string, error) {
 	p := map[string][]string{}
 	if v := a.GetDisplayName(); v != "" {
 		p["CN"] = []string{v}
@@ -88,7 +89,11 @@ func encodeAttendee(a *eventv1.Attendee) string {
 	if v := a.GetDelegators(); len(v) > 0 {
 		p["DELEGATED-FROM"] = v
 	}
-	return "ATTENDEE" + renderParams(p) + ":" + a.GetAddress()
+	rp, err := renderParams(p)
+	if err != nil {
+		return "", fmt.Errorf("ATTENDEE: %w", err)
+	}
+	return "ATTENDEE" + rp + ":" + a.GetAddress(), nil
 }
 
 func decodeOrganizer(l contentline.Line) *eventv1.Organizer {
@@ -102,7 +107,7 @@ func decodeOrganizer(l contentline.Line) *eventv1.Organizer {
 	return o
 }
 
-func encodeOrganizer(o *eventv1.Organizer) string {
+func encodeOrganizer(o *eventv1.Organizer) (string, error) {
 	p := map[string][]string{}
 	if v := o.GetDisplayName(); v != "" {
 		p["CN"] = []string{v}
@@ -110,12 +115,21 @@ func encodeOrganizer(o *eventv1.Organizer) string {
 	if v := o.GetSender(); v != "" {
 		p["SENT-BY"] = []string{v}
 	}
-	return "ORGANIZER" + renderParams(p) + ":" + o.GetAddress()
+	rp, err := renderParams(p)
+	if err != nil {
+		return "", fmt.Errorf("ORGANIZER: %w", err)
+	}
+	return "ORGANIZER" + rp + ":" + o.GetAddress(), nil
 }
 
-// renderParams writes parameters in sorted order so output is diffable, and
-// quotes any value containing a character section 3.1 makes significant.
-func renderParams(p map[string][]string) string {
+// renderParams writes parameters in sorted order so output is diffable.
+//
+// Escaping goes through contentline.EscapeParam rather than being repeated
+// here: it also refuses the DQUOTE and CR/LF that section 3.1 cannot
+// represent. A CN carrying either used to be written straight through, and a
+// newline in a display name split the ATTENDEE line so the remainder parsed as
+// a fresh property.
+func renderParams(p map[string][]string) (string, error) {
 	keys := make([]string, 0, len(p))
 	for k := range p {
 		keys = append(keys, k)
@@ -126,14 +140,15 @@ func renderParams(p map[string][]string) string {
 	for _, k := range keys {
 		vals := make([]string, len(p[k]))
 		for i, v := range p[k] {
-			if strings.ContainsAny(v, ":;,") {
-				v = `"` + v + `"`
+			esc, err := contentline.EscapeParam(v)
+			if err != nil {
+				return "", fmt.Errorf("%s: %w", k, err)
 			}
-			vals[i] = v
+			vals[i] = esc
 		}
 		b.WriteString(";" + k + "=" + strings.Join(vals, ","))
 	}
-	return b.String()
+	return b.String(), nil
 }
 
 func nameOfRole(r eventv1.ParticipationRole) string      { return lookup(roles, r) }

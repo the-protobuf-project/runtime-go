@@ -140,7 +140,7 @@ func decodeTrigger(a *eventv1.Alarm, l contentline.Line) error {
 	return nil
 }
 
-func encodeAlarm(a *eventv1.Alarm) []string {
+func encodeAlarm(a *eventv1.Alarm) ([]string, error) {
 	out := []string{"BEGIN:VALARM"}
 	switch a.GetAction() {
 	case eventv1.AlarmAction_ALARM_ACTION_AUDIO:
@@ -164,13 +164,21 @@ func encodeAlarm(a *eventv1.Alarm) []string {
 		case eventv1.TriggerRelation_TRIGGER_RELATION_START:
 			params = ";RELATED=START"
 		}
-		out = append(out, "TRIGGER"+params+":"+icaltime.EncodeDuration(t.TriggerOffset))
+		dur, err := icaltime.EncodeDuration(t.TriggerOffset)
+		if err != nil {
+			return nil, fmt.Errorf("TRIGGER: %w", err)
+		}
+		out = append(out, "TRIGGER"+params+":"+dur)
 	case *eventv1.Alarm_TriggerTime:
 		out = append(out, "TRIGGER;VALUE=DATE-TIME:"+utcStamp(t.TriggerTime))
 	}
 
 	if d := a.GetRepeatInterval(); d != nil {
-		out = append(out, "DURATION:"+icaltime.EncodeDuration(d))
+		dur, err := icaltime.EncodeDuration(d)
+		if err != nil {
+			return nil, fmt.Errorf("VALARM DURATION: %w", err)
+		}
+		out = append(out, "DURATION:"+dur)
 	}
 	if n := a.GetRepeatCount(); n > 0 {
 		out = append(out, "REPEAT:"+strconv.Itoa(int(n)))
@@ -202,7 +210,11 @@ func encodeAlarm(a *eventv1.Alarm) []string {
 		out = append(out, "RELATED-TO;RELTYPE=SNOOZE:"+contentline.Escape(v))
 	}
 	for _, at := range a.GetAttendees() {
-		out = append(out, encodeAttendee(at))
+		enc, err := encodeAttendee(at)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, enc)
 	}
-	return append(out, "END:VALARM")
+	return append(out, "END:VALARM"), nil
 }

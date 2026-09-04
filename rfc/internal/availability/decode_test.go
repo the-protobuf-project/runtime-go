@@ -150,6 +150,18 @@ func TestBusyTypeDefaultIsNotZero(t *testing.T) {
 	}
 }
 
+// extensionNamed finds a preserved property by key. Position is not a stable
+// handle: DTSTAMP is not modeled, so it is preserved as an extension too and
+// sits alongside whatever the test is actually looking for.
+func extensionNamed(exts []*availabilityv1.ExtensionProperty, key string) *availabilityv1.ExtensionProperty {
+	for _, e := range exts {
+		if e.GetKey() == key {
+			return e
+		}
+	}
+	return nil
+}
+
 // TestSubComponentIsolation checks the component stack directly: an unknown
 // property inside AVAILABLE must be preserved on the period, not the parent.
 func TestSubComponentIsolation(t *testing.T) {
@@ -158,6 +170,7 @@ func TestSubComponentIsolation(t *testing.T) {
 		"PRODID:-//Example//Test//EN\r\n" +
 		"BEGIN:VAVAILABILITY\r\n" +
 		"UID:avail-3@example.com\r\n" +
+		"DTSTAMP:20260101T090000Z\r\n" +
 		"X-PARENT-PROP:parent\r\n" +
 		"BEGIN:AVAILABLE\r\n" +
 		"UID:period-1@example.com\r\n" +
@@ -170,12 +183,20 @@ func TestSubComponentIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.GetExtensions()) != 1 || a.GetExtensions()[0].GetKey() != "X-PARENT-PROP" {
-		t.Errorf("parent extensions = %v", a.GetExtensions())
+	// The point of the test is which component each property landed on, so
+	// assert presence on the right one and absence from the other.
+	if extensionNamed(a.GetExtensions(), "X-PARENT-PROP") == nil {
+		t.Errorf("X-PARENT-PROP missing from the parent: %v", a.GetExtensions())
+	}
+	if extensionNamed(a.GetExtensions(), "X-CHILD-PROP") != nil {
+		t.Errorf("X-CHILD-PROP leaked onto the parent: %v", a.GetExtensions())
 	}
 	p := a.GetAvailablePeriods()[0]
-	if len(p.GetExtensions()) != 1 || p.GetExtensions()[0].GetKey() != "X-CHILD-PROP" {
-		t.Errorf("period extensions = %v", p.GetExtensions())
+	if extensionNamed(p.GetExtensions(), "X-CHILD-PROP") == nil {
+		t.Errorf("X-CHILD-PROP missing from the period: %v", p.GetExtensions())
+	}
+	if extensionNamed(p.GetExtensions(), "X-PARENT-PROP") != nil {
+		t.Errorf("X-PARENT-PROP leaked onto the period: %v", p.GetExtensions())
 	}
 }
 
@@ -211,6 +232,7 @@ func TestEncodingIsDeterministic(t *testing.T) {
 		"PRODID:-//Example//Test//EN\r\n" +
 		"BEGIN:VAVAILABILITY\r\n" +
 		"UID:avail-4@example.com\r\n" +
+		"DTSTAMP:20260101T090000Z\r\n" +
 		"X-CUSTOM;AAA=1;BBB=2;CCC=3;DDD=4:value\r\n" +
 		"BEGIN:AVAILABLE\r\n" +
 		"UID:period-4@example.com\r\n" +
@@ -242,10 +264,10 @@ func TestEncodingIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := a.GetExtensions()[0].GetParameters(); len(got) != 4 {
+	if got := extensionNamed(a.GetExtensions(), "X-CUSTOM").GetParameters(); len(got) != 4 {
 		t.Errorf("parent extension parameters = %v, want 4", got)
 	}
-	if got := a.GetAvailablePeriods()[0].GetExtensions()[0].GetParameters(); len(got) != 3 {
+	if got := extensionNamed(a.GetAvailablePeriods()[0].GetExtensions(), "X-CHILD").GetParameters(); len(got) != 3 {
 		t.Errorf("period extension parameters = %v, want 3", got)
 	}
 }

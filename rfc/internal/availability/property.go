@@ -37,12 +37,21 @@ func decodeProperty(a *availabilityv1.Availability, l contentline.Line) error {
 		}
 		a.Start = t
 	case "DTEND":
+		// Section 3.1: "'dtend' and 'duration' MUST NOT occur in the same
+		// 'availabilityprop'". Overwriting whichever came first would take the
+		// last one silently and make an invalid stream decode clean.
+		if a.GetEndForm() != nil {
+			return fmt.Errorf("DTEND after an end form is already set; RFC 7953 section 3.1 permits one of DTEND or DURATION")
+		}
 		t, err := decodeTime(l)
 		if err != nil {
 			return fmt.Errorf("DTEND: %w", err)
 		}
 		a.EndForm = &availabilityv1.Availability_End{End: t}
 	case "DURATION":
+		if a.GetEndForm() != nil {
+			return fmt.Errorf("DURATION after an end form is already set; RFC 7953 section 3.1 permits one of DTEND or DURATION")
+		}
 		d, err := icaltime.ParseDuration(l.Value)
 		if err != nil {
 			return err
@@ -84,12 +93,18 @@ func decodePeriodProperty(p *availabilityv1.AvailablePeriod, l contentline.Line)
 		}
 		p.Start = t
 	case "DTEND":
+		if p.GetEndForm() != nil {
+			return fmt.Errorf("DTEND after an end form is already set; RFC 7953 section 3.1 permits one of DTEND or DURATION")
+		}
 		t, err := decodeTime(l)
 		if err != nil {
 			return fmt.Errorf("DTEND: %w", err)
 		}
 		p.EndForm = &availabilityv1.AvailablePeriod_End{End: t}
 	case "DURATION":
+		if p.GetEndForm() != nil {
+			return fmt.Errorf("DURATION after an end form is already set; RFC 7953 section 3.1 permits one of DTEND or DURATION")
+		}
 		d, err := icaltime.ParseDuration(l.Value)
 		if err != nil {
 			return err
