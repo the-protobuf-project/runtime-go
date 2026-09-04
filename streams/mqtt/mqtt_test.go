@@ -53,7 +53,46 @@ func testBroker(t *testing.T) string {
 		t.Fatalf("AddListener: %v", err)
 	}
 	go func() { _ = srv.Serve() }()
-	t.Cleanup(func() { _ = srv.Close() })
+
+	// Whatever mochi registers for itself at startup, recorded before any
+	// test client connects, so the cleanup below knows what "drained" means.
+	baseline := srv.Clients.Len()
+
+	t.Cleanup(func() {
+		// Wait for the client registry to drain before closing.
+		//
+		// Server.Close walks the clients on each listener to disconnect them,
+		// and mochi v2.7.9 has a lock bug on that path: Clients.GetByListener
+		// takes the read lock and then calls Clients.Len, which takes it a
+		// second time (clients.go:94). sync.RWMutex forbids a recursive
+		// RLock, and against a concurrent write lock from Clients.Add or
+		// Delete -- a client attaching or detaching -- the race detector
+		// fires. That is what "race detected during execution of test" was in
+		// CI, and it is upstream: v2.7.9 is the newest release, so there is no
+		// version to move to.
+		//
+		// Closing with the registry already empty keeps Close off the racing
+		// branch, since there is then nothing to iterate and no concurrent
+		// Add or Delete to collide with. Cleanups run last-in-first-out, so
+		// testStreams has already closed its client by the time this runs and
+		// the wait is normally over immediately.
+		//
+		// This narrows the window rather than fixing the bug. The fix belongs
+		// upstream, in GetByListener.
+		// The baseline is not zero: InlineClient registers a client of its
+		// own that never disconnects, so waiting for an empty registry would
+		// just burn the whole timeout on every broker.
+		// Bounded deliberately tightly. Some tests end with a session still
+		// attached on purpose -- the resume case does -- so this must not
+		// wait for a registry that is never going to drain. A short wait
+		// covers the case that matters, a client still tearing down, and
+		// gives up rather than adding seconds per broker.
+		deadline := time.Now().Add(250 * time.Millisecond)
+		for srv.Clients.Len() > baseline && time.Now().Before(deadline) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		_ = srv.Close()
+	})
 
 	return ln.Address()
 }
