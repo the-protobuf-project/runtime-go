@@ -1,0 +1,6 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:Simon Perreault
+NOTE:This is a very long note that a conforming exporter would fold acros
+ s several lines because it exceeds seventy-five octets in total length.
+END:VCARD

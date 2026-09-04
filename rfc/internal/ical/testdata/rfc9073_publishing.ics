@@ -1,0 +1,43 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Example//Test//EN
+BEGIN:VEVENT
+UID:conf-1@example.com
+DTSTAMP:20260101T090000Z
+DTSTART:20260401T090000Z
+SUMMARY:Annual conference
+DESCRIPTION:Plain text description
+LOCATION:Main hall
+STYLED-DESCRIPTION;FMTTYPE=text/html:<p>Annual <b>conference</b></p>
+STRUCTURED-DATA;FMTTYPE=application/ld+json;SCHEMA="https://schema.org/Event":{"
+ name":"Annual conference"}
+BEGIN:PARTICIPANT
+UID:speaker-1@example.com
+PARTICIPANT-TYPE:SPEAKER
+CALENDAR-ADDRESS:mailto:jane@example.com
+SUMMARY:Dr Jane Rodriguez
+DESCRIPTION:Keynote speaker
+BEGIN:VLOCATION
+UID:stage-1@example.com
+NAME:Main stage
+LOCATION-TYPE:venue
+END:VLOCATION
+END:PARTICIPANT
+BEGIN:PARTICIPANT
+UID:sponsor-1@example.com
+PARTICIPANT-TYPE:SPONSOR,PUBLICITY-CONTACT
+SUMMARY:Example Corp
+END:PARTICIPANT
+BEGIN:VLOCATION
+UID:venue-1@example.com
+NAME:Conference center
+LOCATION-TYPE:venue
+GEO:37.386013;-122.082932
+END:VLOCATION
+BEGIN:VRESOURCE
+UID:projector-1@example.com
+NAME:Projector
+RESOURCE-TYPE:projector
+END:VRESOURCE
+END:VEVENT
+END:VCALENDAR

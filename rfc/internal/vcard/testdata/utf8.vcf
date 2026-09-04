@@ -1,0 +1,6 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:José María González de la Torre y Fernández del Campo Segundo
+N:González;José;María;;
+NOTE:日本語のテキストです。これは長い行です。折り返しをテストします。
+END:VCARD

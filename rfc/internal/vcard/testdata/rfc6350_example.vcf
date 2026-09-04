@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:Simon Perreault
+N:Perreault;Simon;;;ing. jr,M.Sc.
+EMAIL;TYPE=work:simon.perreault@viagenie.ca
+TEL;TYPE="work,voice";PREF=1:tel:+1-418-656-9254;ext=102
+ADR;TYPE=work:;Suite D2-630;2875 Laurier;Quebec;QC;G1V 2M2;Canada
+ORG:Viagenie;Research
+TITLE:Research Engineer
+NOTE:Contact from RFC 6350 section 7.
+END:VCARD

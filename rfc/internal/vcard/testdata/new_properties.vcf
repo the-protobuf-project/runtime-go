@@ -1,0 +1,18 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:New Properties
+BDAY:--0415
+ANNIVERSARY:20090812
+NICKNAME;TYPE=work;PREF=1:Boss,Chief
+URL;TYPE=home:https://example.com/~jdoe
+CATEGORIES:INTERNET,IETF,INDUSTRY
+ROLE:Executive
+IMPP;PREF=1:xmpp:alice@example.com
+LANG;TYPE=work;PREF=1:en-US
+GEO:geo:37.386013,-122.082932
+TZ:America/New_York
+TZ;VALUE=uri:https://example.com/tz/edt
+TZ;VALUE=utc-offset:-0500
+RELATED;TYPE=friend:urn:uuid:f81d4fae-7dec-11d0-a765-00a0c91e6bf6
+RELATED;TYPE=co-worker;VALUE=text:Please contact my assistant Jane Doe for any inquiries.
+END:VCARD

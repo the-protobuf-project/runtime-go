@@ -1,0 +1,7 @@
+BEGIN:VCARD
+VERSION:4.0
+FN:Escapes\, Tricky
+N:Semi\;colon;Comma\,Name;;;
+NOTE:Line one\nLine two\; and a semicolon\, and a comma\\ and a backslash
+ORG:Company\, Inc.;R\&D
+END:VCARD
