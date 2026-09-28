@@ -16,12 +16,12 @@ require (
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/database v0.0.0
 	google.golang.org/protobuf v1.36.12
-	gorm.io/driver/postgres v1.6.2
+	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
 )
 
 require (
-	github.com/arangodb/go-driver/v2 v2.3.1 // indirect
+	github.com/arangodb/go-driver/v2 v2.4.1 // indirect
 	github.com/arangodb/go-velocypack v0.0.0-20200318135517-5af53c29c67e // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dchest/siphash v1.2.3 // indirect
@@ -48,7 +48,7 @@ require (
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	go.mongodb.org/mongo-driver/v2 v2.8.2 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.9.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
