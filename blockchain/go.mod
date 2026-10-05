@@ -3,7 +3,7 @@ module github.com/the-protobuf-project/runtime-go/blockchain
 go 1.26.4
 
 require (
-	github.com/ethereum/go-ethereum v1.17.5
+	github.com/ethereum/go-ethereum v1.17.7
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/the-protobuf-project/runtime-go/database v0.0.0
@@ -33,7 +33,6 @@ require (
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
@@ -45,7 +44,6 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/exp v0.0.0-20260820142414-ca536658362e // indirect
