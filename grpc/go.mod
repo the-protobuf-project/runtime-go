@@ -15,7 +15,7 @@ require (
 	github.com/the-protobuf-project/runtime-go/agents v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.47.0
 	go.opentelemetry.io/otel/sdk/metric v1.47.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc
