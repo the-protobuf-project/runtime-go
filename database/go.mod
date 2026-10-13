@@ -7,10 +7,10 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-00010101000000-000000000000
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20260722084318-b90e81eeadb7
-	go.mongodb.org/mongo-driver/v2 v2.9.1
+	go.mongodb.org/mongo-driver/v2 v2.9.2
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.3
@@ -45,11 +45,11 @@ require (
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	modernc.org/libc v1.22.5 // indirect
 	modernc.org/mathutil v1.5.0 // indirect
