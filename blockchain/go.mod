@@ -3,7 +3,7 @@ module github.com/the-protobuf-project/runtime-go/blockchain
 go 1.26.4
 
 require (
-	github.com/ethereum/go-ethereum v1.17.7
+	github.com/ethereum/go-ethereum v1.17.8
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/the-protobuf-project/runtime-go/database v0.0.0
