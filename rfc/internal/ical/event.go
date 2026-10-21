@@ -17,13 +17,32 @@ import (
 // VERSION, which describe the stream rather than the event and belong to the
 // codec, not to the schema. That is the same reasoning that kept them off
 // Calendar.
+//
+// A document holding several VEVENTs -- a series and its overrides -- is
+// refused rather than merged; DecodeAll reads it.
 func Decode(src string) (*eventv1.Event, error) {
+	events, err := DecodeAll(src)
+	if err != nil {
+		return nil, err
+	}
+	if len(events) != 1 {
+		return nil, fmt.Errorf("calendar holds %d VEVENTs; a series with overrides is read whole", len(events))
+	}
+	return events[0], nil
+}
+
+// DecodeAll parses a VCALENDAR into one Event per VEVENT, in document order:
+// a recurring series and the overrides of its instances, each carrying its
+// RECURRENCE-ID, section 3.8.4.4.
+func DecodeAll(src string) ([]*eventv1.Event, error) {
 	raws := contentline.Unfold(src)
 	if len(raws) == 0 {
 		return nil, fmt.Errorf("empty calendar")
 	}
 
-	e := &eventv1.Event{}
+	var events []*eventv1.Event
+	// e is the VEVENT being read, nil outside one.
+	var e *eventv1.Event
 	// A component stack, not a boolean. RFC 5545 section 3.6 nests
 	// components: a VALARM lives inside a VEVENT, and its DESCRIPTION is the
 	// alarm's, not the event's. Tracking only "am I inside a VEVENT" silently
@@ -38,7 +57,6 @@ func Decode(src string) (*eventv1.Event, error) {
 	var participant *eventv1.Participant
 	var location *eventv1.Location
 	var resource *eventv1.Resource
-	seenEvent := false
 
 	for _, raw := range raws {
 		l, err := contentline.Parse(raw)
@@ -49,10 +67,12 @@ func Decode(src string) (*eventv1.Event, error) {
 		case "BEGIN":
 			name := strings.ToUpper(l.Value)
 			stack = append(stack, name)
-			if name == "VEVENT" {
-				seenEvent = true
-			}
 			switch name {
+			case "VEVENT":
+				if e != nil {
+					return nil, fmt.Errorf("VEVENT nested inside a VEVENT")
+				}
+				e = &eventv1.Event{}
 			case "VALARM":
 				alarm = &eventv1.Alarm{}
 			case "PARTICIPANT":
@@ -73,6 +93,15 @@ func Decode(src string) (*eventv1.Event, error) {
 			}
 			stack = stack[:len(stack)-1]
 			switch {
+			case name == "VEVENT":
+				if e.GetStart() == nil {
+					return nil, fmt.Errorf("VEVENT has no DTSTART")
+				}
+				events = append(events, e)
+				e = nil
+			case e == nil:
+				// A component outside any VEVENT -- a VTIMEZONE's STANDARD,
+				// a VTODO's VALARM -- is not this decoder's to map.
 			case name == "VALARM" && alarm != nil:
 				e.Alarms = append(e.Alarms, alarm)
 				alarm = nil
@@ -135,16 +164,13 @@ func Decode(src string) (*eventv1.Event, error) {
 		}
 	}
 
-	if !seenEvent {
-		return nil, fmt.Errorf("no VEVENT component found")
-	}
 	if len(stack) != 0 {
 		return nil, fmt.Errorf("unclosed component %s", current(stack))
 	}
-	if e.GetStart() == nil {
-		return nil, fmt.Errorf("VEVENT has no DTSTART")
+	if len(events) == 0 {
+		return nil, fmt.Errorf("no VEVENT component found")
 	}
-	return e, nil
+	return events, nil
 }
 
 // decodeTimeList handles EXDATE and RDATE, which are comma-separated lists of

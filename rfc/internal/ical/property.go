@@ -70,6 +70,18 @@ func decodeProperty(e *eventv1.Event, l contentline.Line) error {
 			return err
 		}
 		e.Position = p
+	case "RECURRENCE-ID":
+		// Section 3.8.4.4. RANGE=THISANDFUTURE would make one override stand
+		// for every later instance too, which the schema does not model;
+		// refusing it beats silently overriding only the first.
+		if strings.EqualFold(firstParam(l, "RANGE"), "THISANDFUTURE") {
+			return fmt.Errorf("RECURRENCE-ID with RANGE=THISANDFUTURE is not supported")
+		}
+		t, err := decodeTime(l)
+		if err != nil {
+			return err
+		}
+		e.OriginalStart = t
 	case "RRULE":
 		r, err := decodeRecurrence(l.Value)
 		if err != nil {

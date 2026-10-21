@@ -65,6 +65,28 @@ func (s *ICalendarSource) Event() (*eventv1.Event, error) {
 	return out, nil
 }
 
+// Events parses every VEVENT in the document, one Event each, in document
+// order: a recurring series and the overrides of its instances, each override
+// carrying the RECURRENCE-ID of the instance it replaces, RFC 5545 section
+// 3.8.4.4 <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.8.4.4>.
+//
+// [ICalendarSource.Event] reads a document holding exactly one VEVENT and
+// refuses one holding several, rather than merging them.
+func (s *ICalendarSource) Events() ([]*eventv1.Event, error) {
+	out, err := ical.DecodeAll(s.text)
+	if err != nil {
+		return nil, fail("icalendar", "event", err)
+	}
+	if s.validate {
+		for _, e := range out {
+			if err := check("event", e); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
 // Availability parses the document's VAVAILABILITY into an Availability,
 // RFC 7953 <https://www.rfc-editor.org/rfc/rfc7953.html>.
 //

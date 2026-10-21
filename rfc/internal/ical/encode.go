@@ -21,7 +21,13 @@ const prodID = "-//The Protobuf Project//runtime-go//EN"
 
 // Encode serializes an Event as a VCALENDAR containing one VEVENT.
 func Encode(e *eventv1.Event) (string, error) {
-	lines, err := contentLines(e)
+	return EncodeAll([]*eventv1.Event{e})
+}
+
+// EncodeAll serializes events as one VCALENDAR holding a VEVENT each: a
+// recurring series and the overrides of its instances, section 3.8.4.4.
+func EncodeAll(events []*eventv1.Event) (string, error) {
+	lines, err := calendarLines(events)
 	if err != nil {
 		return "", err
 	}
@@ -35,6 +41,31 @@ func Encode(e *eventv1.Event) (string, error) {
 
 // contentLines is the semantic half: an Event to unfolded content lines.
 func contentLines(e *eventv1.Event) ([]string, error) {
+	return calendarLines([]*eventv1.Event{e})
+}
+
+// calendarLines wraps each event's VEVENT in one VCALENDAR.
+func calendarLines(events []*eventv1.Event) ([]string, error) {
+	if len(events) == 0 {
+		return nil, fmt.Errorf("no event to encode")
+	}
+	out := []string{
+		"BEGIN:VCALENDAR",
+		"VERSION:2.0", // section 3.7.4: MUST be 2.0
+		"PRODID:" + prodID,
+	}
+	for _, e := range events {
+		lines, err := veventLines(e)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, lines...)
+	}
+	return append(out, "END:VCALENDAR"), nil
+}
+
+// veventLines is one Event as the content lines of its VEVENT.
+func veventLines(e *eventv1.Event) ([]string, error) {
 	if e.GetStart() == nil {
 		return nil, fmt.Errorf("event has no start; section 3.6.1 requires DTSTART")
 	}
@@ -42,9 +73,6 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 	var out []string
 	w := func(s string) { out = append(out, s) }
 
-	w("BEGIN:VCALENDAR")
-	w("VERSION:2.0") // section 3.7.4: MUST be 2.0
-	w("PRODID:" + prodID)
 	w("BEGIN:VEVENT")
 
 	if v := e.GetIcalUid(); v != "" {
@@ -52,6 +80,10 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 	}
 	v, params := encodeTime(e.GetStart())
 	w("DTSTART" + params + ":" + v)
+	if r := e.GetOriginalStart(); r != nil {
+		v, params := encodeTime(r)
+		w("RECURRENCE-ID" + params + ":" + v)
+	}
 
 	switch t := e.GetEnds().(type) {
 	case *eventv1.Event_End:
@@ -186,7 +218,6 @@ func contentLines(e *eventv1.Event) ([]string, error) {
 	}
 
 	w("END:VEVENT")
-	w("END:VCALENDAR")
 	return out, nil
 }
 

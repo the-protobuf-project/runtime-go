@@ -29,7 +29,7 @@ func jcalType(l contentline.Line) string {
 		return strings.ToLower(v[0])
 	}
 	switch l.Name {
-	case "DTSTART", "DTEND", "EXDATE", "RDATE", "DTSTAMP", "CREATED", "LAST-MODIFIED":
+	case "DTSTART", "DTEND", "RECURRENCE-ID", "EXDATE", "RDATE", "DTSTAMP", "CREATED", "LAST-MODIFIED":
 		return "date-time"
 	case "RRULE":
 		return "recur"

@@ -78,6 +78,45 @@ func (s *EventSource) JCal() ([]byte, error) {
 	return out, fail("event", "jcal", err)
 }
 
+// EventsSource converts several iCalendar Events into one document.
+//
+// Obtained from [Events].
+type EventsSource struct {
+	events   []*eventv1.Event
+	validate bool
+}
+
+// Events begins a conversion from several iCalendar Events: a recurring series
+// and the overrides of its instances, which RFC 5545 section 3.8.4.4 <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.8.4.4> carries
+// as VEVENTs sharing one UID.
+//
+//	text, err := rfc.Events(series, moved, cancelled).ICalendar()
+func Events(es ...*eventv1.Event) *EventsSource {
+	return &EventsSource{events: es}
+}
+
+// Validate requires every event to satisfy its buf.validate rules before any
+// method on this source produces a result.
+func (s *EventsSource) Validate() *EventsSource {
+	s.validate = true
+	return s
+}
+
+// ICalendar renders the events as one VCALENDAR holding a VEVENT each.
+//
+// Fails when there is no event, or when one has no DTSTART.
+func (s *EventsSource) ICalendar() (string, error) {
+	if s.validate {
+		for _, e := range s.events {
+			if err := check("event", e); err != nil {
+				return "", err
+			}
+		}
+	}
+	out, err := ical.EncodeAll(s.events)
+	return out, fail("event", "icalendar", err)
+}
+
 // AvailabilitySource converts an Availability into the forms RFC 7953 defines.
 //
 // Obtained from [Availability].
