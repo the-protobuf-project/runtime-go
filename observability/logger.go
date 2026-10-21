@@ -4,11 +4,10 @@ import (
 	"context"
 	"maps"
 
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
-// logger adapts opentelementry's logger to [telemetry.Logger].
+// logger adapts the telemetry-go SDK's logger to [telemetry.Logger].
 //
 // Two shape differences are reconciled here. The SDK's logger takes no context
 // per call — it carries one, set with WithContext — while the contract passes a
@@ -16,19 +15,25 @@ import (
 // convenience, while the contract records rather than returns. The adapter
 // binds the context per call and discards the convenience return.
 //
-// It holds the parent rather than the logger itself because the SDK's logger
-// type lives in an internal package: its methods are callable, but the type
-// cannot be named from out here.
+// It holds a function that binds the SDK's logger to a context rather than the
+// logger itself, because the SDK's logger type lives in an internal package:
+// its methods are callable, but the type cannot be named from out here. The
+// function is built in sdk.go, the one file that imports the SDK -- whose
+// package is also named telemetry.
 type logger struct {
-	otel  *opentelementry.Opentelementry
+	bind  func(context.Context) sdkLogger
 	bound telemetry.Fields
 }
 
-var _ telemetry.Logger = logger{}
-
-func newLogger(o *opentelementry.Opentelementry) telemetry.Logger {
-	return logger{otel: o}
+// sdkLogger is the part of the SDK's logger the adapter calls.
+type sdkLogger interface {
+	Debug(string, ...any)
+	Info(string, ...any)
+	Warn(string, ...any)
+	Error(string, ...any) error
 }
+
+var _ telemetry.Logger = logger{}
 
 // merge combines the bound fields with a call's. The call's win on a collision,
 // which is what With({"id": x}).Info(…, {"id": y}) means.
@@ -53,22 +58,6 @@ func (l logger) data(fields telemetry.Fields) []any {
 		return nil
 	}
 	return []any{m}
-}
-
-// bind attaches the call's context so exported records carry the right trace
-// and span IDs. The SDK holds its context rather than taking one per call, so
-// this makes a shallow copy per record — cheap, and the only way to correlate
-// without changing the SDK's signature.
-func (l logger) bind(ctx context.Context) interface {
-	Debug(string, ...any)
-	Info(string, ...any)
-	Warn(string, ...any)
-	Error(string, ...any) error
-} {
-	if ctx == nil {
-		return l.otel.Logger
-	}
-	return l.otel.Logger.WithContext(ctx)
 }
 
 func (l logger) Debug(ctx context.Context, msg string, fields telemetry.Fields) {
@@ -106,7 +95,7 @@ func (l logger) Error(ctx context.Context, msg string, err error, fields telemet
 // formatting but never loses a log line. Reporting false would silently
 // suppress records the SDK would have kept.
 //
-// If opentelementry later exposes its level, this should return the real
+// If the SDK later exposes its level, this should return the real
 // answer so debug-guarded paths can be skipped outright.
 func (l logger) Enabled(context.Context, telemetry.Level) bool {
 	return true
@@ -116,5 +105,5 @@ func (l logger) With(fields telemetry.Fields) telemetry.Logger {
 	if len(fields) == 0 {
 		return l
 	}
-	return logger{otel: l.otel, bound: l.merge(fields)}
+	return logger{bind: l.bind, bound: l.merge(fields)}
 }

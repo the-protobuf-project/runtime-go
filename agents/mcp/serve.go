@@ -82,12 +82,15 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp
 		httpServer := NewMCPServer(cfg)
 		register(httpServer)
 
+		streams, closeStreams := context.WithCancel(context.WithoutCancel(ctx))
+		defer closeStreams()
 		srv := &http.Server{
 			Addr:         cfg.Addr,
-			Handler:      buildHTTPMux(httpServer, cfg, httpTransports),
+			Handler:      releaseOnShutdown(streams, buildHTTPMux(httpServer, cfg, httpTransports)),
 			ReadTimeout:  cfg.ReadTimeout,  // 0 = no limit; progress requests must not time out
 			WriteTimeout: cfg.WriteTimeout, // 0 = no limit; streaming progress must not time out
 		}
+		srv.RegisterOnShutdown(closeStreams)
 		if hasStdio {
 			go func() {
 				if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -125,6 +128,26 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp
 		return serveStdio(ctx, stdioServer)
 	}
 	return fmt.Errorf("runtime: no transports configured")
+}
+
+// releaseOnShutdown ends hanging GET streams (the standalone SSE stream of a
+// streamable-HTTP session, or an SSE session) once streams is canceled.
+// http.Server.Shutdown waits for active requests but never cancels them, so
+// an open client session would otherwise hold the drain for its full
+// timeout. Other requests -- tool calls in flight -- keep their context and
+// drain normally.
+func releaseOnShutdown(streams context.Context, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			h.ServeHTTP(w, r)
+			return
+		}
+		ctx, cancel := context.WithCancel(r.Context())
+		defer cancel()
+		stop := context.AfterFunc(streams, cancel)
+		defer stop()
+		h.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 // buildHTTPMux registers HTTP-based transports on a fresh ServeMux.

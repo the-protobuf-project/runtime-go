@@ -1,43 +1,29 @@
 package grpc
 
 import (
-	"context"
-	"time"
-
 	_ "github.com/joho/godotenv/autoload"
 	"github.com/the-protobuf-project/runtime-go/grpc/options"
-	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
-	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/stats/opentelemetry"
 )
 
+// setupOtelExporter instruments the server with OTel: a span per call
+// (otelgrpc) and gRPC's own metrics. Both go through OTel's global tracer and
+// meter providers, which the application installs when it builds its telemetry
+// (and shares with this package via observability.Adopt), so every span and
+// series lands in the application's one pipeline, under its service name.
+//
+// This used to stand up a metric exporter of its own, at
+// PULSE_TELEMETRY_OTLP_ENDPOINT or localhost:12005: a second pipeline that
+// nothing listened to by default, so gRPC metrics were silently dropped. The
+// global meter provider is a delegate until the application sets it, so
+// building the option before then is fine.
 func setupOtelExporter() []grpc.ServerOption {
-	ctx := context.Background()
-	serverOpts := make([]grpc.ServerOption, 0, 2)
-
-	endpoint := getFromEnvOrDefault("PULSE_TELEMETRY_OTLP_ENDPOINT", "localhost:12005")
-	shared.Telemetry().Logger.Debugf("setupOtelExporter: creating OTLP metric exporter → %s (insecure)", endpoint)
-
-	exporter, err := otlpmetricgrpc.New(ctx,
-		otlpmetricgrpc.WithEndpoint(endpoint),
-		otlpmetricgrpc.WithInsecure(),
-	)
-	if err != nil {
-		_ = shared.Telemetry().Logger.Errorf("failed to create OTLP metric exporter: %s", err.Error())
-		return serverOpts
-	}
-	shared.Telemetry().Logger.Debugf("setupOtelExporter: exporter created, configuring MeterProvider (interval=10s)")
-	meterProvider := metric.NewMeterProvider(
-		metric.WithReader(metric.NewPeriodicReader(exporter,
-			metric.WithInterval(10*time.Second),
-		)),
-	)
 	so := opentelemetry.ServerOption(opentelemetry.Options{
 		MetricsOptions: opentelemetry.MetricsOptions{
-			MeterProvider: meterProvider,
+			MeterProvider: otel.GetMeterProvider(),
 			// These are example experimental gRPC metrics, which are disabled
 			// by default and must be explicitly enabled. For the full,
 			// up-to-date list of metrics, see:
@@ -77,7 +63,5 @@ func setupOtelExporter() []grpc.ServerOption {
 		},
 	})
 
-	serverOpts = append(serverOpts, so, grpc.StatsHandler(otelgrpc.NewServerHandler()))
-	shared.Telemetry().Logger.Debugf("setupOtelExporter: OTel server options ready (%d option(s))", len(serverOpts))
-	return serverOpts
+	return []grpc.ServerOption{so, grpc.StatsHandler(otelgrpc.NewServerHandler())}
 }

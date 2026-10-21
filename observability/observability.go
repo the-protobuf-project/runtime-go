@@ -1,13 +1,17 @@
 package observability
 
+// This file is the SDK side of the package; contract.go is the runtime-go
+// side. Both packages are named telemetry, so each file imports one.
+
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
-	"github.com/the-protobuf-project/runtime-go/telemetry"
+	"github.com/the-protobuf-project/telemetry/telemetry-go"
 )
 
 // Client is a configured telemetry backend. Build one with [Setup] or [Must].
@@ -15,11 +19,14 @@ import (
 // The zero Client is usable: its Log and Meter return the no-op contracts, so
 // a caller that never set one up still works.
 type Client struct {
-	otel         *opentelementry.Opentelementry
+	otel         *telemetry.Telemetry
 	closeTimeout time.Duration
+	// adopted marks a Client over the host application's SDK instance (see
+	// [Adopt]). The application owns that instance, so Close leaves it alone.
+	adopted bool
 
 	logOnce sync.Once
-	log     telemetry.Logger
+	log     logger
 }
 
 // Options configure a [Client]. The zero Options is valid — it produces a
@@ -71,10 +78,10 @@ func Setup(opts Options) (*Client, error) {
 		opts.Version = "0.0.0"
 	}
 
-	build := func(withExporters bool) (*opentelementry.Opentelementry, error) {
-		b := opentelementry.New().
+	build := func(withExporters bool) (*telemetry.Telemetry, error) {
+		b := telemetry.New().
 			WithService(opts.Service, opts.Version).
-			WithLogLevel(opentelementry.ModuleLevel_2)
+			WithLogLevel(telemetry.ModuleLevel_2)
 		if withExporters {
 			if opts.OTLPHost != "" {
 				b = b.WithOTLP(opts.OTLPHost, opts.OTLPPort)
@@ -143,6 +150,9 @@ func Lazy(service, version string) func() *Client {
 		client *Client
 	)
 	return func() *Client {
+		if a := adopted.Load(); a != nil {
+			return a
+		}
 		once.Do(func() {
 			c, err := Setup(Options{Service: service, Version: version})
 			if err != nil {
@@ -154,33 +164,11 @@ func Lazy(service, version string) func() *Client {
 	}
 }
 
-// Log returns the [telemetry.Logger] for this client. It is safe on a zero
-// Client, returning [telemetry.NoopLogger].
-func (c *Client) Log() telemetry.Logger {
-	if c == nil || c.otel == nil || c.otel.Logger == nil {
-		return telemetry.NoopLogger
-	}
-	c.logOnce.Do(func() { c.log = newLogger(c.otel) })
-	return c.log
-}
-
-// Meter returns the [telemetry.Meter] for this client.
-//
-// opentelementry implements the contract itself, so this is a pass-through
-// rather than an adapter. It is safe on a zero Client, returning
-// [telemetry.NoopMeter].
-func (c *Client) Meter() telemetry.Meter {
-	if c == nil || c.otel == nil {
-		return telemetry.NoopMeter
-	}
-	return c.otel.Meter()
-}
-
 // Otel exposes the underlying SDK client for the parts of it this package does
 // not front — tracing and profiling.
 //
 // It returns nil for a zero Client, so check before use.
-func (c *Client) Otel() *opentelementry.Opentelementry {
+func (c *Client) Otel() *telemetry.Telemetry {
 	if c == nil {
 		return nil
 	}
@@ -198,7 +186,7 @@ func (c *Client) Otel() *opentelementry.Opentelementry {
 // The flush is left running when it times out: the process is on its way out,
 // and a goroutine parked on a socket is cheaper than a delayed exit.
 func (c *Client) Close() error {
-	if c == nil || c.otel == nil {
+	if c == nil || c.otel == nil || c.adopted {
 		return nil
 	}
 
@@ -216,4 +204,40 @@ func (c *Client) Close() error {
 	case <-time.After(timeout):
 		return fmt.Errorf("observability: shutdown did not finish within %v; some telemetry may be unflushed", timeout)
 	}
+}
+
+// adopted is the Client every [Lazy] accessor returns once [Adopt] has run.
+var adopted atomic.Pointer[Client]
+
+// Adopt makes every runtime-go module in the process log, trace and measure
+// through the host application's SDK instance, instead of each building its
+// own on first use.
+//
+// Without it a process runs one pipeline per module plus the application's:
+// each exports under its own service name, and each SDK build installs itself
+// as OTel's global tracer and meter provider, so whichever built last decides
+// what the instrumentation libraries (otelgrpc, the ORM's gorm plugin) report
+// as. A trace of one request then splits across service names, and metrics
+// recorded through the globals land under the wrong one.
+//
+// Call it once, in main, right after building the application's instance and
+// before serving. A module that already built its own Client keeps it for
+// anything it holds, but every later accessor call returns this one. Close on
+// the adopted Client does nothing: the application closes what it built.
+func Adopt(sdk *telemetry.Telemetry) {
+	if sdk == nil {
+		return
+	}
+	adopted.Store(&Client{otel: sdk, adopted: true})
+}
+
+// bindLogger returns the SDK logger bound to ctx, for the contract adapter in
+// logger.go. The SDK holds its context rather than taking one per call, so
+// binding makes a shallow copy per record -- cheap, and the only way exported
+// records carry the right trace and span IDs.
+func (c *Client) bindLogger(ctx context.Context) sdkLogger {
+	if ctx == nil {
+		return c.otel.Logger
+	}
+	return c.otel.Logger.WithContext(ctx)
 }

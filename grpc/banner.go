@@ -47,7 +47,6 @@ func (s *HybridServer) printStartupBanner(endpoints []agents.Endpoint) {
 	var data [][]string
 
 	grpcAddr := fmt.Sprintf("%s:%d", s.opts.GRPC.Host, s.opts.GRPC.Port)
-	otlpEndpoint := getFromEnvOrDefault("PULSE_TELEMETRY_OTLP_ENDPOINT", "localhost:12005")
 	isReflection := s.opts.Environment == options.Debug || s.opts.Environment == options.Development
 
 	addRow := func(section, component, addr, detail string) {
@@ -67,7 +66,7 @@ func (s *HybridServer) printStartupBanner(endpoints []agents.Endpoint) {
 	if isReflection {
 		addRow("gRPC", "Reflection", grpcAddr, "grpcurl-compatible")
 	}
-	addRow("gRPC", "OpenTelemetry", grpcAddr, "OTLP → "+otlpEndpoint)
+	addRow("gRPC", "OpenTelemetry", grpcAddr, "spans + metrics via the application's telemetry")
 
 	// Agent protocols — MCP and A2A, in the order the runtime brought them up.
 	counts := map[agents.Protocol]int{}

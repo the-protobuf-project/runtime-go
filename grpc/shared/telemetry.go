@@ -7,7 +7,6 @@
 package shared
 
 import (
-	"github.com/the-protobuf-project/opentelementry/opentelementry-go"
 	"github.com/the-protobuf-project/runtime-go/observability"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
@@ -18,16 +17,6 @@ import (
 // failure to anyone, and an unreachable collector must not stop a binary from
 // starting just because it imported the grpc package.
 var obs = observability.Lazy("runtime-go-grpc", "1.0.0")
-
-// Telemetry returns the underlying SDK client.
-//
-// grpc logs through the SDK's own logger — its call sites use the formatted
-// helpers (Debugf, Errorf) that the backend-agnostic [telemetry.Logger]
-// contract does not carry — so this exposes the client directly rather than
-// fronting it. New code should prefer [Log].
-func Telemetry() *opentelementry.Opentelementry {
-	return obs().Otel()
-}
 
 // Log returns the backend-agnostic logger, tagged with the component.
 //
