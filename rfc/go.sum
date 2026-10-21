@@ -2,6 +2,8 @@ buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-202608252041
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2/go.mod h1:TCt1lluMFnctISJXvkIQ4x3ABrPuUKCWKyjKdkJNBpw=
 buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20260908111956-0fb3b0591946.2 h1:R5csJZ6ddHZBQ9UWehWsS7JTeu+5GzSPE4I+H+BTzTs=
 buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20260908111956-0fb3b0591946.2/go.mod h1:BgS6YLECIrB3HN5MHkAZHOEuIBYzm+EBm8z+hZX5Q/o=
+buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20261021085804-ae1e2acc01d5.2 h1:zyuIRbUZ/vc/9Hke5RJgwQoBR57VfM7nMyXElxYbkVg=
+buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20261021085804-ae1e2acc01d5.2/go.mod h1:BgS6YLECIrB3HN5MHkAZHOEuIBYzm+EBm8z+hZX5Q/o=
 buf.build/go/protovalidate v1.4.0 h1:UjLrYbt5VX7+TMOs2+pG5FhZhIG1mSfK4EIopbb4LcM=
 buf.build/go/protovalidate v1.4.0/go.mod h1:8vJfzNT6NIG2qm3uFsJDXMlRmG+bQJzbcIn1Aa0vPGs=
 cel.dev/cel-go v0.32.0 h1:irvpFKr5EuGPyxeME03ERh0rii1TX+BDAnB9eL3IvNk=

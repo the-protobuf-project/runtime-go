@@ -3,7 +3,7 @@ module github.com/the-protobuf-project/runtime-go/rfc
 go 1.26.0
 
 require (
-	buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20260908111956-0fb3b0591946.2
+	buf.build/gen/go/the-protobuf-project/rfc/protocolbuffers/go v1.36.12-20261021085804-ae1e2acc01d5.2
 	buf.build/go/protovalidate v1.4.0
 	github.com/google/go-cmp v0.7.0
 	google.golang.org/genproto v0.0.0-20260831171406-18b4a7587f8a
