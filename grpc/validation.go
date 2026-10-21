@@ -6,16 +6,14 @@ import (
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
 // NewValidationInterceptor returns a unary interceptor that checks every
 // request message against its buf.validate rules (annotated in the protos and
 // carried by the generated descriptors) before the handler runs. A violation
-// maps to InvalidArgument with the rule's message, mirroring AIP error
-// semantics.
+// maps to InvalidArgument saying what each field must be, with a BadRequest
+// detail per field (see validation_hints.go), mirroring AIP error semantics.
 //
 // This covers message-scoped rules only — resource-name shapes, ranges, CEL
 // field relations. Rules that need server state stay in the application.
@@ -29,7 +27,7 @@ func NewValidationInterceptor() (grpc.UnaryServerInterceptor, error) {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		if msg, ok := req.(proto.Message); ok {
 			if err := validator.Validate(msg); err != nil {
-				return nil, status.Error(codes.InvalidArgument, err.Error())
+				return nil, validationStatus(err)
 			}
 		}
 		return handler(ctx, req)

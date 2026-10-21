@@ -111,3 +111,31 @@ func httpErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Mars
 		shared.Telemetry().Logger.Debugf("HTTP gateway error: failed to write response: %v", werr)
 	}
 }
+
+// routingErrorHandler answers a request no route matches. grpc-gateway's own
+// answer is "Not Found" or "Method Not Allowed", which tells a developer
+// nothing they can act on; this one names the method and path that matched
+// nothing and says what to check, through the same envelope as every other
+// error.
+func routingErrorHandler(ctx context.Context, mux *runtime.ServeMux, m runtime.Marshaler, w http.ResponseWriter, r *http.Request, httpStatus int) {
+	var err error
+	switch httpStatus {
+	case http.StatusNotFound:
+		err = status.Errorf(codes.NotFound,
+			"No API method is served at %s %s. Check the path -- resource names are plural collections and ids, "+
+				"as in /v1/{collection}/{id} -- and the verb, against the API reference (the OpenAPI spec lists every route).",
+			r.Method, r.URL.Path)
+	case http.StatusMethodNotAllowed:
+		err = &runtime.HTTPStatusError{HTTPStatus: httpStatus, Err: status.Errorf(codes.Unimplemented,
+			"%s is served, but not for %s. Check the verb against the API reference: reads are GET, creates and custom methods (:verb) POST, updates PATCH, deletes DELETE.",
+			r.URL.Path, r.Method)}
+	case http.StatusBadRequest:
+		err = status.Errorf(codes.InvalidArgument,
+			"%s %s could not be read as a request. Check the path and query parameters against the API reference.",
+			r.Method, r.URL.Path)
+	default:
+		runtime.DefaultRoutingErrorHandler(ctx, mux, m, w, r, httpStatus)
+		return
+	}
+	httpErrorHandler(ctx, mux, m, w, r, err)
+}

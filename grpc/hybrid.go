@@ -86,9 +86,10 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 			UnmarshalOptions: s.restUnmarshal,
 		}),
 		// Map gRPC codes to proper HTTP statuses with a consistent JSON envelope.
-		// Routing errors (404/405/400) are funneled through this handler by
-		// grpc-gateway's default routing error handler.
 		runtime.WithErrorHandler(httpErrorHandler),
+		// A request no route matches gets the same envelope, saying which
+		// method and path matched nothing and where routes are listed.
+		runtime.WithRoutingErrorHandler(routingErrorHandler),
 	)
 	shared.Telemetry().Logger.Debugf("NewHybridServer: grpc-gateway mux created (EmitUnpopulated=%t, UseProtoNames=%t)",
 		s.restMarshal.EmitUnpopulated, s.restMarshal.UseProtoNames)
