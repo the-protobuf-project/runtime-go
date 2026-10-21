@@ -84,6 +84,9 @@ linters:
 
     misspell:
       locale: US
+      # RFC 5545 spells STATUS:CANCELLED (and our proto enums follow it).
+      ignore-rules:
+        - cancelled
 
   exclusions:
     rules:

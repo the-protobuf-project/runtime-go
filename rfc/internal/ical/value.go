@@ -40,8 +40,6 @@ func encodeGeo(p *latlng.LatLng) string {
 // CANCELLED is spelled with two Ls throughout because that is the wire value
 // RFC 5545 registers and the name protoc-gen-go derives from the enum. It is
 // not a spelling this package may choose.
-//
-//nolint:misspell // RFC 5545 section 3.8.1.11 defines the value as CANCELLED.
 func decodeConfirmation(v string) eventv1.Confirmation {
 	switch strings.ToUpper(strings.TrimSpace(v)) {
 	case "TENTATIVE":
@@ -54,7 +52,6 @@ func decodeConfirmation(v string) eventv1.Confirmation {
 	return eventv1.Confirmation_CONFIRMATION_UNSPECIFIED
 }
 
-//nolint:misspell // RFC 5545 section 3.8.1.11 defines the value as CANCELLED.
 func encodeConfirmation(c eventv1.Confirmation) string {
 	switch c {
 	case eventv1.Confirmation_CONFIRMATION_TENTATIVE:

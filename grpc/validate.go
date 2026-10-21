@@ -3,7 +3,6 @@ package grpc
 import (
 	"crypto/tls"
 	"fmt"
-	"os"
 
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 )
@@ -117,16 +116,4 @@ func mustLoadCertificate(certFile, keyFile string) tls.Certificate {
 	}
 	shared.Telemetry().Logger.Debugf("mustLoadCertificate: certificate loaded OK")
 	return cert
-}
-
-// getFromEnvOrDefault returns the value of the environment variable with the given key,
-// or the default value if the environment variable is not set.
-func getFromEnvOrDefault(key string, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		shared.Telemetry().Logger.Debugf("getFromEnvOrDefault: %s not set, using default %q", key, defaultValue)
-		return defaultValue
-	}
-	shared.Telemetry().Logger.Debugf("getFromEnvOrDefault: %s=%q", key, value)
-	return value
 }
