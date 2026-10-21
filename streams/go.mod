@@ -69,8 +69,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
-	github.com/the-protobuf-project/opentelementry/opentelementry-go v0.0.0-20260722091843-d33763c88e10 // indirect
-	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20261021141513-5a35ba0e3bb7 // indirect
+	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20261021175734-19bcab17b113 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
