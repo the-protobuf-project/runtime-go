@@ -10,7 +10,7 @@ import (
 
 // WithVolatileTelemetry is [WithTelemetry] for a [Volatile]: an operation
 // count and duration histogram for every call, and hit/miss for every Get,
-// on the same instruments, labelled strategy=volatile. A list cache reading
+// on the same instruments, labeled strategy=volatile. A list cache reading
 // pages through Volatile reports its hit rate this way.
 //
 // A miss is an outcome, not an error, as in [WithTelemetry].
