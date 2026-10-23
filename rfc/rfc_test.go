@@ -322,3 +322,21 @@ func TestValidateIsOptional(t *testing.T) {
 		t.Errorf("Err without Validate = %v, want nil", err)
 	}
 }
+
+// TestThisAndFutureValidates pins that a RANGE=THISANDFUTURE override, RFC
+// 5545 section 3.2.13, passes the schema's own rules and survives the chain.
+func TestThisAndFutureValidates(t *testing.T) {
+	src := strings.Replace(sampleICalendar, "SUMMARY:Standup\r\n",
+		"RECURRENCE-ID;RANGE=THISANDFUTURE:20260301T090000Z\r\nSUMMARY:Standup\r\n", 1)
+	event, err := rfc.ICalendar(src).Validate().Event()
+	if err != nil {
+		t.Fatalf("icalendar -> event: %v", err)
+	}
+	text, err := rfc.Event(event).ICalendar()
+	if err != nil {
+		t.Fatalf("event -> icalendar: %v", err)
+	}
+	if !strings.Contains(text, "RECURRENCE-ID;RANGE=THISANDFUTURE:20260301T090000Z") {
+		t.Errorf("round trip lost RANGE:\n%s", text)
+	}
+}

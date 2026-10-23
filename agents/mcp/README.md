@@ -48,6 +48,41 @@ own proto-derived base path. Through the HybridServer the same registration is
 `grpc.WithMCPServices(...)`, which re-exports `MCPServerConfig`, `MCPOption` and
 `ElicitField` so a program taking that route never imports `agents/mcp`
 
+### One endpoint for several services
+
+An agent connects to one MCP endpoint at a time, so a process with ten services
+on ten base paths asks the agent to connect ten times. Combining them serves
+every service's tools, prompts and resources from ONE server at one path
+(`/mcp` by default). It works on the generated `Serve*MCP` functions as they
+are — no regeneration:
+
+```go
+// On the HybridServer: every WithMCPServices service, also served at /mcp.
+srv := grpc.NewHybridServer(opts,
+    grpc.WithMCPServices(fooMCP, barMCP),
+    grpc.WithMCPEndpoint("/mcp"),
+    grpc.WithoutMCPServicePaths(), // once clients have moved off the per-service paths
+)
+
+// On a runtime.
+rt.Register(mcp.ServiceGroup(fns, mcp.ServiceCombined(), mcp.ServiceBasePath("/mcp")))
+
+// By hand, onto a mux you own.
+server, err := mcp.CombineServices(ctx, &mcp.MCPServerConfig{
+    Name: "my-service", Version: "1.0.0",
+    ServerOptions:    &mcp.ServerOptions{Instructions: "What this server is for."},
+    UnaryInterceptor: chain, // reaches every tool, as on the wire RPC
+}, fooMCP, barMCP)
+handler, err := mcp.NewHTTPHandler(server, cfg) // mounts at cfg.BasePath, default /mcp
+```
+
+`mcp.NewCombinedServer(cfg, regs...)` does the same for `Register*MCPHandler`
+calls bound as `mcp.Registration`s. The combined server reports the name,
+version and instructions you give it, not any one service's. Generated tool
+names carry their service's name, so services rarely clash; when two declare
+the same tool, prompt, resource or resource template, combining fails with an
+error naming each clash rather than letting one silently replace the other.
+
 ## MCP transports
 
 | Transport | Value | Use case |

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/the-protobuf-project/runtime-go/agents/a2a"
+	"github.com/the-protobuf-project/runtime-go/agents/mcp"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -64,12 +65,42 @@ func WithRESTMarshaler(marshal protojson.MarshalOptions, unmarshal protojson.Unm
 }
 
 // WithMCPServices returns a server Option that registers one or more MCP
-// service functions. Each function is started in its own goroutine and bound
-// to its own port, incrementing from opts.MCP.Port.
+// service functions. They share the MCP port, each mounted at its own
+// proto-derived base path; [WithMCPEndpoint] also serves them as one.
 func WithMCPServices(services ...MCPServiceFunc) Option {
 	return func(s *HybridServer) {
 		shared.Telemetry().Logger.Debugf("WithMCPServices: appending %d MCP service func(s)", len(services))
 		s.mcpServiceFuncs = append(s.mcpServiceFuncs, services...)
+	}
+}
+
+// WithMCPEndpoint serves every service registered with [WithMCPServices]
+// together, as ONE MCP server at path ("/mcp" when empty) on the MCP port, so
+// an agent connects once and sees every service's tools. The server reports
+// the options' ServiceName and Version, and their Description as its
+// instructions.
+//
+// Two services declaring the same tool, prompt, resource or resource template
+// make Start fail with an error naming each clash. Each service keeps answering
+// at its own proto-derived base path too, so clients can move over before
+// [WithoutMCPServicePaths] retires those paths.
+func WithMCPEndpoint(path string) Option {
+	return func(s *HybridServer) {
+		if path == "" {
+			path = mcp.DefaultBasePath
+		}
+		shared.Telemetry().Logger.Debugf("WithMCPEndpoint: serving every MCP service at %s", path)
+		s.mcpEndpoint = path
+	}
+}
+
+// WithoutMCPServicePaths stops mounting each MCP service at its own
+// proto-derived base path. With [WithMCPEndpoint] the combined endpoint is then
+// the server's only MCP surface; without it, no MCP is served.
+func WithoutMCPServicePaths() Option {
+	return func(s *HybridServer) {
+		shared.Telemetry().Logger.Debugf("WithoutMCPServicePaths: per-service MCP paths disabled")
+		s.mcpNoServicePath = true
 	}
 }
 

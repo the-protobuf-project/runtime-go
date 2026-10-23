@@ -27,34 +27,23 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp
 	resolved := *cfg
 	cfg = &resolved
 
-	transports := cfg.Transports
-	if len(transports) == 0 {
-		t := cfg.Transport
-		if t == "" {
-			t = TransportStreamableHTTP
-		}
-		transports = []Transport{t}
+	if cfg.collect != nil {
+		cfg.collect(cfg, register)
+		return nil
 	}
+
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"
 	}
 	if cfg.GeneratedBasePath != "" {
 		cfg.BasePath = cfg.GeneratedBasePath
 	} else if cfg.BasePath == "" {
-		cfg.BasePath = "/mcp"
+		cfg.BasePath = DefaultBasePath
 	}
 
-	var httpTransports []Transport
-	hasStdio := false
-	for _, t := range transports {
-		switch t {
-		case TransportStdio:
-			hasStdio = true
-		case TransportSSE, TransportStreamableHTTP:
-			httpTransports = append(httpTransports, t)
-		default:
-			return fmt.Errorf("runtime: unsupported transport %q", t)
-		}
+	httpTransports, hasStdio, err := resolveTransports(cfg)
+	if err != nil {
+		return err
 	}
 
 	// Notify caller that BasePath is resolved.
@@ -128,6 +117,31 @@ func StartServer(ctx context.Context, cfg *MCPServerConfig, register func(s *mcp
 		return serveStdio(ctx, stdioServer)
 	}
 	return fmt.Errorf("runtime: no transports configured")
+}
+
+// resolveTransports is cfg's transports — Transports, else Transport, else
+// streamable HTTP — split into those served over HTTP and whether stdio is
+// among them.
+func resolveTransports(cfg *MCPServerConfig) (httpTransports []Transport, hasStdio bool, err error) {
+	transports := cfg.Transports
+	if len(transports) == 0 {
+		t := cfg.Transport
+		if t == "" {
+			t = TransportStreamableHTTP
+		}
+		transports = []Transport{t}
+	}
+	for _, t := range transports {
+		switch t {
+		case TransportStdio:
+			hasStdio = true
+		case TransportSSE, TransportStreamableHTTP:
+			httpTransports = append(httpTransports, t)
+		default:
+			return nil, false, fmt.Errorf("runtime: unsupported transport %q", t)
+		}
+	}
+	return httpTransports, hasStdio, nil
 }
 
 // releaseOnShutdown ends hanging GET streams (the standalone SSE stream of a

@@ -33,17 +33,7 @@ func (s *HybridServer) startAgents() error {
 	var services []agents.Service
 
 	if s.opts.EnableMCP && len(s.mcpServiceFuncs) > 0 {
-		shared.Telemetry().Logger.Debugf("agents: registering %d MCP service(s) on %s:%d, transport %q",
-			len(s.mcpServiceFuncs), s.opts.MCP.Host, s.opts.MCP.Port, s.opts.MCP.Transport)
-		services = append(services, mcp.ServiceGroup(
-			mcpFuncs(s.mcpServiceFuncs),
-			mcp.ServiceAddr(fmt.Sprintf("%s:%d", s.opts.MCP.Host, s.opts.MCP.Port)),
-			mcp.ServiceTransports(s.mcpTransport()),
-			// Push the server's unary interceptor chain (including the one
-			// WithValidation resolved just above) down to MCP tool dispatch, so
-			// an MCP call runs the same middleware as the wire RPC behind it.
-			mcp.ServiceInterceptors(s.unaryInts...),
-		))
+		services = append(services, s.mcpGroups()...)
 	}
 
 	if s.opts.EnableA2A && len(s.a2aServiceFuncs) > 0 {
@@ -107,6 +97,45 @@ func (s *HybridServer) agentEndpoints() []agents.Endpoint {
 		return nil
 	}
 	return s.agentRuntime.Endpoints()
+}
+
+// mcpGroups is the MCP the server registers: each service at its own
+// proto-derived base path, every service together at the WithMCPEndpoint path,
+// or both while clients move from the one to the other. All of them share the
+// MCP port.
+func (s *HybridServer) mcpGroups() []agents.Service {
+	transport := s.mcpTransport()
+	common := []mcp.ServiceOption{
+		mcp.ServiceAddr(fmt.Sprintf("%s:%d", s.opts.MCP.Host, s.opts.MCP.Port)),
+		mcp.ServiceTransports(transport),
+		// Push the server's unary interceptor chain (including the one
+		// WithValidation resolved just above) down to MCP tool dispatch, so
+		// an MCP call runs the same middleware as the wire RPC behind it.
+		mcp.ServiceInterceptors(s.unaryInts...),
+	}
+	fns := mcpFuncs(s.mcpServiceFuncs)
+
+	var groups []agents.Service
+	// Stdio carries one server, so with a combined endpoint it is the
+	// combined server's alone.
+	servicePaths := !s.mcpNoServicePath && (s.mcpEndpoint == "" || transport != mcp.TransportStdio)
+	if servicePaths {
+		shared.Telemetry().Logger.Debugf("agents: registering %d MCP service(s) on %s:%d, transport %q",
+			len(fns), s.opts.MCP.Host, s.opts.MCP.Port, transport)
+		groups = append(groups, mcp.ServiceGroup(fns, common...))
+	}
+	if s.mcpEndpoint != "" {
+		shared.Telemetry().Logger.Debugf("agents: serving %d MCP service(s) as one at %s:%d%s, transport %q",
+			len(fns), s.opts.MCP.Host, s.opts.MCP.Port, s.mcpEndpoint, transport)
+		groups = append(groups, mcp.ServiceGroup(fns, append(common,
+			mcp.ServiceCombined(),
+			mcp.ServiceBasePath(s.mcpEndpoint),
+		)...))
+	}
+	if len(groups) == 0 {
+		shared.Telemetry().Logger.Warn("agents: WithoutMCPServicePaths without WithMCPEndpoint leaves no MCP endpoint; none is served")
+	}
+	return groups
 }
 
 // mcpFuncs adapts the registered service funcs to the runtime's shape. The two

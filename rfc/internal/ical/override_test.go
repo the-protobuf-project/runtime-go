@@ -78,13 +78,6 @@ func TestDecodeRefusesSeveralEvents(t *testing.T) {
 	}
 }
 
-func TestThisAndFutureRefused(t *testing.T) {
-	src := strings.Replace(series, "RECURRENCE-ID;TZID", "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID", 1)
-	if _, err := DecodeAll(src); err == nil {
-		t.Fatal("RANGE=THISANDFUTURE accepted as a single-instance override")
-	}
-}
-
 func TestOverrideJCalRoundTrip(t *testing.T) {
 	events, err := DecodeAll(series)
 	if err != nil {

@@ -68,7 +68,10 @@ func (s *ICalendarSource) Event() (*eventv1.Event, error) {
 // Events parses every VEVENT in the document, one Event each, in document
 // order: a recurring series and the overrides of its instances, each override
 // carrying the RECURRENCE-ID of the instance it replaces, RFC 5545 section
-// 3.8.4.4 <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.8.4.4>.
+// 3.8.4.4 <https://www.rfc-editor.org/rfc/rfc5545.html#section-3.8.4.4>. An
+// override with RANGE=THISANDFUTURE, section 3.2.13, sets original_start_range
+// and stands for that instance and every later one; splitting the stored
+// series is the caller's job. RANGE=THISANDPRIOR is refused.
 //
 // [ICalendarSource.Event] reads a document holding exactly one VEVENT and
 // refuses one holding several, rather than merging them.

@@ -109,3 +109,30 @@ func encodeTransparency(t eventv1.Transparency) string {
 	}
 	return ""
 }
+
+// RANGE on RECURRENCE-ID, section 3.2.13.
+//
+// THISANDFUTURE is the only value section 3.2.13 allows. THISANDPRIOR came
+// from RFC 2445 and is deprecated there; reading it as a single-instance
+// override would silently change what the sender meant, so it is refused,
+// as is any other value.
+func decodeRange(v string) (eventv1.RecurrenceRange, error) {
+	switch strings.ToUpper(strings.TrimSpace(v)) {
+	case "":
+		return eventv1.RecurrenceRange_RECURRENCE_RANGE_UNSPECIFIED, nil
+	case "THISANDFUTURE":
+		return eventv1.RecurrenceRange_RECURRENCE_RANGE_THIS_AND_FUTURE, nil
+	case "THISANDPRIOR":
+		return 0, fmt.Errorf("RECURRENCE-ID with RANGE=THISANDPRIOR is deprecated by RFC 5545 section 3.2.13 and not supported")
+	}
+	return 0, fmt.Errorf("RECURRENCE-ID with RANGE=%s: section 3.2.13 allows only THISANDFUTURE", v)
+}
+
+// encodeRange is the parameter text, leading semicolon included, or "" when
+// the override reaches only its own instance.
+func encodeRange(r eventv1.RecurrenceRange) string {
+	if r == eventv1.RecurrenceRange_RECURRENCE_RANGE_THIS_AND_FUTURE {
+		return ";RANGE=THISANDFUTURE"
+	}
+	return ""
+}

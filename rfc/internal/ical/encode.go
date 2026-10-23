@@ -82,7 +82,12 @@ func veventLines(e *eventv1.Event) ([]string, error) {
 	w("DTSTART" + params + ":" + v)
 	if r := e.GetOriginalStart(); r != nil {
 		v, params := encodeTime(r)
-		w("RECURRENCE-ID" + params + ":" + v)
+		w("RECURRENCE-ID" + encodeRange(e.GetOriginalStartRange()) + params + ":" + v)
+	} else if e.GetOriginalStartRange() != eventv1.RecurrenceRange_RECURRENCE_RANGE_UNSPECIFIED {
+		// RANGE is a parameter of RECURRENCE-ID, section 3.2.13. Without the
+		// property there is nowhere to write it, and dropping it would turn
+		// a split of the series into an edit of the whole series.
+		return nil, fmt.Errorf("event has original_start_range %v but no original_start", e.GetOriginalStartRange())
 	}
 
 	switch t := e.GetEnds().(type) {

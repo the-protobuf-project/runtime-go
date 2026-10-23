@@ -69,6 +69,11 @@ type MCPServerConfig struct {
 	// canceled; the host owns the http.Server lifecycle. Ignored by the stdio
 	// transport, which cannot share.
 	Mux *http.ServeMux
+
+	// collect, when set, makes StartServer hand its registration back instead
+	// of serving it: the seam CombineServices uses to put several generated
+	// ServeFooMCP functions on one server without regenerating them.
+	collect func(resolved *MCPServerConfig, register func(s *mcp.Server))
 }
 
 // NewMCPServer creates an mcp.Server from a MCPServerConfig.

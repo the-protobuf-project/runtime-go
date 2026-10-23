@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/agents"
@@ -21,6 +22,7 @@ type service struct {
 	basePath   string
 	headers    []HeaderMapping
 	unaryInts  []grpc.UnaryServerInterceptor
+	combined   bool
 }
 
 // ServiceOption adjusts what [Service] registers.
@@ -57,6 +59,20 @@ func ServiceHeaders(mappings ...HeaderMapping) ServiceOption {
 // wire RPC behind it.
 func ServiceInterceptors(interceptors ...grpc.UnaryServerInterceptor) ServiceOption {
 	return func(s *service) { s.unaryInts = interceptors }
+}
+
+// ServiceCombined serves the group as ONE MCP server at one path —
+// [ServiceBasePath], else [DefaultBasePath] — instead of each function at its
+// own proto-derived path, so an agent connects once and sees every service's
+// tools. The server reports the runtime's name and version, and its
+// description as the server's instructions.
+//
+// The services are combined with [CombineServices]: two declaring the same tool,
+// prompt, resource or resource template fail the start with an error naming
+// each clash. To keep the per-service paths while clients move over, register
+// the same functions a second time in a group without this option.
+func ServiceCombined() ServiceOption {
+	return func(s *service) { s.combined = true }
 }
 
 // Service registers MCP on an [agents.Runtime].
@@ -114,6 +130,9 @@ func (s *service) Serve(ctx context.Context, p agents.Placement, ready func([]ag
 		<-ctx.Done()
 		return nil
 	}
+	if s.combined {
+		return s.serveCombined(ctx, p, ready)
+	}
 
 	var (
 		mu        sync.Mutex
@@ -168,6 +187,58 @@ func (s *service) Serve(ctx context.Context, p agents.Placement, ready func([]ag
 	ready(out)
 
 	<-ctx.Done()
+	return nil
+}
+
+// serveCombined is Serve for a [ServiceCombined] group: every function on one
+// server, mounted once.
+func (s *service) serveCombined(ctx context.Context, p agents.Placement, ready func([]agents.Endpoint)) error {
+	cfg := s.config(p)
+	if cfg.BasePath == "" {
+		cfg.BasePath = DefaultBasePath
+	}
+	if p.Description != "" {
+		cfg.ServerOptions = &ServerOptions{Instructions: p.Description}
+	}
+	httpTransports, hasStdio, err := resolveTransports(cfg)
+	if err != nil {
+		return err
+	}
+
+	var endpoints []agents.Endpoint
+	if len(httpTransports) > 0 {
+		if p.Mux == nil {
+			return fmt.Errorf("mcp: combined service placed without a mux")
+		}
+		server, combineErr := CombineServices(ctx, cfg, s.funcs...)
+		if combineErr != nil {
+			return combineErr
+		}
+		mountHTTPTransports(p.Mux, server, cfg, httpTransports)
+		if ep, epErr := ServerEndpoint(cfg); epErr == nil {
+			endpoints = append(endpoints, agents.Endpoint{
+				Protocol:  agents.MCP,
+				Transport: ep.Transport,
+				URL:       ep.URL,
+				Detail:    cfg.BasePath,
+			})
+		}
+	}
+
+	if !hasStdio {
+		ready(endpoints)
+		<-ctx.Done()
+		return nil
+	}
+	// Stdio gets a server of its own, as it does under StartServer.
+	server, err := CombineServices(ctx, cfg, s.funcs...)
+	if err != nil {
+		return err
+	}
+	ready(append(endpoints, agents.Endpoint{Protocol: agents.MCP, Transport: string(TransportStdio)}))
+	if err := serveStdio(ctx, server); err != nil && ctx.Err() == nil {
+		return err
+	}
 	return nil
 }
 
