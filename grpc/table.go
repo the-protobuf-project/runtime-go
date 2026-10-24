@@ -30,10 +30,21 @@ func sectionColor(section string) func(...interface{}) string {
 	}
 }
 
-// buildHash reads the VCS revision baked in by `go build` (the same hash
-// shown by `git rev-parse --short HEAD`). Falls back to "dev" when building
-// with `go run` or without VCS information.
+// BuildRevision is the commit the banner shows. Builds that don't record VCS
+// information (Bazel, for one) set it before the server starts, from a value
+// stamped at link time. Empty means read it from the Go build info.
+var BuildRevision string
+
+// buildHash returns BuildRevision when set, else the VCS revision baked in by
+// `go build` (the same hash shown by `git rev-parse --short HEAD`). Falls back
+// to "dev" when building with `go run` or without VCS information.
 func buildHash() string {
+	if BuildRevision != "" {
+		if len(BuildRevision) >= 7 {
+			return BuildRevision[:7]
+		}
+		return BuildRevision
+	}
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "dev"
