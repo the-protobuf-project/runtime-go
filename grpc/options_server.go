@@ -4,6 +4,7 @@ import (
 	"context"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/the-protobuf-project/runtime-go/agents/a2a"
 	"github.com/the-protobuf-project/runtime-go/agents/mcp"
@@ -206,5 +207,19 @@ func WithHTTPHandler(h http.Handler) Option {
 	return func(s *HybridServer) {
 		shared.Telemetry().Logger.Debugf("WithHTTPHandler: serving a caller-supplied HTTP handler")
 		s.httpHandler = h
+	}
+}
+
+// WithShutdownTimeout bounds how long Stop waits for in-flight requests: the
+// HTTP gateways drain first, then the gRPC server, both within d. Requests
+// still running when d runs out are cut off. The default is 20 s; d <= 0
+// keeps it.
+func WithShutdownTimeout(d time.Duration) Option {
+	return func(s *HybridServer) {
+		if d <= 0 {
+			return
+		}
+		shared.Telemetry().Logger.Debugf("WithShutdownTimeout: Stop drains for at most %s", d)
+		s.shutdownTimeout = d
 	}
 }

@@ -1,8 +1,11 @@
 package grpc
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 
@@ -37,6 +40,10 @@ func (s *HybridServer) startHTTPGateway() error {
 		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
+	// Whatever endpoint the handlers dial, their connections land on the
+	// in-memory gateway listener, which outlives HTTP draining on Stop.
+	dialOpts = append(dialOpts, s.gatewayDialOption())
+
 	shared.Telemetry().Logger.Debugf("HTTP/1.1: registering %d HTTP gateway handler(s)", len(s.httpServiceFuncs))
 	for i, svc := range s.httpServiceFuncs {
 		shared.Telemetry().Logger.Debugf("HTTP/1.1: registering gateway handler [%d]", i)
@@ -45,39 +52,42 @@ func (s *HybridServer) startHTTPGateway() error {
 		}
 	}
 
-	if s.cert != nil {
-		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
-		s.httpServer = &http.Server{
-			Addr:              httpAddr,
-			Handler:           s.serveHandler(),
-			ReadHeaderTimeout: 30 * time.Second,
-			TLSConfig: &tls.Config{
-				Certificates: []tls.Certificate{*s.cert},
-				MinVersion:   tls.VersionTLS13,
-			},
-		}
-		go func() {
-			if err := s.httpServer.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-				shared.Telemetry().Logger.Fatalf("HTTPS server stopped: %v", err)
-			}
-		}()
-	} else {
-		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTP server on %s (plaintext)", httpAddr)
-		s.httpServer = &http.Server{
-			Addr:              httpAddr,
-			Handler:           s.serveHandler(),
-			ReadHeaderTimeout: 30 * time.Second,
-		}
-		go func() {
-			if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				shared.Telemetry().Logger.Fatalf("HTTP server stopped: %v", err)
-			}
-		}()
-	}
-
 	shared.Telemetry().Logger.Debugf("HTTP/1.1: registering GET /health endpoint")
 	if err := s.registerHealthzHandler(s.mux); err != nil {
 		return fmt.Errorf("failed to register /health endpoint: %w", err)
+	}
+
+	// Bind before returning, so a taken port fails Start and Stop always has a
+	// listener to close.
+	var lc net.ListenConfig
+	lis, err := lc.Listen(context.Background(), "tcp", httpAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on HTTP address: %w", err)
+	}
+
+	s.httpServer = &http.Server{
+		Addr:              httpAddr,
+		Handler:           s.serveHandler(),
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+	if s.cert != nil {
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
+		s.httpServer.TLSConfig = &tls.Config{
+			Certificates: []tls.Certificate{*s.cert},
+			MinVersion:   tls.VersionTLS13,
+		}
+		go func(srv *http.Server) {
+			if err := srv.ServeTLS(lis, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				shared.Telemetry().Logger.Fatalf("HTTPS server stopped: %v", err)
+			}
+		}(s.httpServer)
+	} else {
+		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTP server on %s (plaintext)", httpAddr)
+		go func(srv *http.Server) {
+			if err := srv.Serve(lis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				shared.Telemetry().Logger.Fatalf("HTTP server stopped: %v", err)
+			}
+		}(s.httpServer)
 	}
 	return nil
 }

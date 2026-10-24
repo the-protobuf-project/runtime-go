@@ -5,7 +5,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/quic-go/quic-go/http3"
@@ -13,8 +16,18 @@ import (
 	"github.com/the-protobuf-project/runtime-go/grpc/options"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protojson"
 )
+
+// defaultShutdownTimeout bounds Stop when [WithShutdownTimeout] is not given.
+// It fits inside Kubernetes' default 30 s termination grace period with room
+// for a preStop sleep.
+const defaultShutdownTimeout = 20 * time.Second
+
+// gatewayBufferSize is the per-direction buffer of each in-memory connection
+// between the REST gateway and the gRPC server.
+const gatewayBufferSize = 1 << 20
 
 // HybridServer encapsulates a gRPC server and its optional HTTP/1.1 and
 // experimental HTTP/3 REST gateways. It is designed to be configured using
@@ -22,6 +35,10 @@ import (
 type HybridServer struct {
 	opts             options.Options               // server configuration options
 	grpcServer       *grpc.Server                  // gRPC server instance
+	grpcListener     net.Listener                  // the gRPC TCP listener, closed first on Stop
+	gatewayListener  *bufconn.Listener             // in-memory listener the REST gateway dials; outlives HTTP draining
+	draining         atomic.Bool                   // set by Stop before it closes grpcListener, so Serve's error is expected
+	shutdownTimeout  time.Duration                 // bound on Stop (WithShutdownTimeout)
 	httpServer       *http.Server                  // HTTP/1.1 server
 	mux              *runtime.ServeMux             // grpc-gateway mux
 	httpHandler      http.Handler                  // replaces the gateway mux when set (WithHTTPHandler)
@@ -63,7 +80,8 @@ func NewHybridServer(opts options.Options, extraOpts ...Option) *HybridServer {
 		opts.MCP.Host, opts.MCP.Port)
 
 	s := &HybridServer{
-		opts: opts,
+		opts:            opts,
+		shutdownTimeout: defaultShutdownTimeout,
 		// Defaults: EmitUnpopulated ensures default values (false, 0, "", [])
 		// appear in JSON responses so clients receive the full Grafana dashboard
 		// shape; camelCase field names match the historical gateway behavior.

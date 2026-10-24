@@ -2,9 +2,12 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
+	"google.golang.org/grpc"
 )
 
 // Start validates the server configuration and launches the gRPC server and any
@@ -52,25 +55,104 @@ func (s *HybridServer) Close() error {
 }
 
 // Stop gracefully shuts down all running servers, allowing in-flight requests
-// to complete before closing connections.
+// to complete before closing connections. The whole sequence is bounded by
+// [WithShutdownTimeout]:
+//
+//  1. Stop accepting: the gRPC TCP listener closes, and the HTTP/1.1, HTTP/3
+//     and agent servers close theirs as their shutdown begins.
+//  2. Drain HTTP: in-flight gateway, HTTP/3 and agent requests finish while
+//     the gRPC server keeps serving them over the in-memory gateway listener.
+//  3. Drain gRPC: GracefulStop waits for the remaining RPCs, then closes the
+//     gateway listener and every connection.
+//
+// Whatever is still running when the timeout runs out is cut off, and Stop
+// reports it.
 func (s *HybridServer) Stop() error {
 	shared.Telemetry().Logger.Info("Shutting down servers...")
+	ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+	defer cancel()
+
+	s.draining.Store(true)
+	if s.grpcListener != nil {
+		shared.Telemetry().Logger.Debugf("Stop: closing the gRPC TCP listener")
+		// Serve may already have closed it; the error says nothing new.
+		_ = s.grpcListener.Close()
+		s.grpcListener = nil
+	}
+
+	errs := s.drainHTTP(ctx)
+
 	if s.grpcServer != nil {
 		shared.Telemetry().Logger.Debugf("Stop: calling GracefulStop on gRPC server")
-		s.grpcServer.GracefulStop()
+		if err := stopGRPC(ctx, s.grpcServer); err != nil {
+			errs = append(errs, err)
+		}
 		shared.Telemetry().Logger.Debugf("Stop: gRPC server stopped")
 	}
-	if s.httpServer != nil {
-		shared.Telemetry().Logger.Debugf("Stop: shutting down HTTP/1.1 server")
-		if err := s.httpServer.Shutdown(context.Background()); err != nil {
-			return fmt.Errorf("failed to shutdown HTTP server: %w", err)
+	s.gatewayListener = nil
+	return errors.Join(errs...)
+}
+
+// drainHTTP shuts down the HTTP/1.1 and HTTP/3 servers and the agent
+// protocols together, each closing its listeners and then waiting for its
+// in-flight requests. A server still busy when ctx ends is closed outright.
+func (s *HybridServer) drainHTTP(ctx context.Context) []error {
+	var (
+		mu   sync.Mutex
+		errs []error
+		wg   sync.WaitGroup
+	)
+	fail := func(err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		errs = append(errs, err)
+	}
+
+	if srv := s.httpServer; srv != nil {
+		wg.Go(func() {
+			shared.Telemetry().Logger.Debugf("Stop: shutting down HTTP/1.1 server")
+			if err := srv.Shutdown(ctx); err != nil {
+				_ = srv.Close()
+				fail(fmt.Errorf("failed to shutdown HTTP server: %w", err))
+				return
+			}
+			shared.Telemetry().Logger.Debugf("Stop: HTTP/1.1 server stopped")
+		})
+	}
+	if srv := s.http3Server; srv != nil && s.opts.ExperimentalHttp3 {
+		wg.Go(func() {
+			shared.Telemetry().Logger.Debugf("Stop: shutting down HTTP/3 server")
+			if err := srv.Shutdown(ctx); err != nil {
+				_ = srv.Close()
+				fail(fmt.Errorf("failed to shutdown HTTP/3 server: %w", err))
+			}
+		})
+	}
+	wg.Go(func() {
+		if err := s.stopAgents(ctx); err != nil {
+			fail(fmt.Errorf("failed to shutdown agent protocols: %w", err))
 		}
-		shared.Telemetry().Logger.Debugf("Stop: HTTP/1.1 server stopped")
+	})
+
+	wg.Wait()
+	return errs
+}
+
+// stopGRPC runs GracefulStop, falling back to Stop if ctx ends first.
+func stopGRPC(ctx context.Context, srv *grpc.Server) error {
+	done := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		srv.Stop()
+		<-done
+		return fmt.Errorf("failed to drain gRPC server: %w", ctx.Err())
 	}
-	if err := s.stopAgents(); err != nil {
-		return fmt.Errorf("failed to shutdown agent protocols: %w", err)
-	}
-	return nil
 }
 
 // Restart gracefully stops and then starts the server again. This is useful

@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 // startGRPCServer initializes and runs the gRPC server component. It configures
@@ -75,14 +77,37 @@ func (s *HybridServer) startGRPCServer() error {
 		return err
 	}
 
-	shared.Telemetry().Logger.Debugf("gRPC: starting server goroutine on %s", grpcAddr)
-	go func() {
-		if err := s.grpcServer.Serve(lis); err != nil {
-			shared.Telemetry().Logger.Fatalf("gRPC server stopped: %v", err)
-		}
-	}()
+	// The REST gateway reaches this server over an in-memory listener rather
+	// than the TCP port. Stop closes the TCP listener first, to turn new
+	// clients away, while gateway requests already accepted still need a gRPC
+	// backend to finish against; this listener stays open until GracefulStop.
+	s.draining.Store(false)
+	s.grpcListener = lis
+	s.gatewayListener = bufconn.Listen(gatewayBufferSize)
+
+	shared.Telemetry().Logger.Debugf("gRPC: starting server goroutines on %s and the in-memory gateway listener", grpcAddr)
+	go s.serveGRPC(s.grpcServer, lis, grpcAddr)
+	go s.serveGRPC(s.grpcServer, s.gatewayListener, "the in-memory gateway listener")
 
 	return nil
+}
+
+// serveGRPC serves the gRPC server on lis until it stops. Serve fails when
+// Stop closes the TCP listener ahead of GracefulStop; that is expected, and
+// only a failure outside shutdown is fatal.
+func (s *HybridServer) serveGRPC(srv *grpc.Server, lis net.Listener, name string) {
+	if err := srv.Serve(lis); err != nil && !s.draining.Load() {
+		shared.Telemetry().Logger.Fatalf("gRPC server on %s stopped: %v", name, err)
+	}
+}
+
+// gatewayDialOption routes the REST gateway's connections to the in-memory
+// listener, whatever endpoint it is handed.
+func (s *HybridServer) gatewayDialOption() grpc.DialOption {
+	lis := s.gatewayListener
+	return grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+		return lis.DialContext(ctx)
+	})
 }
 
 // registerHealth enables the standard gRPC health checking service if specified

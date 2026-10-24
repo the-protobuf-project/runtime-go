@@ -76,8 +76,8 @@ func (s *HybridServer) startAgents() error {
 	return nil
 }
 
-// stopAgents drains the agent runtime, if one came up.
-func (s *HybridServer) stopAgents() error {
+// stopAgents drains the agent runtime, if one came up, within ctx.
+func (s *HybridServer) stopAgents(ctx context.Context) error {
 	rt, cancel := s.agentRuntime, s.agentCancel
 	s.agentRuntime, s.agentCancel = nil, nil
 
@@ -88,7 +88,7 @@ func (s *HybridServer) stopAgents() error {
 		return nil
 	}
 	shared.Telemetry().Logger.Info("Shutting down agent protocols...")
-	return rt.Shutdown(context.Background())
+	return rt.Shutdown(ctx)
 }
 
 // agentEndpoints reports where every agent protocol came up, for the banner.
