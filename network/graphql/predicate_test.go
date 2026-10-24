@@ -133,3 +133,12 @@ func TestSetColumnsNullable(t *testing.T) {
 		t.Fatalf("empty nullable patch: %s", got)
 	}
 }
+
+func TestPredicateOp(t *testing.T) {
+	if got := mustJSON(t, Op("attributes", "jsonb_contains", map[string]any{"floor": 3})); got != `{"attributes":{"jsonb_contains":{"floor":3}}}` {
+		t.Fatalf("Op: %s", got)
+	}
+	if got := mustJSON(t, Not(Op("tags", "_contains", "wifi"))); got != `{"_not":{"tags":{"_contains":"wifi"}}}` {
+		t.Fatalf("Not(Op): %s", got)
+	}
+}
