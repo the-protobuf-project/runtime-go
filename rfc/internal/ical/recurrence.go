@@ -39,6 +39,12 @@ var weekdays = map[string]dayofweek.DayOfWeek{
 	"SA": dayofweek.DayOfWeek_SATURDAY,
 }
 
+// DecodeRecurrence parses an RRULE value, RFC 5545 section 3.3.10, into the
+// schema's Recurrence. It is what DecodeAll applies to an RRULE property, and
+// what a caller holding a bare rule (an RFC 7953 AVAILABLE's recurrence_rule)
+// needs.
+func DecodeRecurrence(v string) (*eventv1.Recurrence, error) { return decodeRecurrence(v) }
+
 func decodeRecurrence(v string) (*eventv1.Recurrence, error) {
 	r := &eventv1.Recurrence{}
 	for _, part := range strings.Split(v, ";") {
