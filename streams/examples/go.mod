@@ -12,7 +12,7 @@ go 1.26.4
 
 require (
 	github.com/the-protobuf-project/runtime-go/streams v0.0.0
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261024035205-2d2b451ed122
 )
 
 require (
@@ -23,7 +23,7 @@ require (
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/mochi-mqtt/server/v2 v2.7.9 // indirect
 	github.com/nats-io/nats-server/v2 v2.15.1 // indirect
-	github.com/nats-io/nats.go v1.54.0 // indirect
+	github.com/nats-io/nats.go v1.55.0 // indirect
 	github.com/nats-io/nkeys v0.4.16 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
@@ -32,7 +32,7 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261021171349-70cd275896ec // indirect
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261023180446-a76d56a9756b // indirect
 	github.com/twmb/franz-go v1.22.2 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.19.0 // indirect
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260811033724-b8e7523ac75a // indirect
