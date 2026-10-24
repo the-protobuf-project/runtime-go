@@ -23,6 +23,7 @@ type service struct {
 	headers    []HeaderMapping
 	unaryInts  []grpc.UnaryServerInterceptor
 	combined   bool
+	stateless  bool
 }
 
 // ServiceOption adjusts what [Service] registers.
@@ -73,6 +74,13 @@ func ServiceInterceptors(interceptors ...grpc.UnaryServerInterceptor) ServiceOpt
 // the same functions a second time in a group without this option.
 func ServiceCombined() ServiceOption {
 	return func(s *service) { s.combined = true }
+}
+
+// ServiceStateless serves the group's streamable HTTP without sessions, so
+// any replica behind a load balancer answers any request. See
+// [MCPServerConfig].Stateless for what that gives up.
+func ServiceStateless() ServiceOption {
+	return func(s *service) { s.stateless = true }
 }
 
 // Service registers MCP on an [agents.Runtime].
@@ -253,5 +261,6 @@ func (s *service) config(p agents.Placement) *MCPServerConfig {
 		Mux:              p.Mux,
 		HeaderMappings:   s.headers,
 		UnaryInterceptor: ChainUnaryInterceptors(s.unaryInts...),
+		Stateless:        s.stateless,
 	}
 }

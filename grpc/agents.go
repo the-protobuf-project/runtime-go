@@ -113,6 +113,9 @@ func (s *HybridServer) mcpGroups() []agents.Service {
 		// an MCP call runs the same middleware as the wire RPC behind it.
 		mcp.ServiceInterceptors(s.unaryInts...),
 	}
+	if s.mcpStateless {
+		common = append(common, mcp.ServiceStateless())
+	}
 	fns := mcpFuncs(s.mcpServiceFuncs)
 
 	var groups []agents.Service

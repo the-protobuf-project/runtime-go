@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"slices"
 	"strings"
@@ -172,5 +173,66 @@ func TestHybridServer_MCPEndpointCollisionFailsStart(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `tool "alpha-ping_v1"`) {
 		t.Errorf("error does not name the tool: %v", err)
+	}
+}
+
+// WithStatelessMCP serves the combined endpoint without sessions: initialize
+// issues no Mcp-Session-Id, a request carrying none is answered, and the
+// standalone GET stream is refused.
+func TestHybridServer_StatelessMCP(t *testing.T) {
+	opts := mcpOpts(t)
+	s := NewHybridServer(opts,
+		WithMCPServices(serveNamedMCP("alpha")),
+		WithMCPEndpoint(""),
+		WithStatelessMCP(),
+	)
+	startHybrid(t, s)
+	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", opts.MCP.Port)
+
+	post := func(body string) (int, http.Header, string) {
+		t.Helper()
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		req.Header.Set("Mcp-Protocol-Version", "2025-11-25")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		out, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read response: %v", err)
+		}
+		return resp.StatusCode, resp.Header, string(out)
+	}
+
+	status, header, _ := post(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"raw","version":"0"}}}`)
+	if status != http.StatusOK {
+		t.Fatalf("initialize status %d", status)
+	}
+	if id := header.Get("Mcp-Session-Id"); id != "" {
+		t.Errorf("stateless server issued Mcp-Session-Id %q", id)
+	}
+
+	status, _, body := post(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"alpha-ping_v1","arguments":{}}}`)
+	if status != http.StatusOK || !strings.Contains(body, "pong from alpha") {
+		t.Errorf("tools/call without a session: status %d, body %s", status, body)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("build request: %v", err)
+	}
+	get, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	_ = get.Body.Close()
+	if get.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET status %d, want 405", get.StatusCode)
 	}
 }

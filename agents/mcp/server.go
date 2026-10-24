@@ -30,6 +30,17 @@ type MCPServerConfig struct {
 	ServerOptions *mcp.ServerOptions
 	// StreamableHTTPOptions are passed to mcp.NewStreamableHTTPHandler.
 	StreamableHTTPOptions *mcp.StreamableHTTPOptions
+	// Stateless serves streamable HTTP without sessions: every POST is
+	// answered by a temporary session that ends with the request, and no
+	// Mcp-Session-Id is issued or read. Any replica behind a load balancer can
+	// then answer any request, with no sticky routing. What it gives up:
+	// server-to-client requests (elicitation, sampling, roots) fail at once,
+	// the standalone GET stream and DELETE answer 405, and nothing — event
+	// resumption, per-session state — outlives a request. Notifications sent
+	// while handling a request, such as progress, still reach the caller.
+	// It overrides StreamableHTTPOptions.Stateless when true and leaves the
+	// SSE transport alone. Default false: sessions, as before.
+	Stateless bool
 	// SSEOptions are passed to mcp.NewSSEHandler.
 	SSEOptions *mcp.SSEOptions
 	// BasePath is the HTTP path prefix for the MCP endpoint (default "/mcp").

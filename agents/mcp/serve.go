@@ -180,7 +180,7 @@ func mountHTTPTransports(mux *http.ServeMux, server *mcp.Server, cfg *MCPServerC
 	for _, t := range transports {
 		switch t {
 		case TransportStreamableHTTP:
-			h := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return server }, cfg.StreamableHTTPOptions)
+			h := mcp.NewStreamableHTTPHandler(func(_ *http.Request) *mcp.Server { return server }, streamableOptions(cfg))
 			mux.Handle(cfg.BasePath, wrap(h))
 		case TransportSSE:
 			h := mcp.NewSSEHandler(func(_ *http.Request) *mcp.Server { return server }, cfg.SSEOptions)
@@ -194,6 +194,21 @@ func mountHTTPTransports(mux *http.ServeMux, server *mcp.Server, cfg *MCPServerC
 		}
 		mux.Handle(path, HealthCheckHandler(cfg.HealthCheckConn))
 	}
+}
+
+// streamableOptions is cfg.StreamableHTTPOptions with cfg.Stateless applied.
+// The caller's options are copied before Stateless is set, never modified.
+func streamableOptions(cfg *MCPServerConfig) *mcp.StreamableHTTPOptions {
+	if !cfg.Stateless {
+		return cfg.StreamableHTTPOptions
+	}
+	opts := &mcp.StreamableHTTPOptions{}
+	if cfg.StreamableHTTPOptions != nil {
+		copied := *cfg.StreamableHTTPOptions
+		opts = &copied
+	}
+	opts.Stateless = true
+	return opts
 }
 
 func serveStdio(ctx context.Context, server *mcp.Server) error {

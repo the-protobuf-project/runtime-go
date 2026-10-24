@@ -104,6 +104,22 @@ func WithoutMCPServicePaths() Option {
 	}
 }
 
+// WithStatelessMCP serves MCP over streamable HTTP without sessions, at the
+// [WithMCPEndpoint] path and each service's own path alike. Every request is
+// self-contained and no Mcp-Session-Id is issued, so any replica behind a load
+// balancer answers any request without sticky routing.
+//
+// It gives up what needs a session: server-to-client requests (elicitation,
+// sampling, roots) fail, the standalone GET stream and DELETE answer 405, and
+// no state or event resumption outlives a request. Progress notifications sent
+// while a call runs still arrive. Stdio and SSE are unaffected.
+func WithStatelessMCP() Option {
+	return func(s *HybridServer) {
+		shared.Telemetry().Logger.Debugf("WithStatelessMCP: MCP streamable HTTP serves without sessions")
+		s.mcpStateless = true
+	}
+}
+
 // WithA2AServices returns a server Option that registers one or more
 // Agent2Agent service functions. Each is started in its own goroutine with a
 // config the server builds: the HTTP transports share one listener on

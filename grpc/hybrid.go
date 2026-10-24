@@ -34,6 +34,7 @@ type HybridServer struct {
 	a2aServiceFuncs  []A2AServiceFunc              // registered A2A service functions
 	mcpEndpoint      string                        // path serving every MCP service as one server ("" = none; WithMCPEndpoint)
 	mcpNoServicePath bool                          // skip each MCP service's own base path (WithoutMCPServicePaths)
+	mcpStateless     bool                          // serve MCP streamable HTTP without sessions (WithStatelessMCP)
 	cert             *tls.Certificate              // TLS certificate for secure connections
 	unaryInts        []grpc.UnaryServerInterceptor // caller-supplied unary interceptors (chained in order)
 	enableValidation bool                          // prepend the protovalidate interceptor at Start (WithValidation)

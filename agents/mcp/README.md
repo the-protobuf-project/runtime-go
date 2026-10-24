@@ -83,6 +83,41 @@ names carry their service's name, so services rarely clash; when two declare
 the same tool, prompt, resource or resource template, combining fails with an
 error naming each clash rather than letting one silently replace the other.
 
+### Several replicas: stateless streamable HTTP
+
+By default streamable HTTP keeps a session per client in the process that
+answered `initialize`, keyed by the `Mcp-Session-Id` header. Behind a load
+balancer with two or more replicas and no sticky routing, a follow-up that
+lands on another replica gets 404 "session not found". Stateless mode drops
+the session: every POST is answered by a temporary session that ends with the
+request, no `Mcp-Session-Id` is issued or read, and any replica answers any
+request.
+
+```go
+grpc.NewHybridServer(opts, grpc.WithMCPServices(fooMCP), grpc.WithMCPEndpoint("/mcp"), grpc.WithStatelessMCP())
+rt.Register(mcp.ServiceGroup(fns, mcp.ServiceCombined(), mcp.ServiceStateless()))
+handler, err := mcp.NewHTTPHandler(server, &mcp.MCPServerConfig{Stateless: true})
+```
+
+What it turns off:
+
+- **Server-to-client requests.** Elicitation, sampling and roots fail at once:
+  there is no session for the client's answer to come back to. Tools that call
+  `RunElicitation` need sessions (and sticky routing).
+- **The standalone stream.** GET (the server-to-client SSE stream) and DELETE
+  answer 405; the client carries on without them. Notifications sent while a
+  request runs, such as progress, still reach the caller on that request's
+  response.
+- **Resumability and per-session state.** Nothing outlives a request: no event
+  replay after a dropped stream, no session id for handlers to key state on, no
+  `SessionTimeout`. Each request sees default initialization parameters, not
+  the client's own.
+
+It applies to streamable HTTP only (combined and per-service servers alike);
+stdio and SSE are unchanged. Plain request/response tools lose nothing.
+Clients on protocol 2026-07-28 or later are sessionless anyway; stateless
+mode is what lets clients on 2025-11-25 and earlier span replicas.
+
 ## MCP transports
 
 | Transport | Value | Use case |
@@ -111,6 +146,7 @@ transports := mcp.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 | `BasePath` | HTTP path prefix (default `/mcp`) |
 | `GeneratedBasePath` | Proto-derived path; takes precedence |
 | `HeaderMappings` | HTTP header → gRPC metadata forwarding |
+| `Stateless` | Streamable HTTP without sessions, for replicas behind a load balancer (see above) |
 | `ReadTimeout` | Cap on reading a request; 0 means no limit |
 | `WriteTimeout` | Cap on writing a response; keep 0 or long-running progress is cut off |
 | `OnReady` | Called with the resolved config before the server starts |
