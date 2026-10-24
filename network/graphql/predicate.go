@@ -28,7 +28,7 @@ func pred(col, op string, v any) Predicate {
 // typed field handle exposes: one a connector adds to a scalar type, such as
 // ndc-postgres' jsonb_contains and jsonb_exists, or the engine's _contains on an
 // array of scalars. The engine rejects an operator the column's boolean
-// expression type does not declare, so a misspelt op fails at the server.
+// expression type does not declare, so a misspelled op fails at the server.
 func Op(col, op string, v any) Predicate { return pred(col, op, v) }
 
 // And combines predicates so that all must match ({_and: [...]}). With no arguments it
