@@ -126,3 +126,19 @@ func RunElicitation(req *mcp.CallToolRequest, message string, fields []ElicitFie
 		},
 	}, nil
 }
+
+// MissingElicitFields are the fields of a form that args does not already
+// carry: absent, null or an empty string. A static elicitation with
+// ask_missing_only asks only these, and is skipped when none are left, so a
+// caller who said everything is not asked again.
+func MissingElicitFields(args json.RawMessage, fields []ElicitField) []ElicitField {
+	var given map[string]any
+	_ = json.Unmarshal(args, &given)
+	var out []ElicitField
+	for _, f := range fields {
+		if v, ok := given[f.Name]; !ok || v == nil || v == "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
