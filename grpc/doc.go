@@ -74,6 +74,18 @@
 // See [github.com/the-protobuf-project/runtime-go/agents/a2a] for the runtime
 // and [WithA2AServices] for the generated-entrypoint form.
 //
+// # CORS
+//
+// [WithCORS] lets browser clients on other origins call the HTTP listeners:
+//
+//	srv := grpc.NewHybridServer(opts, grpc.WithCORS(grpc.CORSPolicy{
+//	    AllowedOrigins: []string{"https://app.example.com"},
+//	}))
+//
+// Preflights are answered before any handler runs, and an invalid policy (no
+// origins, or "*" with credentials) makes Start fail. [CORS] is the same
+// middleware for a caller composing its own handler.
+//
 // # HTTP/3 (QUIC) — experimental
 //
 // Set [options.Options.H3] to enable HTTP/3. Requires TLS. The Alt-Svc header

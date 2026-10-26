@@ -16,7 +16,21 @@ import (
 //
 // Both listeners go through here so they cannot drift: an HTTP/3 client and an HTTP/1.1
 // client hitting the same path run the same routing.
+//
+// With [WithCORS] the result is wrapped in the policy, outermost, so a preflight is answered
+// before any routing and every response, /health included, carries the CORS headers.
 func (s *HybridServer) serveHandler() http.Handler {
+	h := s.routedHandler()
+	if s.cors != nil {
+		// Start validates the policy before serving; newCORS assumes it valid.
+		h = newCORS(*s.cors).wrap(h)
+	}
+	return h
+}
+
+// routedHandler is serveHandler before CORS: the gateway mux, or the replacement handler
+// with /health kept alongside it.
+func (s *HybridServer) routedHandler() http.Handler {
 	if s.httpHandler == nil {
 		return s.mux
 	}

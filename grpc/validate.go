@@ -49,6 +49,12 @@ func (s *HybridServer) validateOptions() error {
 		shared.Telemetry().Logger.Debugf("validateOptions: HTTP gateway disabled")
 	}
 
+	if s.cors != nil {
+		if err := s.cors.Validate(); err != nil {
+			return err
+		}
+	}
+
 	if s.opts.EnableMCP && s.opts.MCP.Transport != "" && s.opts.MCP.Transport != "stdio" {
 		shared.Telemetry().Logger.Debugf("validateOptions: checking MCP host=%q port=%d transport=%q",
 			s.opts.MCP.Host, s.opts.MCP.Port, s.opts.MCP.Transport)

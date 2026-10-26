@@ -42,6 +42,7 @@ type HybridServer struct {
 	httpServer       *http.Server                  // HTTP/1.1 server
 	mux              *runtime.ServeMux             // grpc-gateway mux
 	httpHandler      http.Handler                  // replaces the gateway mux when set (WithHTTPHandler)
+	cors             *CORSPolicy                   // cross-origin policy for the HTTP listeners (nil = none; WithCORS)
 	http3Server      *http3.Server                 // experimental HTTP/3 server
 	agentRuntime     *agents.Runtime               // the one runtime serving MCP and A2A (nil when neither is on)
 	agentCancel      context.CancelFunc            // stops the agent protocols' goroutines
