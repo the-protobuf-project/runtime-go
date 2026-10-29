@@ -48,8 +48,10 @@ type MCPServerConfig struct {
 	// GeneratedBasePath is the proto-derived default BasePath. If set, it takes precedence over BasePath.
 	GeneratedBasePath string
 	// HeaderMappings configures HTTP header to gRPC metadata forwarding.
-	// Each entry maps an HTTP header name to a gRPC metadata key.
-	// Use DefaultHeaderMappings() for common headers.
+	// Each entry maps an HTTP header name to a gRPC metadata key. The mapped
+	// headers of every request become incoming gRPC metadata for the tool
+	// handlers (and so for UnaryInterceptor), and outgoing metadata for
+	// ForwardTo clients. Use DefaultHeaderMappings() for common headers.
 	HeaderMappings []HeaderMapping
 	// OnReady is called after BasePath is resolved, just before the server starts listening.
 	// Use this to log or inspect the final endpoint.
@@ -87,13 +89,21 @@ type MCPServerConfig struct {
 	collect func(resolved *MCPServerConfig, register func(s *mcp.Server))
 }
 
-// NewMCPServer creates an mcp.Server from a MCPServerConfig.
+// NewMCPServer creates an mcp.Server from a MCPServerConfig. When
+// cfg.HeaderMappings is set, the server lifts those headers of every request
+// into the incoming gRPC metadata its handlers run with (see
+// [IncomingHeadersMiddleware]), so the unary interceptor chain a tool call
+// dispatches through sees them as it would a gRPC call's.
 func NewMCPServer(cfg *MCPServerConfig) *mcp.Server {
 	opts := cfg.ServerOptions
 	if opts == nil {
 		opts = &mcp.ServerOptions{}
 	}
-	return mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
+	s := mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
+	if len(cfg.HeaderMappings) > 0 {
+		s.AddReceivingMiddleware(IncomingHeadersMiddleware(cfg.HeaderMappings))
+	}
+	return s
 }
 
 // ParseTransports splits a comma-separated transport string into a []Transport slice.

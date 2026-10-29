@@ -111,7 +111,10 @@ func (s *HybridServer) mcpGroups() []agents.Service {
 		// Push the server's unary interceptor chain (including the one
 		// WithValidation resolved just above) down to MCP tool dispatch, so
 		// an MCP call runs the same middleware as the wire RPC behind it.
-		mcp.ServiceInterceptors(s.unaryInts...),
+		mcp.ServiceInterceptors(s.unaryChain()...),
+		// And hand that chain the request's headers as incoming metadata,
+		// where an auth interceptor reads a gRPC caller's credentials.
+		mcp.ServiceHeaders(s.mcpHeaderMappings()...),
 	}
 	if s.mcpStateless {
 		common = append(common, mcp.ServiceStateless())

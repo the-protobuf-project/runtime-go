@@ -50,8 +50,8 @@ func NewStandaloneGRPCServer(extra ...grpc.UnaryServerInterceptor) (*grpc.Server
 // WithValidation enables protovalidate request validation for every unary RPC
 // the server dispatches — gRPC, the HTTP gateway (which dials gRPC), and MCP
 // tool calls alike. The interceptor is built during Start and prepended to the
-// user-supplied chain, so validation always runs first; a validator build
-// failure surfaces as a Start error.
+// user-supplied chain, so validation runs first; [WithValidationLast] runs it
+// after them instead. A validator build failure surfaces as a Start error.
 func WithValidation() Option {
 	return func(s *HybridServer) {
 		s.enableValidation = true

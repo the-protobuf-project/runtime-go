@@ -13,6 +13,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/quic-go/quic-go/http3"
 	"github.com/the-protobuf-project/runtime-go/agents"
+	"github.com/the-protobuf-project/runtime-go/agents/mcp"
 	"github.com/the-protobuf-project/runtime-go/grpc/options"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"google.golang.org/grpc"
@@ -33,31 +34,35 @@ const gatewayBufferSize = 1 << 20
 // experimental HTTP/3 REST gateways. It is designed to be configured using
 // functional options and provides managed start, stop, and restart capabilities.
 type HybridServer struct {
-	opts             options.Options               // server configuration options
-	grpcServer       *grpc.Server                  // gRPC server instance
-	grpcListener     net.Listener                  // the gRPC TCP listener, closed first on Stop
-	gatewayListener  *bufconn.Listener             // in-memory listener the REST gateway dials; outlives HTTP draining
-	draining         atomic.Bool                   // set by Stop before it closes grpcListener, so Serve's error is expected
-	shutdownTimeout  time.Duration                 // bound on Stop (WithShutdownTimeout)
-	httpServer       *http.Server                  // HTTP/1.1 server
-	mux              *runtime.ServeMux             // grpc-gateway mux
-	httpHandler      http.Handler                  // replaces the gateway mux when set (WithHTTPHandler)
-	cors             *CORSPolicy                   // cross-origin policy for the HTTP listeners (nil = none; WithCORS)
-	http3Server      *http3.Server                 // experimental HTTP/3 server
-	agentRuntime     *agents.Runtime               // the one runtime serving MCP and A2A (nil when neither is on)
-	agentCancel      context.CancelFunc            // stops the agent protocols' goroutines
-	grpcServiceFuncs []GRPCServiceFunc             // registered gRPC service functions
-	httpServiceFuncs []HTTPServiceFunc             // registered HTTP gateway functions
-	mcpServiceFuncs  []MCPServiceFunc              // registered MCP service functions
-	a2aServiceFuncs  []A2AServiceFunc              // registered A2A service functions
-	mcpEndpoint      string                        // path serving every MCP service as one server ("" = none; WithMCPEndpoint)
-	mcpNoServicePath bool                          // skip each MCP service's own base path (WithoutMCPServicePaths)
-	mcpStateless     bool                          // serve MCP streamable HTTP without sessions (WithStatelessMCP)
-	cert             *tls.Certificate              // TLS certificate for secure connections
-	unaryInts        []grpc.UnaryServerInterceptor // caller-supplied unary interceptors (chained in order)
-	enableValidation bool                          // prepend the protovalidate interceptor at Start (WithValidation)
-	dashboardFS      fs.FS                         // caller-provided FS containing *.json dashboard files
-	dashboardFSDir   string                        // sub-directory inside dashboardFS to scan (e.g. ".grafana")
+	opts             options.Options                // server configuration options
+	grpcServer       *grpc.Server                   // gRPC server instance
+	grpcListener     net.Listener                   // the gRPC TCP listener, closed first on Stop
+	gatewayListener  *bufconn.Listener              // in-memory listener the REST gateway dials; outlives HTTP draining
+	draining         atomic.Bool                    // set by Stop before it closes grpcListener, so Serve's error is expected
+	shutdownTimeout  time.Duration                  // bound on Stop (WithShutdownTimeout)
+	httpServer       *http.Server                   // HTTP/1.1 server
+	mux              *runtime.ServeMux              // grpc-gateway mux
+	httpHandler      http.Handler                   // replaces the gateway mux when set (WithHTTPHandler)
+	cors             *CORSPolicy                    // cross-origin policy for the HTTP listeners (nil = none; WithCORS)
+	http3Server      *http3.Server                  // experimental HTTP/3 server
+	agentRuntime     *agents.Runtime                // the one runtime serving MCP and A2A (nil when neither is on)
+	agentCancel      context.CancelFunc             // stops the agent protocols' goroutines
+	grpcServiceFuncs []GRPCServiceFunc              // registered gRPC service functions
+	httpServiceFuncs []HTTPServiceFunc              // registered HTTP gateway functions
+	mcpServiceFuncs  []MCPServiceFunc               // registered MCP service functions
+	a2aServiceFuncs  []A2AServiceFunc               // registered A2A service functions
+	mcpEndpoint      string                         // path serving every MCP service as one server ("" = none; WithMCPEndpoint)
+	mcpNoServicePath bool                           // skip each MCP service's own base path (WithoutMCPServicePaths)
+	mcpStateless     bool                           // serve MCP streamable HTTP without sessions (WithStatelessMCP)
+	cert             *tls.Certificate               // TLS certificate for secure connections
+	unaryInts        []grpc.UnaryServerInterceptor  // caller-supplied unary interceptors (chained in order)
+	streamInts       []grpc.StreamServerInterceptor // caller-supplied stream interceptors (WithStreamInterceptors)
+	enableValidation bool                           // add the protovalidate interceptor at Start (WithValidation)
+	validationLast   bool                           // run validation after the caller's interceptors (WithValidationLast)
+	validate         grpc.UnaryServerInterceptor    // the protovalidate interceptor, built once at the first Start
+	mcpHeaders       []mcp.HeaderMapping            // MCP headers lifted into metadata (nil = defaults; WithMCPHeaderMappings)
+	dashboardFS      fs.FS                          // caller-provided FS containing *.json dashboard files
+	dashboardFSDir   string                         // sub-directory inside dashboardFS to scan (e.g. ".grafana")
 
 	// restMarshal / restUnmarshal configure the grpc-gateway JSON codec. They
 	// default to camelCase field names with EmitUnpopulated and are applied when

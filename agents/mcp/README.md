@@ -154,7 +154,13 @@ transports := mcp.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 ### Header forwarding
 
 An MCP call arrives over HTTP and leaves as a gRPC call, so anything the
-backend authenticates on has to cross that boundary explicitly:
+backend authenticates on has to cross that boundary explicitly. The mapped
+headers of every request become incoming gRPC metadata for the tool handlers,
+so the unary interceptor chain (`UnaryInterceptor`) reads an MCP caller's
+`authorization` exactly as it reads a gRPC caller's; they also become outgoing
+metadata for `ForwardTo` clients. `IncomingHeadersMiddleware` is the go-sdk
+middleware `NewMCPServer` installs for this. A HybridServer forwards
+`DefaultHeaderMappings()` unless `grpc.WithMCPHeaderMappings` says otherwise.
 
 ```go
 cfg := &mcp.MCPServerConfig{
@@ -172,7 +178,8 @@ cfg := &mcp.MCPServerConfig{
 - **Errors** — `HandleError` turns a gRPC status into an MCP tool error result
 - **Schemas** — `MustParseSchema`, `MustCreateTool`, `PrepareToolWithExtras`
 - **Elicitation** — `RunElicitation`, `ElicitField`, `ElicitSchema`
-- **Metadata** — `ForwardMetadata`, `HeadersMiddleware`, `DefaultHeaderMappings`
+- **Metadata** — `ForwardMetadata`, `HeadersMiddleware`, `IncomingHeadersMiddleware`,
+  `DefaultHeaderMappings`
 - **Prompts and resources** — `DefaultPromptHandler`, `DefaultResourceHandler`,
   `DefaultAppResourceHandler`, `AppResourceURI`, `SetToolAppMeta`, and
   `WithResourceHandler` to serve a declared resource's real content while its

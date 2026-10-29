@@ -12,6 +12,7 @@ import (
 	"github.com/the-protobuf-project/runtime-go/agents"
 	"github.com/the-protobuf-project/runtime-go/agents/mcp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // serveNamedMCP stands in for a generated ServeFooMCP with one tool: mounted
@@ -235,4 +236,62 @@ func TestHybridServer_StatelessMCP(t *testing.T) {
 	if get.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("GET status %d, want 405", get.StatusCode)
 	}
+}
+
+// An MCP tool call reaches the unary chain with the request's Authorization
+// header as incoming metadata — by default, on the combined endpoint and each
+// service's own path — and WithMCPHeaderMappings() with none turns it off.
+func TestHybridServer_MCPForwardsAuthorization(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		extra []Option
+		want  string
+	}{
+		{"default stateful", nil, "Bearer secret"},
+		{"default stateless", []Option{WithStatelessMCP()}, "Bearer secret"},
+		{"mappings off", []Option{WithMCPHeaderMappings()}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := mcpOpts(t)
+			var seen []string
+			s := NewHybridServer(opts, append([]Option{
+				WithUnaryInterceptors(func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+					md, _ := metadata.FromIncomingContext(ctx)
+					seen = append(seen, strings.Join(md.Get("authorization"), ","))
+					return handler(ctx, req)
+				}),
+				WithMCPServices(serveNamedMCP("alpha")),
+				WithMCPEndpoint(""),
+			}, tc.extra...)...)
+			startHybrid(t, s)
+
+			base := fmt.Sprintf("http://127.0.0.1:%d", opts.MCP.Port)
+			for _, path := range []string{"/mcp", "/alpha"} {
+				client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0.0.0"}, nil)
+				session, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
+					Endpoint:   base + path,
+					HTTPClient: &http.Client{Transport: authTransport("Bearer secret")},
+				}, nil)
+				if err != nil {
+					t.Fatalf("connect %s: %v", path, err)
+				}
+				if _, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "alpha-ping_v1", Arguments: map[string]any{}}); err != nil {
+					t.Fatalf("call at %s: %v", path, err)
+				}
+				_ = session.Close()
+			}
+			if want := []string{tc.want, tc.want}; !slices.Equal(seen, want) {
+				t.Errorf("interceptor saw %q, want %q", seen, want)
+			}
+		})
+	}
+}
+
+// authTransport sets Authorization on every request.
+type authTransport string
+
+func (a authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	out := req.Clone(req.Context())
+	out.Header.Set("Authorization", string(a))
+	return http.DefaultTransport.RoundTrip(out)
 }

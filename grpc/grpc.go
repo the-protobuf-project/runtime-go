@@ -47,20 +47,12 @@ func (s *HybridServer) startGRPCServer() error {
 	otelServerOpts := setupOtelExporter()
 	serverOpts = append(serverOpts, otelServerOpts...)
 	// Resolve WithValidation into the interceptor chain here, before either
-	// consumer reads it: the gRPC server below, and startMCPServer (which runs
-	// after this in Start) pushing the same chain down to MCP tool dispatch.
-	if s.enableValidation {
-		validate, err := NewValidationInterceptor()
-		if err != nil {
-			return err
-		}
-		s.unaryInts = append([]grpc.UnaryServerInterceptor{validate}, s.unaryInts...)
-		s.enableValidation = false // resolved; Restart must not prepend twice
+	// consumer reads it: the gRPC server below, and startAgents (which runs
+	// after this) pushing the same chain down to MCP tool dispatch.
+	if err := s.resolveValidation(); err != nil {
+		return err
 	}
-	if len(s.unaryInts) > 0 {
-		shared.Telemetry().Logger.Debugf("gRPC: chaining %d unary interceptor(s)", len(s.unaryInts))
-		serverOpts = append(serverOpts, grpc.ChainUnaryInterceptor(s.unaryInts...))
-	}
+	serverOpts = append(serverOpts, s.interceptorOptions()...)
 	shared.Telemetry().Logger.Debugf("gRPC: %d server option(s) configured (TLS + OTel)", len(serverOpts))
 
 	s.grpcServer = grpc.NewServer(serverOpts...)
