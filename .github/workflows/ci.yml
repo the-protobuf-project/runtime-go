@@ -74,7 +74,7 @@ jobs:
 
       # The streams Redis and RabbitMQ providers' tests skip without a live
       # server, so without this they report success having run nothing. The
-      # Kafka, NATS and MQTT suites start their brokers in-process and need
+      # Kafka, NATS, MQTT and OPC UA suites start their servers in-process and need
       # nothing here.
       #
       # Service containers would be the usual way, but the scheduled-delivery

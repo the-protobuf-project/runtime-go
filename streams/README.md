@@ -15,6 +15,7 @@ backend can do and says so where it cannot.
 | MQTT 5 | [`streams/mqtt`](./mqtt) | durable by session, not replayable |
 | RabbitMQ | [`streams/rabbitmq`](./rabbitmq) | durable by queue, true negative acknowledgement |
 | ZeroMQ | [`streams/zeromq`](./zeromq) | brokerless, immediate, nothing kept |
+| OPC UA | [`streams/opcua`](./opcua) | a node's state on attach, then each change |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
 [`database`](../database).
@@ -72,6 +73,7 @@ has.
 | RabbitMQ | `Connect` | — |
 | MQTT | `Connect` | — |
 | ZeroMQ | `Publish`, `Subscribe` | — |
+| OPC UA | `Connect` | `Use` |
 
 ### Streams and subjects
 
@@ -313,7 +315,7 @@ genuinely has.
 | Kafka | ✓ | ✓ | 0 — cannot count | on partition reassignment |
 | RabbitMQ | ✓ | ✗ | counted | immediately |
 | MQTT 5 | ✓ | ✗ | 0 — cannot count | on reconnect |
-| Redis pub/sub, core NATS, ZeroMQ | ✗ | ✗ | — | — |
+| Redis pub/sub, core NATS, ZeroMQ, OPC UA | ✗ | ✗ | — | — |
 
 RabbitMQ and MQTT are durable without being replayable — a queue and a session
 both hold what a consumer has not handled, but neither is a log you can seek in.
@@ -344,6 +346,34 @@ publishing now and letting you believe it was scheduled.
 Redis delivers these through keyspace notifications, so the server must run with
 `--notify-keyspace-events Ex`. NATS has no scheduled delivery at all and says so.
 
+### OPC UA: state, not events
+
+OPC UA is the one provider here that is not a message broker. A subject is a
+node id (`ns=2;s=Line1.Temperature`), publishing writes the node's value, and
+subscribing monitors it — so a subscriber is handed the node's **current value
+first** and then each change. It sees a series of states rather than a log of
+writes: writing the value a node already holds is not reported, and writes
+faster than the server samples can be coalesced. `Prefetch` sets the monitored
+item's queue, which is how much of that the server holds.
+
+```go
+s, _ := opcua.Connect(ctx, "opc.tcp://plc:4840",
+    opcua.WithClientOptions(
+        gopcua.SecurityPolicy(ua.SecurityPolicyURIBasic256Sha256),
+        gopcua.SecurityMode(ua.MessageSecurityModeSignAndEncrypt),
+        gopcua.CertificateFile("client.crt"), gopcua.PrivateKeyFile("client.key"),
+    ))
+
+m.Publish(ctx, "ns=2;s=Line1.Setpoint", 72.5)        // written as a Double
+m.Publish(ctx, "ns=2;s=Line1.LastBatch", batch)      // framed into a ByteString
+```
+
+A value OPC UA has a type for is written as itself, so the PLCs and HMIs
+around the server read a number, not this module's frame; anything else goes
+through the codec into a ByteString. Go's `int` is refused — pass the width the
+node holds. Nothing is lent, so `Durable` and `Positioned` both refuse, and so
+do `Group` and `TTL`. `PublishBatch` is a single Write request.
+
 ## Middleware
 
 ```go
@@ -371,7 +401,8 @@ is how you spot a consumer that leaked.
 The contract, its decorators and `core` are covered by unit tests that need no
 server. Most provider suites start their broker in-process and need nothing
 installed either: Kafka via `kfake`, NATS via its embedded server, MQTT via
-`mochi-mqtt`. ZeroMQ is brokerless, so it needs nothing at all.
+`mochi-mqtt`, OPC UA via gopcua's own server package. ZeroMQ is brokerless,
+so it needs nothing at all.
 
 Redis and RabbitMQ are the exceptions. Both skip without a live server — Redis
 also needs the keyspace events the scheduled tests rely on, which is why the
@@ -391,4 +422,4 @@ go test ./... -v | grep -c -- '--- SKIP'
 
 A runnable demonstration of every provider lives in [`examples`](./examples) —
 one directory each, showing what that backend does that the others cannot. The
-ZeroMQ one needs nothing running at all.
+ZeroMQ and OPC UA ones need nothing running at all.

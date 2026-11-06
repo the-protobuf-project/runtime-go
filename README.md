@@ -78,12 +78,14 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`streams/examples/kafka`](streams/examples/kafka) | `github.com/the-protobuf-project/runtime-go/streams/examples/kafka` | Command kafka demonstrates the streams contract over Apache Kafka. |
 | [`streams/examples/mqtt`](streams/examples/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/examples/mqtt` | Command mqtt demonstrates the streams contract over MQTT 5. |
 | [`streams/examples/nats`](streams/examples/nats) | `github.com/the-protobuf-project/runtime-go/streams/examples/nats` | Command nats demonstrates the streams contract over NATS, in both forms, against a live server. |
+| [`streams/examples/opcua`](streams/examples/opcua) | `github.com/the-protobuf-project/runtime-go/streams/examples/opcua` | Command opcua demonstrates the streams contract over OPC UA. |
 | [`streams/examples/rabbitmq`](streams/examples/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/examples/rabbitmq` | Command rabbitmq demonstrates the streams contract over RabbitMQ. |
 | [`streams/examples/redis`](streams/examples/redis) | `github.com/the-protobuf-project/runtime-go/streams/examples/redis` | Command redis demonstrates the streams contract in all three of the Redis provider's delivery modes, against a live Redis. |
 | [`streams/examples/zeromq`](streams/examples/zeromq) | `github.com/the-protobuf-project/runtime-go/streams/examples/zeromq` | Command zeromq demonstrates the streams contract over ZeroMQ PUB/SUB. |
 | [`streams/kafka`](streams/kafka) | `github.com/the-protobuf-project/runtime-go/streams/kafka` | Package kafka delivers streams over Apache Kafka. |
 | [`streams/mqtt`](streams/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/mqtt` | Package mqtt delivers streams over MQTT 5. |
 | [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
+| [`streams/opcua`](streams/opcua) | `github.com/the-protobuf-project/runtime-go/streams/opcua` | Package opcua delivers streams over OPC UA. |
 | [`streams/rabbitmq`](streams/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/rabbitmq` | Package rabbitmq delivers streams over RabbitMQ. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |
