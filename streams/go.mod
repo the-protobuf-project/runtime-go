@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/go-zeromq/zmq4 v0.17.0
+	github.com/gopcua/opcua v0.9.1
 	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/nats-io/nats-server/v2 v2.15.2
 	github.com/nats-io/nats.go v1.55.0
