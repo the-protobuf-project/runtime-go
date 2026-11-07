@@ -69,7 +69,7 @@ has.
 | Redis | `Connect`, `ConnectScheduled`, `ConnectDurable` | `Use`, `UseScheduled`, `UseDurable` |
 | NATS | `Connect`, `ConnectJetStream` | `Use`, `UseJetStream` |
 | Kafka | `Connect` | — |
-| RabbitMQ | `Connect` | — |
+| RabbitMQ | `Connect` | `Use` |
 | MQTT | `Connect` | `Use` |
 | ZeroMQ | `Publish`, `Subscribe` | — |
 
@@ -85,6 +85,13 @@ events, err := mqtt.Connect(ctx, "mqtts://broker.example",
 A dropped connection is dialed again; a publish waits for it as long as its
 context allows, a subscription is restored on the new connection, and a durable
 consumer's session resumes with nothing lost.
+
+RabbitMQ connections reconnect on their own, take `amqps://` with
+`rabbitmq.WithTLS`, and confirm every publish: `Publish` returns once the broker
+has the message, and one in flight when the connection drops is sent again on
+the next. A durable consumer attaches again on a fresh channel and loses
+nothing; a delivery from before the drop can no longer be acknowledged, and the
+broker hands it out again.
 
 ### Streams and subjects
 
