@@ -50,7 +50,7 @@ events, err := nats.ConnectJetStream(ctx, "nats://localhost:4222")
 ```
 
 **`Connect` dials and owns; `Use` takes a client you built.** Every provider has
-`Connect`; the two whose client is worth sharing with the rest of a program also
+`Connect`; those whose client is worth sharing with the rest of a program also
 have `Use`:
 
 ```go
@@ -70,8 +70,21 @@ has.
 | NATS | `Connect`, `ConnectJetStream` | `Use`, `UseJetStream` |
 | Kafka | `Connect` | — |
 | RabbitMQ | `Connect` | — |
-| MQTT | `Connect` | — |
+| MQTT | `Connect` | `Use` |
 | ZeroMQ | `Publish`, `Subscribe` | — |
+
+MQTT connections reconnect on their own, and take TLS and credentials:
+
+```go
+events, err := mqtt.Connect(ctx, "mqtts://broker.example",
+    mqtt.WithTLS(&tls.Config{Certificates: []tls.Certificate{clientCert}}), // mTLS, as AWS IoT wants
+    mqtt.WithCredentials("plant", password),
+)
+```
+
+A dropped connection is dialed again; a publish waits for it as long as its
+context allows, a subscription is restored on the new connection, and a durable
+consumer's session resumes with nothing lost.
 
 ### Streams and subjects
 
