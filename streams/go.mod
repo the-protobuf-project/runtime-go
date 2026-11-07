@@ -6,8 +6,8 @@ require (
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/mochi-mqtt/server/v2 v2.7.9
-	github.com/nats-io/nats-server/v2 v2.15.1
-	github.com/nats-io/nats.go v1.54.0
+	github.com/nats-io/nats-server/v2 v2.15.2
+	github.com/nats-io/nats.go v1.55.0
 	github.com/rabbitmq/amqp091-go v1.16.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261021171349-70cd275896ec
