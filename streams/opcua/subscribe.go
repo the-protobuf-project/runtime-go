@@ -3,6 +3,7 @@ package opcua
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	gopcua "github.com/gopcua/opcua"
@@ -38,6 +39,9 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, fmt.Errorf("%w: OPC UA has no shared subscriptions; every subscriber sees every change", streams.ErrUnsupported)
 	}
 	depth := core.Prefetch(o)
+	if uint64(depth) > math.MaxUint32 {
+		return nil, fmt.Errorf("%w: a prefetch of %d is above what an OPC UA queue can hold (%d)", streams.ErrUnsupported, depth, uint32(math.MaxUint32))
+	}
 
 	// Unbuffered on purpose: gopcua blocks its publish loop until this is read,
 	// and the goroutine below reads it continuously, so a buffer here would only

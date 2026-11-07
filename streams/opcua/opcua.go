@@ -102,6 +102,7 @@ func Use(c *gopcua.Client, opts ...Option) streams.Streams {
 	return newStore(c, newConfig(opts...))
 }
 
+// newConfig applies opts over the defaults.
 func newConfig(opts ...Option) config {
 	cfg := config{log: telemetry.NoopLogger, interval: defaultInterval}
 	for _, opt := range opts {
@@ -116,6 +117,7 @@ func newConfig(opts ...Option) config {
 	return cfg
 }
 
+// newStore builds a store over c; [Connect] marks the ones it owns.
 func newStore(c *gopcua.Client, cfg config) *store {
 	codec, registry := core.Resolve(cfg.codec)
 	return &store{
@@ -152,6 +154,10 @@ var (
 
 // Close ends the session if [Connect] opened it, and is a no-op on a store
 // built by [Use].
+//
+// Cancel every subscription's context and wait for its channel to close
+// before calling it: a subscription ends by deleting itself on the server,
+// which needs the session this closes.
 func (s *store) Close() error {
 	if !s.owned {
 		return nil

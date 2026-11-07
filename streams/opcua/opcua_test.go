@@ -13,6 +13,7 @@ type event struct {
 	Action string `json:"action"`
 }
 
+// A subscription's first message is the node's current value.
 func TestSubscribeStartsWithTheCurrentValue(t *testing.T) {
 	_, m := connect(t)
 	msgs := subscribe(t, m, temperature)
@@ -26,6 +27,7 @@ func TestSubscribeStartsWithTheCurrentValue(t *testing.T) {
 	}
 }
 
+// A value OPC UA has a type for is written as itself and read back as one.
 func TestNativeValueRoundTrip(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
@@ -46,6 +48,7 @@ func TestNativeValueRoundTrip(t *testing.T) {
 	}
 }
 
+// A value OPC UA has no type for goes out framed, and keeps its id.
 func TestFramedValueRoundTrip(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
@@ -71,6 +74,7 @@ func TestFramedValueRoundTrip(t *testing.T) {
 	}
 }
 
+// A batch lands in order, so the node ends up holding the last value.
 func TestPublishBatchWritesInOrder(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
@@ -99,6 +103,7 @@ func TestPublishBatchWritesInOrder(t *testing.T) {
 	}
 }
 
+// Canceling a subscription's context closes its channel.
 func TestCancelClosesTheChannel(t *testing.T) {
 	_, m := connect(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -120,5 +125,18 @@ func TestCancelClosesTheChannel(t *testing.T) {
 		case <-deadline:
 			t.Fatal("the channel stayed open after its context was canceled")
 		}
+	}
+}
+
+// An empty batch writes nothing and asks the server nothing.
+func TestPublishBatchOfNothing(t *testing.T) {
+	_, m := connect(t)
+	b, err := streams.AsBatch(m)
+	if err != nil {
+		t.Fatalf("AsBatch: %v", err)
+	}
+	ids, err := b.PublishBatch(t.Context(), temperature, nil)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("PublishBatch(nil) = %v, %v; want no ids and no error", ids, err)
 	}
 }

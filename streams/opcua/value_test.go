@@ -9,6 +9,7 @@ import (
 	"github.com/the-protobuf-project/runtime-go/streams"
 )
 
+// A value OPC UA has a type for is written as that type.
 func TestEncodeWritesOPCUATypesAsThemselves(t *testing.T) {
 	cases := map[ua.TypeID]any{
 		ua.TypeIDBoolean:  true,
@@ -28,6 +29,7 @@ func TestEncodeWritesOPCUATypesAsThemselves(t *testing.T) {
 	}
 }
 
+// Anything else is framed into a ByteString and decodes back as it was.
 func TestEncodeFramesEverythingElse(t *testing.T) {
 	v, err := encode(streams.JSON, "id-1", struct{ A int }{A: 1})
 	if err != nil {
@@ -47,6 +49,7 @@ func TestEncodeFramesEverythingElse(t *testing.T) {
 	}
 }
 
+// Go's int has no OPC UA width, so it is refused rather than guessed.
 func TestEncodeRefusesGoInt(t *testing.T) {
 	for _, v := range []any{1, uint(1), []int{1}} {
 		if _, err := encode(streams.JSON, "id", v); !errors.Is(err, streams.ErrUnsupported) {
@@ -55,6 +58,7 @@ func TestEncodeRefusesGoInt(t *testing.T) {
 	}
 }
 
+// A missing value, or one whose status is not good, is not delivered.
 func TestDecodeRefusesWhatIsNotAReading(t *testing.T) {
 	cases := map[string]*ua.DataValue{
 		"nil":       nil,
@@ -69,6 +73,7 @@ func TestDecodeRefusesWhatIsNotAReading(t *testing.T) {
 	}
 }
 
+// A ByteString that is not a frame is delivered as its bytes.
 func TestDecodeCarriesForeignBytesAsThemselves(t *testing.T) {
 	msg, err := decode(streams.NewRegistry(), "s", &ua.DataValue{Value: ua.MustVariant([]byte("raw"))})
 	if err != nil {
@@ -80,6 +85,7 @@ func TestDecodeCarriesForeignBytesAsThemselves(t *testing.T) {
 	}
 }
 
+// A native value's id is its source timestamp, else the server's.
 func TestSampleIDPrefersTheSourceTimestamp(t *testing.T) {
 	src := time.Date(2026, 1, 2, 3, 4, 5, 6, time.UTC)
 	srv := src.Add(time.Second)

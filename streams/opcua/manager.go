@@ -71,6 +71,10 @@ func (m *manager) write(ctx context.Context, subject string, values []any, o str
 		return nil, fmt.Errorf("%w: OPC UA writes a value now and cannot schedule one", streams.ErrUnsupported)
 	}
 
+	if len(values) == 0 {
+		return []string{}, nil
+	}
+
 	ids := make([]string, len(values))
 	req := &ua.WriteRequest{NodesToWrite: make([]*ua.WriteValue, len(values))}
 	for i, value := range values {
@@ -93,6 +97,10 @@ func (m *manager) write(ctx context.Context, subject string, values []any, o str
 	if err != nil {
 		m.store.log.Error(ctx, "could not write", err, telemetry.Fields{"subject": subject, "count": len(values)})
 		return ids, fmt.Errorf("opcua: cannot write to %q: %w", subject, err)
+	}
+	if len(res.Results) != len(values) {
+		// Without one status per value there is no saying which landed.
+		return ids, fmt.Errorf("opcua: the server answered %d statuses for %d values written to %q", len(res.Results), len(values), subject)
 	}
 
 	var failures []error

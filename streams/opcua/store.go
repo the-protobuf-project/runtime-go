@@ -103,6 +103,7 @@ func (s *store) List(_ context.Context) ([]streams.Stream, error) {
 	return out, nil
 }
 
+// lookup returns the stream declared under id, or ErrNotFound.
 func (s *store) lookup(id string) (declared, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

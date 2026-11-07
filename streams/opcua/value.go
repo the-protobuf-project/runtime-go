@@ -72,6 +72,16 @@ func decode(reg *streams.Registry, subject string, dv *ua.DataValue) (streams.Me
 		// the bytes it is.
 	}
 
+	if nonFinite(raw) {
+		// JSON has no NaN or infinity, and a sensor reporting one is still
+		// reporting.
+		data, err := floats.Marshal(raw)
+		if err != nil {
+			return streams.Message{}, fmt.Errorf("opcua: cannot carry the %T value of %s: %w", raw, subject, err)
+		}
+		return streams.NewMessage(sampleID(dv), subject, data, floats), nil
+	}
+
 	data, err := json.Marshal(raw)
 	if err != nil {
 		return streams.Message{}, fmt.Errorf("opcua: cannot carry the %T value of %s: %w", raw, subject, err)

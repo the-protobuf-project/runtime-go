@@ -59,6 +59,7 @@ func TestServerRefusals(t *testing.T) {
 	}
 }
 
+// Create, Get, Update, List and Delete round-trip a stream's declaration.
 func TestLifecycle(t *testing.T) {
 	s, _ := connect(t)
 	ctx := context.Background()
@@ -90,14 +91,17 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
+// publishErr is the error from publishing v on subject.
 func publishErr(m streams.Manager, subject string, v any, opts ...streams.Option) error {
 	_, err := m.Publish(context.Background(), subject, v, opts...)
 	return err
 }
 
+// subscribeErr is the error from subscribing to subject.
 func subscribeErr(m streams.Manager, subject string, opts ...streams.Option) error {
 	_, err := m.Subscribe(context.Background(), subject, opts...)
 	return err
 }
 
+// asErr drops a result and keeps its error.
 func asErr[T any](_ T, err error) error { return err }
