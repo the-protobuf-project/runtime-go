@@ -8,17 +8,15 @@ package rabbitmq_test
 //	go test ./...
 
 import (
-	"encoding/json"
 	"fmt"
 	"net"
-	"net/http"
-	"net/url"
 	"os"
-	"strings"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	streamsrabbit "github.com/the-protobuf-project/runtime-go/streams/rabbitmq"
 )
@@ -32,6 +30,8 @@ const subject = "user.created"
 
 var seq atomic.Int64
 
+// testURL is the broker under test: RABBITMQ_TEST_URL, or one built from
+// RABBITMQ_TEST_HOST and RABBITMQ_TEST_PORT.
 func testURL() string {
 	if url := os.Getenv("RABBITMQ_TEST_URL"); url != "" {
 		return url
@@ -51,15 +51,24 @@ func prefix() string {
 	return fmt.Sprintf("t%d-%d", time.Now().UnixNano(), seq.Add(1))
 }
 
+// testStreams connects to the broker under test, namespaced to this test, and
+// records its connection so [dropConnections] drops only that one. It skips
+// when nothing is listening.
 func testStreams(t *testing.T, opts ...streamsrabbit.Option) streams.Streams {
 	t.Helper()
 
 	// Fail fast when nothing is listening, rather than waiting out the AMQP
-	// handshake timeout on every test in the file.
-	d := net.Dialer{Timeout: 2 * time.Second}
-	conn, err := d.DialContext(t.Context(), "tcp", hostPort())
+	// handshake timeout on every test in the file. The address comes from
+	// the URL, parsed as Connect parses it, so the defaults agree.
+	uri, err := amqp.ParseURI(testURL())
 	if err != nil {
-		t.Skipf("no RabbitMQ at %s (%v); skipping", hostPort(), err)
+		t.Fatalf("RabbitMQ test URL: %v", err)
+	}
+	addr := net.JoinHostPort(uri.Host, strconv.Itoa(uri.Port))
+	d := net.Dialer{Timeout: 2 * time.Second}
+	conn, err := d.DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		t.Skipf("no RabbitMQ at %s (%v); skipping", addr, err)
 	}
 	_ = conn.Close()
 
@@ -69,20 +78,11 @@ func testStreams(t *testing.T, opts ...streamsrabbit.Option) streams.Streams {
 		t.Fatalf("Connect: %v", err)
 	}
 	t.Cleanup(func() { _ = s.(streams.Closer).Close() })
+	remember(t, streamsrabbit.ConnectionName(s))
 	return s
 }
 
-func hostPort() string {
-	host, port := os.Getenv("RABBITMQ_TEST_HOST"), os.Getenv("RABBITMQ_TEST_PORT")
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	if port == "" {
-		port = "5672"
-	}
-	return net.JoinHostPort(host, port)
-}
-
+// declare creates a stream over subjects and binds a manager to it.
 func declare(t *testing.T, s streams.Streams, subjects ...string) (streams.Stream, streams.Manager) {
 	t.Helper()
 
@@ -97,6 +97,7 @@ func declare(t *testing.T, s streams.Streams, subjects ...string) (streams.Strea
 	return stream, m
 }
 
+// recvDelivery takes one delivery from ch, failing after within.
 func recvDelivery(t *testing.T, ch <-chan streams.Delivery, within time.Duration) streams.Delivery {
 	t.Helper()
 
@@ -112,6 +113,7 @@ func recvDelivery(t *testing.T, ch <-chan streams.Delivery, within time.Duration
 	}
 }
 
+// recv takes one value from ch, failing after within.
 func recv[T any](t *testing.T, ch <-chan T, within time.Duration) T {
 	t.Helper()
 
@@ -125,73 +127,5 @@ func recv[T any](t *testing.T, ch <-chan T, within time.Duration) T {
 		t.Fatalf("nothing arrived within %s", within)
 		var zero T
 		return zero
-	}
-}
-
-// dropConnections closes every connection this package opened from the
-// broker's side, which is what a network failure looks like to the client. It
-// goes through the management API, and skips the test when that is not there.
-func dropConnections(t *testing.T) {
-	t.Helper()
-
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		// The management API lists a connection a moment after it opens.
-		if names := ourConnections(t); len(names) > 0 {
-			for _, name := range names {
-				mgmt(t, http.MethodDelete, "/api/connections/"+url.PathEscape(name), nil)
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("no connection opened by this package appeared in the management API")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-// ourConnections names the open connections whose connection_name marks them
-// as this package's.
-func ourConnections(t *testing.T) []string {
-	t.Helper()
-
-	var conns []struct {
-		Name             string `json:"name"`
-		ClientProperties struct {
-			ConnectionName string `json:"connection_name"`
-		} `json:"client_properties"`
-	}
-	mgmt(t, http.MethodGet, "/api/connections", &conns)
-
-	var names []string
-	for _, c := range conns {
-		if strings.HasPrefix(c.ClientProperties.ConnectionName, "runtime-go-") {
-			names = append(names, c.Name)
-		}
-	}
-	return names
-}
-
-func mgmt(t *testing.T, method, path string, into any) {
-	t.Helper()
-
-	base := os.Getenv("RABBITMQ_TEST_MANAGEMENT")
-	if base == "" {
-		base = "http://127.0.0.1:15672"
-	}
-	req, err := http.NewRequestWithContext(t.Context(), method, base+path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.SetBasicAuth("guest", "guest")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Skipf("no RabbitMQ management API at %s (%v); skipping", base, err)
-	}
-	defer func() { _ = res.Body.Close() }()
-	if into != nil {
-		if err := json.NewDecoder(res.Body).Decode(into); err != nil {
-			t.Fatalf("management API %s %s: %v", method, path, err)
-		}
 	}
 }

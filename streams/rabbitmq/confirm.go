@@ -66,3 +66,66 @@ func (s *store) publish(ctx context.Context, exchange, key string, msgs []amqp.P
 	}
 	return errs
 }
+
+// publisher returns the channel publishes and declarations go through, opening
+// one in confirm mode when there is none on the current connection.
+//
+// It is reopened rather than reused once closed, which also happens with the
+// connection up: the broker closes a channel that publishes to an exchange
+// that does not exist, and that one mistake must not end every publish after.
+//
+// A connection this package dialed can drop between being handed out and the
+// channel opening on it; that waits for the next connection rather than
+// failing the publish.
+func (s *store) publisher(ctx context.Context) (*pubChannel, error) {
+	for {
+		conn, err := s.connection(ctx)
+		if err != nil {
+			return nil, err
+		}
+		pub, err := s.openPublisher(conn)
+		if err == nil || !s.owned || !conn.IsClosed() {
+			return pub, err
+		}
+	}
+}
+
+// openPublisher returns the publishing channel on conn, opening it if needed.
+func (s *store) openPublisher(conn *amqp.Connection) (*pubChannel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pub != nil && !s.pub.ch.IsClosed() && s.pub.conn == conn {
+		return s.pub, nil
+	}
+	ch, err := conn.Channel()
+	if err != nil {
+		return nil, fmt.Errorf("rabbitmq: cannot open a channel: %w", err)
+	}
+	if err := ch.Confirm(false); err != nil {
+		_ = ch.Close()
+		return nil, fmt.Errorf("rabbitmq: cannot enable publisher confirms: %w", err)
+	}
+	s.pub = &pubChannel{ch: ch, conn: conn, closed: ch.NotifyClose(make(chan *amqp.Error, 1))}
+	return s.pub, nil
+}
+
+// pubChannel is the publishing channel with what is needed to explain its
+// death: the connection it was opened on, and the broker's reason for closing
+// it.
+type pubChannel struct {
+	ch     *amqp.Channel
+	conn   *amqp.Connection
+	closed <-chan *amqp.Error
+}
+
+// reason is why the broker closed the channel, when it said.
+func (p *pubChannel) reason() error {
+	select {
+	case e, ok := <-p.closed:
+		if ok && e != nil {
+			return e
+		}
+	default:
+	}
+	return amqp.ErrClosed
+}

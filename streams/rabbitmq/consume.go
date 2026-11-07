@@ -3,6 +3,7 @@ package rabbitmq
 import (
 	"context"
 	"fmt"
+	"math"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
@@ -37,10 +38,14 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 			msg, derr := core.Unpack(m.store.registry, d.RoutingKey, d.Body)
 			if derr != nil {
 				m.store.log.Warn(ctx, "dropping a malformed message", telemetry.Fields{"subject": subject, "error": derr.Error()})
+				_ = d.Reject(false)
 				return true
 			}
 			select {
 			case out <- msg:
+				// Acknowledged once handed over, which is what lets prefetch
+				// bound how much the broker pushes ahead of the reader.
+				_ = d.Ack(false)
 				return true
 			case <-ctx.Done():
 				return false
@@ -147,6 +152,9 @@ func (m *manager) attach(ctx context.Context, subject, consumer string, transien
 		_ = ch.Close()
 		return attachment{}, fmt.Errorf("rabbitmq: cannot %s for %q: %w", what, subject, err)
 	}
+	if m.store.cfg.prefetch > math.MaxUint16 {
+		return fail("set prefetch", fmt.Errorf("%d is above AMQP's limit of %d", m.store.cfg.prefetch, math.MaxUint16))
+	}
 	if qerr := ch.Qos(m.store.cfg.prefetch, 0, false); qerr != nil {
 		return fail("set prefetch", qerr)
 	}
@@ -165,8 +173,8 @@ func (m *manager) attach(ctx context.Context, subject, consumer string, transien
 
 	// autoAck is false in both cases: for a durable consumer because
 	// acknowledgement belongs to the caller, and for a subscription because
-	// the channel closing is what ends it either way.
-	deliveries, err := ch.ConsumeWithContext(ctx, q.Name, "", transient, transient, false, false, nil)
+	// with autoAck the broker ignores prefetch and pushes without bound.
+	deliveries, err := ch.ConsumeWithContext(ctx, q.Name, "", false, transient, false, false, nil)
 	if err != nil {
 		return fail("consume", err)
 	}

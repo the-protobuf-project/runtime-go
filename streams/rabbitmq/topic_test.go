@@ -38,6 +38,7 @@ func TestMatches(t *testing.T) {
 	}
 }
 
+// hasWildcard finds AMQP's * and # wildcards, and nothing else.
 func TestHasWildcard(t *testing.T) {
 	for _, s := range []string{"user.*", "user.#", "#", "*", "a.#.b"} {
 		if !hasWildcard(s) {
@@ -51,6 +52,7 @@ func TestHasWildcard(t *testing.T) {
 	}
 }
 
+// safeName removes what would give a queue name routing structure.
 func TestSafeNameStripsRoutingStructure(t *testing.T) {
 	for _, s := range []string{"a.b", "a*b", "a#b", "a b"} {
 		if got := safeName(s); got == s {

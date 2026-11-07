@@ -10,6 +10,7 @@ import (
 	streamsrabbit "github.com/the-protobuf-project/runtime-go/streams/rabbitmq"
 )
 
+// A subject the stream does not declare is refused at the publish.
 func TestPublishRejectsAnUndeclaredSubject(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 
@@ -18,6 +19,7 @@ func TestPublishRejectsAnUndeclaredSubject(t *testing.T) {
 	}
 }
 
+// A TTL is refused: this provider has no delayed delivery.
 func TestPublishRejectsATTL(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 
@@ -27,12 +29,14 @@ func TestPublishRejectsATTL(t *testing.T) {
 	}
 }
 
+// Connect needs a broker URL.
 func TestConnectRejectsAnEmptyURL(t *testing.T) {
 	if _, err := streamsrabbit.Connect(t.Context(), ""); err == nil {
 		t.Error("Connect accepted an empty URL")
 	}
 }
 
+// The consumer name is already the group, so a Group option is refused.
 func TestConsumeRejectsAGroupOption(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 	d, _ := streams.AsDurable(m)
@@ -43,6 +47,7 @@ func TestConsumeRejectsAGroupOption(t *testing.T) {
 	}
 }
 
+// A durable consumer needs a name, since the name is its queue.
 func TestConsumeRequiresAConsumerName(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 	d, _ := streams.AsDurable(m)

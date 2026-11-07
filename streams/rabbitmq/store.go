@@ -115,6 +115,8 @@ func (s *store) List(_ context.Context) ([]streams.Stream, error) {
 	return out, nil
 }
 
+// declaration is the stream recorded under id: in's own fields, active, with
+// a copy of its subjects so the caller's slice cannot change it later.
 func declaration(id string, in streams.Stream) streams.Stream {
 	return streams.Stream{
 		ID:          id,

@@ -11,6 +11,9 @@ import (
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
+// errClosed is a store that has been closed.
+var errClosed = errors.New("rabbitmq: closed")
+
 // errGone is a connection [Use] was given that has closed. This package did
 // not dial it, so it cannot dial it again.
 var errGone = errors.New("rabbitmq: the connection given to Use has closed, and is not this package's to redial")
@@ -29,11 +32,20 @@ func (s *store) dial(ctx context.Context) (*amqp.Connection, <-chan *amqp.Error,
 	cfg := amqp.Config{
 		TLSClientConfig: s.cfg.tls,
 		Properties:      amqp.Table{"connection_name": s.name},
-		// amqp.Dial has no context form, so the deadline is applied to the
-		// dialer it uses rather than to the handshake as a whole.
+		// amqp.Dial has no context form, so ctx bounds the TCP dial and a
+		// deadline on the connection bounds the TLS and AMQP handshake after
+		// it. amqp091 clears that deadline once the connection is open.
 		Dial: func(network, addr string) (net.Conn, error) {
 			d := net.Dialer{Timeout: dialTimeout}
-			return d.DialContext(ctx, network, addr)
+			conn, err := d.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			if err := conn.SetDeadline(time.Now().Add(dialTimeout)); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return conn, nil
 		},
 	}
 	if s.cfg.username != "" {
@@ -109,7 +121,7 @@ func (s *store) connection(ctx context.Context) (*amqp.Connection, error) {
 
 		switch {
 		case closing:
-			return nil, fmt.Errorf("rabbitmq: closed")
+			return nil, errClosed
 		case !s.owned && conn.IsClosed():
 			return nil, errGone
 		}
@@ -123,9 +135,13 @@ func (s *store) connection(ctx context.Context) (*amqp.Connection, error) {
 			// replace up, so wait for it to.
 			select {
 			case <-time.After(10 * time.Millisecond):
+			case <-s.done:
+				return nil, errClosed
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
+		case <-s.done:
+			return nil, errClosed
 		case <-ctx.Done():
 			return nil, fmt.Errorf("rabbitmq: not connected: %w", ctx.Err())
 		}

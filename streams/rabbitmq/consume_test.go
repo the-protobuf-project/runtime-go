@@ -22,6 +22,8 @@ func TestRabbitIsDurableButNotPositioned(t *testing.T) {
 	}
 }
 
+// A named consumer receives what is published, decodes it, and acknowledges
+// it on a first attempt.
 func TestConsumeDeliversAndAcknowledges(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 	d, err := streams.AsDurable(m)
@@ -165,17 +167,23 @@ func TestOneNameSplitsTheWork(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
+	var fromFirst, fromSecond int
 	deadline := time.After(15 * time.Second)
 	for len(seen) < total {
 		select {
 		case msg := <-first:
 			seen[msg.ID] = true
+			fromFirst++
 			_ = msg.Ack(ctx)
 		case msg := <-second:
 			seen[msg.ID] = true
+			fromSecond++
 			_ = msg.Ack(ctx)
 		case <-deadline:
 			t.Fatalf("saw %d of %d messages across both consumers", len(seen), total)
 		}
+	}
+	if fromFirst == 0 || fromSecond == 0 {
+		t.Errorf("first took %d and second %d; want the work split between them", fromFirst, fromSecond)
 	}
 }

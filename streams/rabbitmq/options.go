@@ -39,6 +39,7 @@ const (
 	defaultRetry = 2 * time.Second
 )
 
+// newConfig applies opts over the defaults.
 func newConfig(opts ...Option) config {
 	cfg := config{
 		log: telemetry.NoopLogger, meter: telemetry.NoopMeter,
@@ -83,7 +84,8 @@ func WithPrefix(prefix string) Option {
 // This is what makes two consumers under one name share work evenly: RabbitMQ
 // hands a consumer up to this many messages before waiting for an
 // acknowledgement, so a low number spreads a burst and a high one lets a fast
-// consumer run ahead.
+// consumer run ahead. AMQP caps it at 65535; a consumer attached with more
+// fails.
 func WithPrefetch(n int) Option {
 	return func(c *config) { c.prefetch = n }
 }
@@ -103,14 +105,16 @@ func WithCodec(c streams.Codec) Option {
 // against the system's roots.
 //
 // It is refused alongside an amqp:// URL rather than ignored, which would
-// connect in the clear.
+// connect in the clear. It applies only to [Connect]: a connection given to
+// [Use] keeps the TLS it was dialed with.
 func WithTLS(cfg *tls.Config) Option {
 	return func(c *config) { c.tls = cfg }
 }
 
 // WithCredentials authenticates with a username and password, overriding any
 // in the URL — so a secret can come from somewhere other than a connection
-// string that ends up in logs.
+// string that ends up in logs. It applies only to [Connect]: a connection given
+// to [Use] has already authenticated.
 func WithCredentials(username, password string) Option {
 	return func(c *config) { c.username, c.password = username, password }
 }

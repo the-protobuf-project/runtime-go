@@ -9,6 +9,7 @@ import (
 	"github.com/the-protobuf-project/runtime-go/streams"
 )
 
+// Create, Get, Update, List and Delete round-trip a stream's declaration.
 func TestLifecycle(t *testing.T) {
 	s := testStreams(t)
 	ctx := t.Context()
@@ -48,6 +49,7 @@ func TestLifecycle(t *testing.T) {
 	}
 }
 
+// A subscriber receives what is published on its subject.
 func TestPublishAndSubscribe(t *testing.T) {
 	_, m := declare(t, testStreams(t), subject)
 

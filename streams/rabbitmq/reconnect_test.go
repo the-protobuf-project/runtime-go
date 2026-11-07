@@ -14,6 +14,8 @@ import (
 
 const quickly = 200 * time.Millisecond
 
+// A publish made after the broker drops the connection waits for the redial
+// and reaches the consumer.
 func TestPublishSurvivesADroppedConnection(t *testing.T) {
 	_, m := declare(t, testStreams(t, streamsrabbit.WithReconnectDelay(quickly)), subject)
 	d, _ := streams.AsDurable(m)

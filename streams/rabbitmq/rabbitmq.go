@@ -50,6 +50,9 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 // configured for TLS or authentication the rest of a program shares. Consumers
 // open channels of their own on it, which AMQP is built for.
 //
+// [WithTLS] and [WithCredentials] apply only to [Connect]; they do not change a
+// connection given here, which was configured when it was dialed.
+//
 // It does not close the connection, and it does not redial one that drops:
 // recovering a connection is the job of whoever owns it. Publishes and
 // consumers fail once it has closed.
@@ -59,6 +62,8 @@ func Use(conn *amqp.Connection, opts ...Option) streams.Streams {
 	return s
 }
 
+// newStore builds a store around cfg; owned says whether it dialed, and so
+// may redial and close, its connection.
 func newStore(cfg config, owned bool) *store {
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	up := make(chan struct{})
@@ -127,56 +132,6 @@ func (s *store) Close() error {
 		return fmt.Errorf("rabbitmq: cannot close the connection: %w", err)
 	}
 	return nil
-}
-
-// publisher returns the channel publishes and declarations go through, opening
-// one in confirm mode when there is none on the current connection.
-//
-// It is reopened rather than reused once closed, which also happens with the
-// connection up: the broker closes a channel that publishes to an exchange
-// that does not exist, and that one mistake must not end every publish after.
-func (s *store) publisher(ctx context.Context) (*pubChannel, error) {
-	conn, err := s.connection(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.pub != nil && !s.pub.ch.IsClosed() && s.pub.conn == conn {
-		return s.pub, nil
-	}
-	ch, err := conn.Channel()
-	if err != nil {
-		return nil, fmt.Errorf("rabbitmq: cannot open a channel: %w", err)
-	}
-	if err := ch.Confirm(false); err != nil {
-		_ = ch.Close()
-		return nil, fmt.Errorf("rabbitmq: cannot enable publisher confirms: %w", err)
-	}
-	s.pub = &pubChannel{ch: ch, conn: conn, closed: ch.NotifyClose(make(chan *amqp.Error, 1))}
-	return s.pub, nil
-}
-
-// pubChannel is the publishing channel with what is needed to explain its
-// death: the connection it was opened on, and the broker's reason for closing
-// it.
-type pubChannel struct {
-	ch     *amqp.Channel
-	conn   *amqp.Connection
-	closed <-chan *amqp.Error
-}
-
-// reason is why the broker closed the channel, when it said.
-func (p *pubChannel) reason() error {
-	select {
-	case e, ok := <-p.closed:
-		if ok && e != nil {
-			return e
-		}
-	default:
-	}
-	return amqp.ErrClosed
 }
 
 // exchange is the topic exchange carrying one stream's subjects.
