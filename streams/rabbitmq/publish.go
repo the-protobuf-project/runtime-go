@@ -88,6 +88,19 @@ func (m *manager) send(ctx context.Context, subject string, values []any, o stre
 	if o.TTL > 0 {
 		return nil, nil, fmt.Errorf("%w: this provider publishes immediately; RabbitMQ delays need a dead-letter exchange or the delayed-message plugin", streams.ErrUnsupported)
 	}
+	if o.Retain {
+		return nil, nil, fmt.Errorf("%w: RabbitMQ has no last value per routing key: a queue hands each message to one consumer and then forgets it, and a subscriber that binds later starts empty", streams.ErrUnsupported)
+	}
+	if err := short("routing key", subject); err != nil {
+		return nil, nil, err
+	}
+	if err := short("message id", o.ID); err != nil {
+		return nil, nil, err
+	}
+	props, err := m.properties(o)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	ids := make([]string, len(values))
 	msgs := make([]amqp.Publishing, len(values))
@@ -96,11 +109,15 @@ func (m *manager) send(ctx context.Context, subject string, values []any, o stre
 		if ids[i] == "" {
 			ids[i] = core.NewID()
 		}
+		// Headers travel in the properties, never in the frame, so the body
+		// is the version-1 frame whatever the headers.
 		body, err := core.Pack(m.store.codec, ids[i], value)
 		if err != nil {
 			return ids, nil, err
 		}
-		msgs[i] = amqp.Publishing{MessageId: ids[i], Body: body, DeliveryMode: amqp.Persistent}
+		msg := props
+		msg.MessageId, msg.Body = ids[i], body
+		msgs[i] = msg
 	}
 
 	errs := m.store.publish(ctx, m.store.exchange(m.stream.ID), subject, msgs)
@@ -111,6 +128,33 @@ func (m *manager) send(ctx context.Context, subject string, values []any, o stre
 	}
 	m.store.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "count": len(values)})
 	return ids, errs, nil
+}
+
+// properties are what every message of one publish goes out with: persistent,
+// the stream's and the publish's headers as an AMQP table, and the expiry as
+// the expiration property. Headers RabbitMQ would act on rather than carry
+// are refused with [streams.ErrInvalidHeader] before anything is sent.
+//
+// Expires is the per-message expiration rather than a per-queue
+// x-message-ttl, which would apply one TTL to every message in the queue.
+// RabbitMQ drops an expired message only once it reaches the head of its
+// queue, so one behind a message that has not expired is held, and counted in
+// the queue's depth, until everything ahead of it is consumed.
+func (m *manager) properties(o streams.Options) (amqp.Publishing, error) {
+	headers, err := core.Outgoing(m.stream, o)
+	if err != nil {
+		return amqp.Publishing{}, err
+	}
+	if herr := checkHeaders(headers); herr != nil {
+		return amqp.Publishing{}, herr
+	}
+	p := amqp.Publishing{DeliveryMode: amqp.Persistent, Headers: table(headers)}
+	if o.Expires > 0 {
+		if p.Expiration, err = expiration(o.Expires); err != nil {
+			return amqp.Publishing{}, err
+		}
+	}
+	return p, nil
 }
 
 // declares reports whether any declared subject matches, on AMQP's wildcards.

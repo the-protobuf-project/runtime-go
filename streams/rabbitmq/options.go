@@ -17,6 +17,7 @@ type config struct {
 	meter    telemetry.Meter
 	prefix   string
 	prefetch int
+	channels int
 	retry    time.Duration
 	tls      *tls.Config
 	username string
@@ -37,6 +38,10 @@ const (
 
 	// defaultRetry is how long a dropped connection waits before dialing again.
 	defaultRetry = 2 * time.Second
+
+	// defaultPublishChannels is how many confirm-mode channels single
+	// publishes are spread over when [WithPublishChannels] does not say.
+	defaultPublishChannels = 4
 )
 
 // newConfig applies opts over the defaults.
@@ -44,6 +49,7 @@ func newConfig(opts ...Option) config {
 	cfg := config{
 		log: telemetry.NoopLogger, meter: telemetry.NoopMeter,
 		prefetch: defaultPrefetch, retry: defaultRetry,
+		channels: defaultPublishChannels,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -56,6 +62,9 @@ func newConfig(opts ...Option) config {
 	}
 	if cfg.retry <= 0 {
 		cfg.retry = defaultRetry
+	}
+	if cfg.channels < 1 {
+		cfg.channels = 1
 	}
 	return cfg
 }
@@ -85,9 +94,22 @@ func WithPrefix(prefix string) Option {
 // hands a consumer up to this many messages before waiting for an
 // acknowledgement, so a low number spreads a burst and a high one lets a fast
 // consumer run ahead. AMQP caps it at 65535; a consumer attached with more
-// fails.
+// fails. A [streams.Prefetch] on the call overrides it for that consumer.
 func WithPrefetch(n int) Option {
 	return func(c *config) { c.prefetch = n }
+}
+
+// WithPublishChannels sets how many channels, each in confirm mode, single
+// publishes are spread over. Defaults to 4; zero or less is taken as one.
+//
+// A channel is one process on the broker, which handles its publishes and
+// confirms in turn; several let concurrent publishers be confirmed side by
+// side. A batch always goes through one channel, so its messages stay in
+// order, and publishes from one caller that waits for each stay in order
+// whatever channel each takes, since the next is not sent until the previous
+// one is confirmed.
+func WithPublishChannels(n int) Option {
+	return func(c *config) { c.channels = n }
 }
 
 // WithCodec sets how payloads are encoded. Defaults to [streams.JSON].

@@ -49,10 +49,21 @@ func (s *store) Get(_ context.Context, id string) (streams.Stream, error) {
 }
 
 // Bind returns a publisher and subscriber for a declared stream.
-func (s *store) Bind(_ context.Context, id string) (streams.Manager, error) {
+//
+// Every subject naming its namespace by URI is resolved against the server
+// here, so a namespace the server does not have fails the bind rather than the
+// first write.
+func (s *store) Bind(ctx context.Context, id string) (streams.Manager, error) {
 	d, err := s.lookup(id)
 	if err != nil {
 		return nil, err
+	}
+	for _, subject := range d.stream.Subjects {
+		if n, ok := d.named[subject]; ok {
+			if _, rerr := s.hub.resolve(ctx, subject, n); rerr != nil {
+				return nil, rerr
+			}
+		}
 	}
 	return &manager{store: s, declared: d}, nil
 }
@@ -115,13 +126,24 @@ func (s *store) lookup(id string) (declared, error) {
 	return d, nil
 }
 
-// declare parses a stream's subjects as node ids.
+// errNoHeaders is why headers are refused, at Create, Update and publish.
+var errNoHeaders = fmt.Errorf("%w: opcua: a Write sets a node's value, status and timestamps and has nowhere to carry headers, so they would be dropped; OPC UA PubSub carries them as MQTT 5 user properties", streams.ErrUnsupported)
+
+// declare refuses default headers and parses a stream's subjects as node ids.
 func declare(id string, in streams.Stream) (declared, error) {
+	if len(in.Headers) > 0 {
+		return declared{}, errNoHeaders
+	}
 	nodes := make(map[string]*ua.NodeID, len(in.Subjects))
+	byURI := map[string]named{}
 	for _, subject := range in.Subjects {
-		n, err := ua.ParseNodeID(subject)
+		n, u, err := parseSubject(subject)
 		if err != nil {
-			return declared{}, fmt.Errorf("opcua: subject %q is not a node id (such as ns=2;s=Temperature): %w", subject, err)
+			return declared{}, err
+		}
+		if u != nil {
+			byURI[subject] = *u
+			continue
 		}
 		nodes[subject] = n
 	}
@@ -136,5 +158,6 @@ func declare(id string, in streams.Stream) (declared, error) {
 			Active:      true,
 		},
 		nodes: nodes,
+		named: byURI,
 	}, nil
 }

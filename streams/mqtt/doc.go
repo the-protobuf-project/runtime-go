@@ -36,6 +36,44 @@
 // connection, so an undurable subscriber misses only what was published while
 // it was down; a durable consumer's session is resumed and misses nothing.
 //
+// # Publishing
+//
+// A publish returns once the broker has acknowledged it, or fails after
+// [WithPublishTimeout] (10 seconds by default). [WithPublishConnections] spreads
+// publishes over several connections by a hash of the topic, so a topic always
+// takes the same one and keeps its order. A batch is pipelined: every message
+// is put on the wire in order and the call waits for all the acknowledgements
+// together, one round trip for the batch rather than one per message.
+//
+// # Headers, expiry, retain
+//
+//   - Headers travel as MQTT 5 user properties on the PUBLISH, one per header
+//     in key order: the stream's [streams.Stream.Headers] with the publish's
+//     own ([streams.Header], [streams.WithHeaders]) on top, on every message of
+//     a batch too. The payload stays the version-1 frame, so a peer that knows
+//     nothing of headers reads it unchanged, and any MQTT 5 tool sees them
+//     (the broker's own subscriber, printing user properties). Subscriptions and durable
+//     consumers put a message's user properties back on it as
+//     [streams.Message.Headers], including on a redelivery after a restart,
+//     since the broker stores them with the queued message. MQTT reserves no
+//     user property names, so nothing is refused beyond
+//     [streams.Headers.Validate]; Create and Update refuse invalid stream
+//     headers.
+//   - [streams.Expires] is the MQTT 5 Message Expiry Interval, in whole
+//     seconds, rounded up: a sub-second expiry is one second, never zero. The
+//     broker discards a message that has waited that long in a session's queue
+//     or as a retained value; one handed to a connected subscriber at once is
+//     delivered whatever its expiry.
+//   - [streams.Retain] is the retain flag: the broker keeps the message as the
+//     topic's last value and hands it, framed and decodable, to every
+//     subscriber that joins later. A durable consumer is handed it when its
+//     subscription is new, not again on each resume. [ClearRetained] clears it
+//     with MQTT's own empty retained publish, which subscriptions skip.
+//   - [streams.Delivery.NakAfter] cannot wait: MQTT has no negative
+//     acknowledgement and no redelivery delay, so
+//     [streams.Delivery.CanDelayRedelivery] is false and the message stays
+//     outstanding until the session reconnects.
+//
 // # Licensing
 //
 // This package builds on github.com/eclipse/paho.golang, which is dual

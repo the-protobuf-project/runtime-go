@@ -1,0 +1,24 @@
+# A throwaway MQTT 5 broker for mqtt/mqtt_live_test.go. Run from streams/:
+#
+#   docker compose -p tpp-streams-live-mqtt -f docker/compose.mqtt.yaml up -d --wait
+#   go test -race -tags live ./mqtt -run Live
+#   docker compose -p tpp-streams-live-mqtt -f docker/compose.mqtt.yaml down -v
+#
+# The untagged tests do not need it: they start mochi in-process. This is for
+# trying the provider against a second, independent broker implementation.
+# Host port 11883, not 1883, so it can run beside a broker you already have.
+# Nothing is persisted, so a restart discards every durable session.
+services:
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: tpp-streams-mqtt
+    ports:
+      - "127.0.0.1:11883:1883"
+    volumes:
+      - ./compose.mqtt.mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: "no"

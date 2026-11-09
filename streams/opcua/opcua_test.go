@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
+	streamsopcua "github.com/the-protobuf-project/runtime-go/streams/opcua"
 )
 
 type event struct {
@@ -13,9 +14,9 @@ type event struct {
 	Action string `json:"action"`
 }
 
-// A subscription's first message is the node's current value.
+// Asked for, a subscription's first message is the node's current value.
 func TestSubscribeStartsWithTheCurrentValue(t *testing.T) {
-	_, m := connect(t)
+	_, m := connect(t, streamsopcua.WithInitialValue(true))
 	msgs := subscribe(t, m, temperature)
 
 	var got float64
@@ -32,7 +33,6 @@ func TestNativeValueRoundTrip(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
 	msgs := subscribe(t, m, temperature)
-	next(t, msgs) // the current value
 
 	if _, err := m.Publish(ctx, temperature, 21.5); err != nil {
 		t.Fatalf("Publish: %v", err)
@@ -53,7 +53,6 @@ func TestFramedValueRoundTrip(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
 	msgs := subscribe(t, m, payload)
-	next(t, msgs) // the current, empty, value
 
 	want := event{User: "ada", Action: "created"}
 	id, err := m.Publish(ctx, payload, want)
@@ -79,7 +78,6 @@ func TestPublishBatchWritesInOrder(t *testing.T) {
 	_, m := connect(t)
 	ctx := t.Context()
 	msgs := subscribe(t, m, temperature)
-	next(t, msgs)
 
 	b, err := streams.AsBatch(m)
 	if err != nil {
@@ -112,7 +110,6 @@ func TestCancelClosesTheChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
-	next(t, msgs)
 	cancel()
 
 	deadline := time.After(10 * time.Second)

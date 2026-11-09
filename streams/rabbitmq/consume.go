@@ -19,11 +19,18 @@ import (
 // place, and what was published in between is gone — that is what makes this
 // the undurable half. Reach for [manager.Consume] when a message must survive
 // the reader.
+//
+// [streams.Group] is refused: sharing a subject is what a named durable
+// consumer is, and quietly fanning out instead would double the work.
 func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
-	attach := func() (attachment, error) { return m.attach(ctx, subject, "", true) }
+	o := streams.NewOptions(opts...)
+	if o.Group != "" {
+		return nil, fmt.Errorf("%w: a RabbitMQ subscription is a queue of its own; to share %q under %q, consume it durably with %q as the consumer name", streams.ErrUnsupported, subject, o.Group, o.Group)
+	}
+	attach := func() (attachment, error) { return m.attach(ctx, subject, "", true, o.Prefetch) }
 	a, err := attach()
 	if err != nil {
 		return nil, err
@@ -31,7 +38,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 
 	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
-	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
+	out := make(chan streams.Message, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		m.follow(ctx, subject, a, attach, func(d amqp.Delivery) bool {
@@ -40,6 +47,9 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 				m.store.log.Warn(ctx, "dropping a malformed message", telemetry.Fields{"subject": subject, "error": derr.Error()})
 				_ = d.Reject(false)
 				return true
+			}
+			if h := received(d.Headers); h != nil {
+				msg.Headers = h
 			}
 			select {
 			case out <- msg:
@@ -79,6 +89,16 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 // dropped that channel is gone, so Ack and Nak fail, and the broker — which
 // requeued everything unacknowledged when the connection went — delivers the
 // message again, flagged as a redelivery.
+//
+// # No delayed nak
+//
+// [streams.Delivery.NakAfter] does not wait here, and
+// [streams.Delivery.CanDelayRedelivery] is false. AMQP's nack requeues at
+// once; holding one back takes the delayed-message exchange plugin, which the
+// stock image does not ship, or a dead-letter exchange and a TTL'd retry queue
+// per consumer, which adds queues other runtimes do not know and lets a
+// retried message overtake or fall behind the rest. The message is requeued
+// for immediate redelivery and NakAfter reports [streams.ErrUnsupported].
 func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ...streams.Option) (<-chan streams.Delivery, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
@@ -91,7 +111,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		return nil, fmt.Errorf("%w: the consumer name %q is already the queue on RabbitMQ, and consumers of one queue already share it; drop the Group option", streams.ErrUnsupported, consumer)
 	}
 
-	attach := func() (attachment, error) { return m.attach(ctx, subject, safeName(consumer), false) }
+	attach := func() (attachment, error) { return m.attach(ctx, subject, safeName(consumer), false, o.Prefetch) }
 	a, err := attach()
 	if err != nil {
 		return nil, err
@@ -112,6 +132,9 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 				m.store.log.Warn(ctx, "rejecting a malformed message", telemetry.Fields{"subject": subject, "error": derr.Error()})
 				_ = d.Reject(false)
 				return true
+			}
+			if h := received(d.Headers); h != nil {
+				msg.Headers = h
 			}
 			m.store.metrics.Delivered(ctx, subject, consumer)
 			ack := &amqpAck{del: d, metrics: m.store.metrics, subject: subject, consumer: consumer}
@@ -138,7 +161,20 @@ type attachment struct {
 //
 // A transient queue is exclusive and auto-deleting and belongs to one
 // subscription; a durable one is named after the consumer and outlives it.
-func (m *manager) attach(ctx context.Context, subject, consumer string, transient bool) (attachment, error) {
+// prefetch is the call's [streams.Prefetch]; see [qos].
+func (m *manager) attach(ctx context.Context, subject, consumer string, transient bool, prefetch int) (attachment, error) {
+	var name string
+	if !transient {
+		name = m.store.queue(m.stream.ID, consumer, safeName(subject))
+	}
+	for _, n := range [...]struct{ what, value string }{
+		{"routing key", subject}, {"exchange name", m.store.exchange(m.stream.ID)}, {"queue name", name},
+	} {
+		if err := short(n.what, n.value); err != nil {
+			return attachment{}, err
+		}
+	}
+
 	conn, err := m.store.connection(ctx)
 	if err != nil {
 		return attachment{}, err
@@ -152,17 +188,13 @@ func (m *manager) attach(ctx context.Context, subject, consumer string, transien
 		_ = ch.Close()
 		return attachment{}, fmt.Errorf("rabbitmq: cannot %s for %q: %w", what, subject, err)
 	}
-	if m.store.cfg.prefetch > math.MaxUint16 {
+	if prefetch <= 0 && m.store.cfg.prefetch > math.MaxUint16 {
 		return fail("set prefetch", fmt.Errorf("%d is above AMQP's limit of %d", m.store.cfg.prefetch, math.MaxUint16))
 	}
-	if qerr := ch.Qos(m.store.cfg.prefetch, 0, false); qerr != nil {
+	if qerr := ch.Qos(qos(prefetch, m.store.cfg.prefetch), 0, false); qerr != nil {
 		return fail("set prefetch", qerr)
 	}
 
-	var name string
-	if !transient {
-		name = m.store.queue(m.stream.ID, consumer, safeName(subject))
-	}
 	q, err := ch.QueueDeclare(name, !transient, transient, transient, false, nil)
 	if err != nil {
 		return fail("declare a queue", err)
@@ -179,4 +211,17 @@ func (m *manager) attach(ctx context.Context, subject, consumer string, transien
 		return fail("consume", err)
 	}
 	return attachment{ch: ch, deliveries: deliveries}, nil
+}
+
+// qos is the basic.qos prefetch count: the call's, else the store's.
+//
+// Zero or less means "let the provider choose", as it does for every provider,
+// rather than AMQP's "unlimited", which is the one setting that lets a single
+// consumer starve its peers. A call asking for more than AMQP can say gets
+// AMQP's most.
+func qos(call, store int) int {
+	if call <= 0 {
+		return store
+	}
+	return min(call, math.MaxUint16)
 }

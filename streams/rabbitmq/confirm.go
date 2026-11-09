@@ -2,7 +2,9 @@ package rabbitmq
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -20,7 +22,12 @@ import (
 // connection is still up the broker closed the channel itself — most often
 // because the exchange is gone — and sending again would fail the same way, so
 // that is returned with the broker's reason instead.
+//
+// Every call takes the next publishing channel in turn and keeps to it, so
+// concurrent callers' confirms do not queue behind one another in one broker
+// channel process, while one call's messages, a batch, stay in order.
 func (s *store) publish(ctx context.Context, exchange, key string, msgs []amqp.Publishing) []error {
+	slot := s.nextSlot()
 	errs := make([]error, len(msgs))
 	pending := make([]int, len(msgs))
 	for i := range pending {
@@ -28,7 +35,7 @@ func (s *store) publish(ctx context.Context, exchange, key string, msgs []amqp.P
 	}
 
 	for len(pending) > 0 {
-		pub, err := s.publisher(ctx)
+		pub, err := s.publisher(ctx, slot)
 		if err != nil {
 			for _, i := range pending {
 				errs[i] = err
@@ -67,35 +74,61 @@ func (s *store) publish(ctx context.Context, exchange, key string, msgs []amqp.P
 	return errs
 }
 
-// publisher returns the channel publishes and declarations go through, opening
-// one in confirm mode when there is none on the current connection.
+// nextSlot is the publishing channel the next publish takes, round-robin.
+func (s *store) nextSlot() int {
+	n := len(s.pubs)
+	if n == 1 {
+		return 0
+	}
+	return int(s.next.Add(1) % uint64(n))
+}
+
+// publisher returns publishing channel slot, opening one in confirm mode when
+// there is none on the current connection. Slot 0 also declares and deletes
+// exchanges.
 //
 // It is reopened rather than reused once closed, which also happens with the
 // connection up: the broker closes a channel that publishes to an exchange
 // that does not exist, and that one mistake must not end every publish after.
+// Each slot is reopened on its own, so such a mistake costs the publishes in
+// flight on one channel rather than on all of them.
 //
 // A connection this package dialed can drop between being handed out and the
 // channel opening on it; that waits for the next connection rather than
 // failing the publish.
-func (s *store) publisher(ctx context.Context) (*pubChannel, error) {
+func (s *store) publisher(ctx context.Context, slot int) (*pubChannel, error) {
 	for {
 		conn, err := s.connection(ctx)
 		if err != nil {
 			return nil, err
 		}
-		pub, err := s.openPublisher(conn)
+		pub, err := s.openPublisher(conn, slot)
 		if err == nil || !s.owned || !conn.IsClosed() {
 			return pub, err
 		}
 	}
 }
 
-// openPublisher returns the publishing channel on conn, opening it if needed.
-func (s *store) openPublisher(conn *amqp.Connection) (*pubChannel, error) {
+// openPublisher returns publishing channel slot on conn, opening it if needed.
+//
+// The usual case, a channel already open, takes only a read lock, so
+// concurrent publishes on different channels do not wait on each other here.
+func (s *store) openPublisher(conn *amqp.Connection, slot int) (*pubChannel, error) {
+	s.mu.RLock()
+	pub := s.pubs[slot]
+	s.mu.RUnlock()
+	if pub.usable(conn) {
+		return pub, nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.pub != nil && !s.pub.ch.IsClosed() && s.pub.conn == conn {
-		return s.pub, nil
+	if s.closing {
+		return nil, errClosed
+	}
+	if pub := s.pubs[slot]; pub.usable(conn) {
+		// Another caller reopened it first; theirs wins.
+		return pub, nil
 	}
 	ch, err := conn.Channel()
 	if err != nil {
@@ -105,8 +138,30 @@ func (s *store) openPublisher(conn *amqp.Connection) (*pubChannel, error) {
 		_ = ch.Close()
 		return nil, fmt.Errorf("rabbitmq: cannot enable publisher confirms: %w", err)
 	}
-	s.pub = &pubChannel{ch: ch, conn: conn, closed: ch.NotifyClose(make(chan *amqp.Error, 1))}
-	return s.pub, nil
+	s.pubs[slot] = &pubChannel{ch: ch, conn: conn, closed: ch.NotifyClose(make(chan *amqp.Error, 1))}
+	return s.pubs[slot], nil
+}
+
+// closePublishers closes every publishing channel, for Close. The connection
+// is left alone: on a store built by [Use] it is the caller's.
+func (s *store) closePublishers() error {
+	s.mu.Lock()
+	pubs := slices.Clone(s.pubs)
+	clear(s.pubs)
+	s.mu.Unlock()
+
+	var errs []error
+	for _, pub := range pubs {
+		if pub == nil {
+			continue
+		}
+		// Already shut, by the broker or the connection going away, is what
+		// closing wanted.
+		if err := pub.ch.Close(); err != nil && !errors.Is(err, amqp.ErrClosed) {
+			errs = append(errs, fmt.Errorf("rabbitmq: cannot close a publishing channel: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // pubChannel is the publishing channel with what is needed to explain its
@@ -116,6 +171,11 @@ type pubChannel struct {
 	ch     *amqp.Channel
 	conn   *amqp.Connection
 	closed <-chan *amqp.Error
+}
+
+// usable reports whether p is an open channel on conn.
+func (p *pubChannel) usable(conn *amqp.Connection) bool {
+	return p != nil && p.conn == conn && !p.ch.IsClosed()
 }
 
 // reason is why the broker closed the channel, when it said.

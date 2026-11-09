@@ -2,7 +2,9 @@ package zeromq
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -94,11 +96,13 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	if err := sock.Listen(endpoint); err != nil {
 		return nil, fmt.Errorf("zeromq: cannot bind %s: %w", endpoint, err)
 	}
+	endpoint = bound(endpoint, sock.Addr())
 
 	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
-		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
+		done: make(chan struct{})}, nil
 }
 
 // Subscribe returns a [streams.Streams] that connects to endpoint and receives
@@ -115,7 +119,28 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
-		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
+		done: make(chan struct{})}, nil
+}
+
+// bound is the endpoint a publisher actually listens on: a TCP port of 0 is
+// resolved to the one the system chose, so [Endpoint] can hand it to a
+// subscriber and a subscribe through the publisher's own store dials it.
+func bound(endpoint string, addr net.Addr) string {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok || !strings.HasPrefix(endpoint, "tcp://") || !strings.HasSuffix(endpoint, ":0") {
+		return endpoint
+	}
+	return "tcp://" + tcp.String()
+}
+
+// Endpoint returns the endpoint s binds or connects to, with a bound TCP port
+// of 0 resolved to the real one. s must come from [Publish] or [Subscribe].
+func Endpoint(s streams.Streams) string {
+	if st, ok := s.(*store); ok {
+		return st.endpoint
+	}
+	return ""
 }
 
 // store holds the declarations and, for a publisher, the bound socket.
@@ -140,6 +165,11 @@ type store struct {
 
 	closeOnce sync.Once
 	subs      []zmq4.Socket
+
+	// done is closed by Close. Every subscription watches it, which is how
+	// Close reaches subscriptions whose contexts are still live, and a
+	// publish or subscribe after it fails rather than using a closed socket.
+	done chan struct{}
 }
 
 var (
@@ -152,6 +182,7 @@ var (
 func (s *store) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
+		close(s.done)
 		s.mu.Lock()
 		subs := s.subs
 		s.subs = nil
@@ -174,15 +205,40 @@ func (s *store) Close() error {
 	return nil
 }
 
-// track records a socket so Close releases it.
-func (s *store) track(sock zmq4.Socket) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.subs = append(s.subs, sock)
+// closed reports whether Close has run.
+func (s *store) closed() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
 }
 
+// track records a socket so Close releases it, and refuses it once Close has
+// run, closing it, so a subscribe racing Close cannot leak a socket.
+func (s *store) track(sock zmq4.Socket) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed() {
+		_ = sock.Close()
+		return false
+	}
+	s.subs = append(s.subs, sock)
+	return true
+}
+
+// errClosed is what every publish and subscribe after Close reports.
+var errClosed = errors.New("zeromq: the provider is closed")
+
 // Create declares a stream, generating an id when one is not supplied.
+//
+// The stream's default headers live in this declaration, so each side stamps
+// the defaults it declared; invalid ones are refused here.
 func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -195,6 +251,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	s.mu.Lock()
@@ -230,6 +287,9 @@ func (s *store) Bind(ctx context.Context, id string) (streams.Manager, error) {
 
 // Update replaces a stream's configuration, preserving its id.
 func (s *store) Update(_ context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -244,6 +304,7 @@ func (s *store) Update(_ context.Context, id string, in streams.Stream) (streams
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 	s.declared[id] = out
 	return out, nil

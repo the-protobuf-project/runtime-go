@@ -34,6 +34,9 @@ type streamHandler struct {
 	maxLen   int64
 	reclaim  time.Duration
 
+	// confirmAcks says a durable Ack waits for its XACK. See [WithConfirmAcks].
+	confirmAcks bool
+
 	// owned says this package dialed the client and must close it. A client
 	// handed in through Use belongs to the caller, and closing it here would
 	// take down connections this package never made.
@@ -82,6 +85,12 @@ func (s *streamHandler) scheduled() bool { return s.kind == kindNotify }
 
 // Create declares a stream, generating an id when one is not supplied.
 func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	// A bad default header fails here, where it was set, rather than on every
+	// publish through the stream.
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
+
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -95,6 +104,7 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	body, err := json.Marshal(out)
@@ -183,6 +193,9 @@ func (s *streamHandler) Bind(ctx context.Context, id string) (streams.Manager, e
 // never an empty stream. Deleting first would destroy the stream whenever the
 // recreate failed.
 func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	if _, err := s.Get(ctx, id); err != nil {
 		return streams.Stream{}, err
 	}
@@ -194,6 +207,7 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	body, err := json.Marshal(out)

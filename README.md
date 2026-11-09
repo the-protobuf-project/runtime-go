@@ -73,6 +73,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`rfc/internal/jscontact`](rfc/internal/jscontact) | `github.com/the-protobuf-project/runtime-go/rfc/internal/jscontact` | Package jscontact converts between the legacy vCard model (protobuf.rfc6350.vcard.v1) and the canonical JSContact model (protobuf.rfc9553.card.v1), following RFC 9555 as updated by RFC 9982. |
 | [`rfc/internal/vcard`](rfc/internal/vcard) | `github.com/the-protobuf-project/runtime-go/rfc/internal/vcard` | Package vcard converts between RFC 6350's three encodings and the protobuf.rfc6350.vcard.v1 schema. |
 | [`streams`](streams) | `github.com/the-protobuf-project/runtime-go/streams` | Package streams defines the backend-agnostic contract for runtime-go's messaging layer. |
+| [`streams/benches/throughput`](streams/benches/throughput) | `github.com/the-protobuf-project/runtime-go/streams/benches/throughput` | Command throughput is the throughput and latency benchmark for every stream provider. |
 | [`streams/codec/protobuf`](streams/codec/protobuf) | `github.com/the-protobuf-project/runtime-go/streams/codec/protobuf` | Package protobuf encodes stream payloads as protocol buffers. |
 | [`streams/core`](streams/core) | `github.com/the-protobuf-project/runtime-go/streams/core` | Package core is the code every streams provider would otherwise copy. |
 | [`streams/examples/kafka`](streams/examples/kafka) | `github.com/the-protobuf-project/runtime-go/streams/examples/kafka` | Command kafka demonstrates the streams contract over Apache Kafka. |
@@ -86,6 +87,7 @@ carries a `doc.go`; this table is generated from those docs by `tools/docgen`
 | [`streams/mqtt`](streams/mqtt) | `github.com/the-protobuf-project/runtime-go/streams/mqtt` | Package mqtt delivers streams over MQTT 5. |
 | [`streams/nats`](streams/nats) | `github.com/the-protobuf-project/runtime-go/streams/nats` | Package nats delivers streams over NATS, in two forms. |
 | [`streams/opcua`](streams/opcua) | `github.com/the-protobuf-project/runtime-go/streams/opcua` | Package opcua delivers streams over OPC UA. |
+| [`streams/opcua/pubsub`](streams/opcua/pubsub) | `github.com/the-protobuf-project/runtime-go/streams/opcua/pubsub` | Package pubsub delivers streams over OPC UA PubSub (Part 14) on an MQTT broker, in the JSON message mapping. |
 | [`streams/rabbitmq`](streams/rabbitmq) | `github.com/the-protobuf-project/runtime-go/streams/rabbitmq` | Package rabbitmq delivers streams over RabbitMQ. |
 | [`streams/redis`](streams/redis) | `github.com/the-protobuf-project/runtime-go/streams/redis` | Package redis implements streams.Streams over Redis. |
 | [`streams/shared`](streams/shared) | `github.com/the-protobuf-project/runtime-go/streams/shared` | Package shared holds the telemetry this module's code logs and measures through. |

@@ -16,14 +16,25 @@ import (
 //
 // The exchange is durable, so it outlives a broker restart — a stream that
 // vanished when the broker bounced would take its consumers' bindings with it.
+// Declaring is idempotent, so creating a stream another process already
+// declared under the same id is how two processes share it.
+//
+// Default headers RabbitMQ would act on rather than carry are refused with
+// [streams.ErrInvalidHeader] before anything is declared.
 func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := checkStream(in); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = safeName(core.NewStreamID(in.Name))
 	}
+	if err := short("exchange name", s.exchange(id)); err != nil {
+		return streams.Stream{}, err
+	}
 	out := declaration(id, in)
 
-	pub, err := s.publisher(ctx)
+	pub, err := s.publisher(ctx, 0)
 	if err == nil {
 		err = pub.ch.ExchangeDeclare(s.exchange(id), amqp.ExchangeTopic, true, false, false, false, nil)
 	}
@@ -61,8 +72,13 @@ func (s *store) Bind(ctx context.Context, id string) (streams.Manager, error) {
 	return &manager{store: s, stream: stream}, nil
 }
 
-// Update replaces a stream's configuration, preserving its id.
+// Update replaces a stream's configuration, preserving its id, after checking
+// its default headers. The exchange is unchanged; managers already bound keep
+// the subjects and default headers they were bound with.
 func (s *store) Update(ctx context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := checkStream(in); err != nil {
+		return streams.Stream{}, err
+	}
 	s.declMu.Lock()
 	defer s.declMu.Unlock()
 
@@ -86,7 +102,7 @@ func (s *store) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	pub, err := s.publisher(ctx)
+	pub, err := s.publisher(ctx, 0)
 	if err == nil {
 		err = pub.ch.ExchangeDelete(s.exchange(id), false, false)
 	}
@@ -116,7 +132,7 @@ func (s *store) List(_ context.Context) ([]streams.Stream, error) {
 }
 
 // declaration is the stream recorded under id: in's own fields, active, with
-// a copy of its subjects so the caller's slice cannot change it later.
+// copies of its subjects and headers so the caller's cannot change it later.
 func declaration(id string, in streams.Stream) streams.Stream {
 	return streams.Stream{
 		ID:          id,
@@ -124,6 +140,7 @@ func declaration(id string, in streams.Stream) streams.Stream {
 		Description: in.Description,
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
+		Headers:     in.Headers.Clone(),
 		Active:      true,
 	}
 }

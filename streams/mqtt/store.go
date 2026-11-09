@@ -12,7 +12,13 @@ import (
 )
 
 // Create declares a stream, generating an id when one is not supplied.
+//
+// Its [streams.Stream.Headers] are validated here, so a bad default fails at
+// the declaration rather than at the first publish.
 func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = safeName(core.NewStreamID(in.Name))
@@ -51,8 +57,12 @@ func (s *store) Bind(ctx context.Context, id string) (streams.Manager, error) {
 	return &manager{store: s, stream: stream}, nil
 }
 
-// Update replaces a stream's configuration, preserving its id.
+// Update replaces a stream's configuration, preserving its id, and refuses
+// invalid headers as Create does.
 func (s *store) Update(_ context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -97,6 +107,7 @@ func declaration(id string, in streams.Stream) streams.Stream {
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 }
 

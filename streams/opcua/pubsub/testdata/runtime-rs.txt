@@ -1,0 +1,90 @@
+NETWORK {"MessageId":"01JMSG","MessageType":"ua-data","PublisherId":"plant-1","WriterGroupName":"line-a","Messages":[{"DataSetWriterId":17832,"DataSetWriterName":"boiler","SequenceNumber":41,"MetaDataVersion":{"MajorVersion":3,"MinorVersion":4},"Timestamp":"2026-11-09T10:00:00.123456700Z","Payload":{"Bool":{"Value":{"Type":1,"Body":true}},"SByte":{"Value":{"Type":2,"Body":-5}},"Byte":{"Value":{"Type":3,"Body":200}},"Int16":{"Value":{"Type":4,"Body":-300}},"UInt16":{"Value":{"Type":5,"Body":60000}},"Int32":{"Value":{"Type":6,"Body":-3}},"UInt32":{"Value":{"Type":7,"Body":4000000000}},"Int64":{"Value":{"Type":8,"Body":-9007199254740993}},"UInt64":{"Value":{"Type":9,"Body":18446744073709551615}},"Float":{"Value":{"Type":10,"Body":1.5}},"FloatTenth":{"Value":{"Type":10,"Body":0.1}},"FloatNaN":{"Value":{"Type":10,"Body":"NaN"}},"DoubleInf":{"Value":{"Type":11,"Body":"Infinity"}},"DoubleNegInf":{"Value":{"Type":11,"Body":"-Infinity"}},"Double":{"Value":{"Type":11,"Body":21.5}},"DoubleWhole":{"Value":{"Type":11,"Body":3}},"DoubleSmall":{"Value":{"Type":11,"Body":0.0000001}},"DoubleBig":{"Value":{"Type":11,"Body":1000000000000000000000}},"String":{"Value":{"Type":12,"Body":"héllo \"q\" \n</>"}},"DateTime":{"Value":{"Type":13,"Body":"2026-11-09T10:00:00.123Z"}},"Guid":{"Value":{"Type":14,"Body":"72962b91-fa75-4ae6-8d28-b404dc7daf63"}},"ByteString":{"Value":{"Type":15,"Body":"AAEC+g=="}},"StatusCode":{"Value":{"Type":19,"Body":2156658688}},"QualifiedName":{"Value":{"Type":20,"Body":"2:Temp"}},"LocalizedText":{"Value":{"Type":21,"Body":{"Locale":"en","Text":"Hot"}}},"NodeIdNum":{"Value":{"Type":17,"Body":{"Id":2258}}},"NodeIdStr":{"Value":{"Type":17,"Body":{"IdType":1,"Id":"Line1.Temp","Namespace":2}}},"Int32Array":{"Value":{"Type":6,"Body":[1,2,3]}},"DoubleArray":{"Value":{"Type":11,"Body":[1.5,2]}},"StringArray":{"Value":{"Type":12,"Body":["a","b"]}},"Empty":{},"Full":{"Value":{"Type":11,"Body":7.25},"Status":1083179008,"SourceTimestamp":"2026-11-09T10:00:00.123456700Z","SourcePicoseconds":12,"ServerTimestamp":"2026-11-09T10:00:00Z","ServerPicoseconds":34},"StatusOnly":{"Status":2156658688}}},{"DataSetWriterId":7,"DataSetWriterName":"pump","SequenceNumber":42,"Timestamp":"2026-11-09T10:00:00Z","Payload":{"Count":{"Value":{"Type":6,"Body":-3}}}}]}
+BINARY Bool 010101
+BINARY SByte 0102fb
+BINARY Byte 0103c8
+BINARY Int16 0104d4fe
+BINARY UInt16 010560ea
+BINARY Int32 0106fdffffff
+BINARY UInt32 010700286bee
+BINARY Int64 0108ffffffffffffdfff
+BINARY UInt64 0109ffffffffffffffff
+BINARY Float 010a0000c03f
+BINARY FloatTenth 010acdcccc3d
+BINARY FloatNaN 010a0000c07f
+BINARY DoubleInf 010b000000000000f07f
+BINARY DoubleNegInf 010b000000000000f0ff
+BINARY Double 010b0000000000803540
+BINARY DoubleWhole 010b0000000000000840
+BINARY DoubleSmall 010b48afbc9af2d77a3e
+BINARY DoubleBig 010b50efe2d6e41a4b44
+BINARY String 010c0f00000068c3a96c6c6f20227122200a3c2f3e
+BINARY DateTime 010d87e621153170dd01
+BINARY Guid 010e912b967275fae64a8d28b404dc7daf63
+BINARY ByteString 010f04000000000102fa
+BINARY StatusCode 011300008c80
+BINARY QualifiedName 011402000400000054656d70
+BINARY LocalizedText 01150302000000656e03000000486f74
+BINARY NodeIdNum 01110100d208
+BINARY NodeIdStr 01110302000a0000004c696e65312e54656d70
+BINARY Int32Array 018603000000010000000200000003000000
+BINARY DoubleArray 018b02000000000000000000f83f0000000000000040
+BINARY StringArray 018c0200000001000000610100000062
+BINARY Empty 00
+BINARY Full 3f0b0000000000001d400000904087e621153170dd010c0000100f153170dd012200
+BINARY StatusOnly 0200008c80
+DECODED Bool 010101
+DECODED SByte 0102fb
+DECODED Byte 0103c8
+DECODED Int16 0104d4fe
+DECODED UInt16 010560ea
+DECODED Int32 0106fdffffff
+DECODED UInt32 010700286bee
+DECODED Int64 0108ffffffffffffdfff
+DECODED UInt64 0109ffffffffffffffff
+DECODED Float 010a0000c03f
+DECODED FloatTenth 010acdcccc3d
+DECODED FloatNaN 010a0000c07f
+DECODED DoubleInf 010b000000000000f07f
+DECODED DoubleNegInf 010b000000000000f0ff
+DECODED Double 010b0000000000803540
+DECODED DoubleWhole 010b0000000000000840
+DECODED DoubleSmall 010b48afbc9af2d77a3e
+DECODED DoubleBig 010b50efe2d6e41a4b44
+DECODED String 010c0f00000068c3a96c6c6f20227122200a3c2f3e
+DECODED DateTime 010db0d421153170dd01
+DECODED Guid 010e912b967275fae64a8d28b404dc7daf63
+DECODED ByteString 010f04000000000102fa
+DECODED StatusCode 011300008c80
+DECODED QualifiedName 0114000006000000323a54656d70
+DECODED LocalizedText 01150302000000656e03000000486f74
+DECODED NodeIdNum 01110100d208
+DECODED NodeIdStr 01110302000a0000004c696e65312e54656d70
+DECODED Int32Array 018603000000010000000200000003000000
+DECODED DoubleArray 018b02000000000000000000f83f0000000000000040
+DECODED StringArray 018c0200000001000000610100000062
+DECODED Empty 00
+DECODED Full 3f0b0000000000001d400000904087e621153170dd010c0000100f153170dd012200
+DECODED StatusOnly 0200008c80
+METADATA {"MessageId":"m-1","MessageType":"ua-metadata","PublisherId":"plant-1","DataSetWriterId":17832,"WriterGroupName":"line-a","DataSetWriterName":"boiler","Timestamp":"2026-11-09T10:00:00.123456700Z","MetaData":{"Name":"boiler","Description":{},"Fields":[{"Name":"Temperature","Description":{},"BuiltInType":11,"DataType":{"Id":11},"ValueRank":-1},{"Name":"Samples","Description":{},"BuiltInType":6,"DataType":{"Id":6},"ValueRank":1},{"Name":"Nothing","Description":{},"DataType":{"Id":24},"ValueRank":-2},{"Name":"Name","Description":{},"BuiltInType":12,"DataType":{"Id":12},"ValueRank":-1}],"ConfigurationVersion":{"MajorVersion":845000000,"MinorVersion":845000001}}}
+DATASET 040000000b00000054656d7065726174757265010b00000000008035400700000053616d706c65730186020000000100000002000000070000004e6f7468696e6700040000004e616d65010c0100000078
+WRITERID boiler 17832
+WRITERID pump 63556
+WRITERID Temperature 60163
+WRITERID w 52538
+WRITERID simulation 54425
+WRITERID  7385
+FOREIGN {"Type":10,"Body":1.5} => 010a0000c03f
+FOREIGN {"UaType":7,"Value":12} => 01070c000000
+FOREIGN {"Value":21,"SourceTimestamp":"2026-01-01T00:00:00Z"} => 0508150000000000000000008192b17adc01
+FOREIGN 3.25 => 010b0000000000000a40
+FOREIGN "on" => 010c020000006f6e
+FOREIGN true => 010101
+FOREIGN [1,2] => 01880200000001000000000000000200000000000000
+FOREIGN [1,2.5] => 018b02000000000000000000f03f0000000000000440
+FOREIGN 18446744073709551615 => 0109ffffffffffffffff
+FOREIGN null => 00
+FOREIGN [] => 018c00000000
+FOREIGN {"Value":1,"StatusCode":{"Code":2149842944}} => 0308010000000000000000002480
+FOREIGN {"Value":{"UaType":6,"Value":-4},"Status":{"Code":1083441152,"Symbol":"Uncertain"}} => 0306fcffffff00009440
+FOREIGN {"Value":{"Type":13,"Body":"2026-11-09T05:14:25.7984391Z"},"ServerTimestamp":"2026-11-09T05:14:25.7984391Z"} => 090d876347300970dd01876347300970dd01
+FOREIGN {} => 00

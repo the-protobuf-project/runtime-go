@@ -18,8 +18,9 @@ import (
 // connection and attaches again rather than ending a channel the caller is
 // ranging over.
 //
-// It returns once ctx is done, a handler reports it, or the connection given to
-// [Use] has closed — which nothing here can bring back.
+// It returns once ctx is done, a handler reports it, the store has been
+// closed, or the connection given to [Use] has closed — which nothing here can
+// bring back.
 func (m *manager) follow(ctx context.Context, subject string, a attachment,
 	attach func() (attachment, error), handle func(amqp.Delivery) bool,
 ) {
@@ -47,7 +48,7 @@ func (m *manager) follow(ctx context.Context, subject string, a attachment,
 			if a, err = attach(); err == nil {
 				break
 			}
-			if ctx.Err() != nil || errors.Is(err, errGone) {
+			if ctx.Err() != nil || errors.Is(err, errGone) || errors.Is(err, errClosed) {
 				return
 			}
 			m.store.log.Warn(ctx, "could not attach again", telemetry.Fields{"subject": subject, "error": err.Error()})

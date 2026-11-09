@@ -52,7 +52,14 @@ func (p *plainStreams) Close() error {
 }
 
 // Create declares a stream, generating an id when one is not supplied.
+//
+// The stream's default headers are part of the declaration and are kept the
+// same way; one that is invalid or uses the server's Nats- prefix is refused
+// with [streams.ErrInvalidHeader].
 func (p *plainStreams) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := checkStreamHeaders(in); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -65,6 +72,7 @@ func (p *plainStreams) Create(ctx context.Context, in streams.Stream) (streams.S
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	p.mu.Lock()
@@ -98,8 +106,13 @@ func (p *plainStreams) Bind(ctx context.Context, id string) (streams.Manager, er
 	return &plainManager{p: p, stream: s}, nil
 }
 
-// Update replaces a stream's configuration, preserving its id.
+// Update replaces a stream's configuration, preserving its id. Managers
+// already bound keep the subjects and default headers they were bound with.
 func (p *plainStreams) Update(_ context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := checkStreamHeaders(in); err != nil {
+		return streams.Stream{}, err
+	}
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -114,6 +127,7 @@ func (p *plainStreams) Update(_ context.Context, id string, in streams.Stream) (
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 	p.declared[id] = out
 	return out, nil
@@ -167,6 +181,13 @@ func (m *plainManager) checkSubject(ctx context.Context, subject string) error {
 }
 
 // Publish sends a value on a subject.
+//
+// It returns once the client has queued the frame, not when the server has
+// it: core NATS has no acknowledgement to wait for. Headers go out as NATS
+// headers, and a publish without any is a plain PUB. [streams.Options.TTL] is
+// refused, because core NATS delivers immediately and cannot schedule;
+// [streams.Options.Expires] and [streams.Options.Retain], because it holds
+// nothing to expire or retain.
 func (m *plainManager) Publish(ctx context.Context, subject string, value any, opts ...streams.Option) (string, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return "", err
@@ -182,6 +203,16 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 	if o.TTL > 0 {
 		return "", fmt.Errorf("%w: core NATS delivers immediately and cannot schedule", streams.ErrUnsupported)
 	}
+	if o.Expires > 0 {
+		return "", fmt.Errorf("%w: core NATS holds no message that could expire; use JetStream for an expiry", streams.ErrUnsupported)
+	}
+	if err := refuseRetain(o, "core NATS keeps nothing for a later subscriber"); err != nil {
+		return "", err
+	}
+	headers, err := outgoing(m.stream, o)
+	if err != nil {
+		return "", err
+	}
 
 	id := o.ID
 	if id == "" {
@@ -193,7 +224,14 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 		return "", err
 	}
 
-	if err := m.p.nc.Publish(subject, body); err != nil {
+	// A message without headers goes out exactly as before, as a plain PUB,
+	// so a peer that predates headers sees nothing new.
+	if len(headers) == 0 {
+		err = m.p.nc.Publish(subject, body)
+	} else {
+		err = m.p.nc.PublishMsg(&gonats.Msg{Subject: subject, Data: body, Header: toHeader(headers)})
+	}
+	if err != nil {
 		m.p.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("nats: cannot publish on %q: %w", subject, err)
 	}
@@ -280,6 +318,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 						telemetry.Fields{"subject": raw.Subject, "error": derr.Error()})
 					continue
 				}
+				msg.Headers = fromHeader(raw.Header)
 				delivered++
 				select {
 				case out <- msg:
@@ -295,7 +334,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 // PublishBatch sends several values on a subject.
 //
 // Core NATS publishes without waiting for the server, so publishing in turn is
-// already as batched as this gets.
+// already as batched as this gets. Every entry carries the same headers.
 func (m *plainManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
 	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
 		return nil, err

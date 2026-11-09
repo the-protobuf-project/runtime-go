@@ -7,11 +7,14 @@ package nats_test
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	natstest "github.com/nats-io/nats-server/v2/test"
 	gonats "github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	streamsnats "github.com/the-protobuf-project/runtime-go/streams/nats"
 )
@@ -659,5 +662,470 @@ func TestTypedViewOverJetStream(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("nothing was delivered")
+	}
+}
+
+// ---------------------------------------------------------------- headers, expiry, delayed nak
+
+// headed is a declaration over subjects with default headers lang and site.
+func headed(subjects ...string) streams.Stream {
+	return streams.Stream{Name: "headed", Subjects: subjects}.
+		WithHeader("lang", "go").
+		WithHeader("site", "plant-3")
+}
+
+func recvMessage(t *testing.T, ch <-chan streams.Message, within time.Duration) streams.Message {
+	t.Helper()
+
+	select {
+	case m, ok := <-ch:
+		if !ok {
+			t.Fatal("message channel closed before a message arrived")
+		}
+		return m
+	case <-time.After(within):
+		t.Fatalf("no message within %s", within)
+		return streams.Message{}
+	}
+}
+
+// The stream's headers arrive, a publish's own win, and both are NATS headers
+// another client reads, outside the payload. A message without any is a plain
+// PUB.
+func TestPlainHeadersTravelAsNatsHeaders(t *testing.T) {
+	nc := testConn(t)
+	s := streamsnats.Use(nc)
+	ctx := t.Context()
+
+	stream, err := s.Create(ctx, headed(subject))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got, _ := s.Get(ctx, stream.ID); got.Headers.Get("lang") != "go" {
+		t.Errorf("Get lost the headers: %v", got.Headers)
+	}
+	m, err := s.Bind(ctx, stream.ID)
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	raw, err := nc.SubscribeSync(subject)
+	if err != nil {
+		t.Fatalf("SubscribeSync: %v", err)
+	}
+	ch, err := m.Subscribe(ctx, subject)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	id, err := m.Publish(ctx, subject, event{User: "ada"}, streams.Header("site", "plant-4"), streams.Header("trace", "00-ab"))
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	got := recvMessage(t, ch, 5*time.Second)
+	if got.ID != id || got.Headers.Get("lang") != "go" || got.Headers.Get("site") != "plant-4" || got.Headers.Get("trace") != "00-ab" {
+		t.Errorf("delivered %q with %v", got.ID, got.Headers)
+	}
+	native, err := raw.NextMsg(5 * time.Second)
+	if err != nil {
+		t.Fatalf("NextMsg: %v", err)
+	}
+	if native.Header.Get("site") != "plant-4" {
+		t.Errorf("NATS headers = %v", native.Header)
+	}
+
+	bare, _ := s.Create(ctx, streams.Stream{Name: "bare", Subjects: []string{subject}})
+	bm, _ := s.Bind(ctx, bare.ID)
+	if _, perr := bm.Publish(ctx, subject, event{User: "go"}); perr != nil {
+		t.Fatalf("Publish (bare): %v", perr)
+	}
+	if got := recvMessage(t, ch, 5*time.Second); got.Headers != nil {
+		t.Errorf("a header-less publish arrived with %v", got.Headers)
+	}
+	if native, _ := raw.NextMsg(5 * time.Second); native == nil || native.Header != nil {
+		t.Error("a header-less publish was not a plain PUB")
+	}
+
+	b, _ := streams.AsBatch(m)
+	ids, err := b.PublishBatch(ctx, subject, []any{event{User: "a"}, event{User: "b"}})
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+	for _, id := range ids {
+		if got := recvMessage(t, ch, 5*time.Second); got.ID != id || got.Headers.Get("lang") != "go" {
+			t.Errorf("batch entry %q arrived as %q with %v", id, got.ID, got.Headers)
+		}
+	}
+}
+
+func TestPlainRefusesBadHeadersExpiryAndRetain(t *testing.T) {
+	s := streamsnats.Use(testConn(t))
+	ctx := t.Context()
+
+	if _, err := s.Create(ctx, headed(subject).WithHeader("Nats-Msg-Id", "x")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Create with Nats-Msg-Id = %v, want ErrInvalidHeader", err)
+	}
+	stream, m := declare(t, s, subject)
+	if _, err := s.Update(ctx, stream.ID, headed(subject).WithHeader("Nats-TTL", "1")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Update with Nats-TTL = %v, want ErrInvalidHeader", err)
+	}
+	for _, opt := range []streams.Option{streams.Header("Nats-Expected-Stream", "x"), streams.Header("a b", "1")} {
+		if _, err := m.Publish(ctx, subject, event{}, opt); !errors.Is(err, streams.ErrInvalidHeader) {
+			t.Errorf("Publish = %v, want ErrInvalidHeader", err)
+		}
+	}
+	b, _ := streams.AsBatch(m)
+	if _, err := b.PublishBatch(ctx, subject, []any{event{}}, streams.Header("Nats-Msg-Id", "x")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("PublishBatch = %v, want ErrInvalidHeader", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}, streams.Expires(5*time.Second)); !errors.Is(err, streams.ErrUnsupported) || !strings.Contains(err.Error(), "expire") {
+		t.Errorf("Publish with Expires = %v, want ErrUnsupported naming the expiry", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}, streams.Retain()); !errors.Is(err, streams.ErrUnsupported) || !strings.Contains(err.Error(), "retain") {
+		t.Errorf("Publish with Retain = %v, want ErrUnsupported naming retain", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}, streams.Expires(0)); err != nil {
+		t.Errorf("Publish with a zero expiry = %v, want it treated as none", err)
+	}
+}
+
+// The stream's headers live in its metadata, so another provider binding it
+// stamps the same ones; they arrive on deliveries, redeliveries included, and
+// the stored message carries them as NATS headers.
+func TestJetStreamHeadersAreStoredAndRedelivered(t *testing.T) {
+	nc := testConn(t)
+	s, _ := streamsnats.UseJetStream(nc)
+	ctx := t.Context()
+
+	stream, err := s.Create(ctx, headed(subject))
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	other, _ := streamsnats.UseJetStream(nc)
+	if got, _ := other.Get(ctx, stream.ID); got.Headers.Get("site") != "plant-3" {
+		t.Errorf("another provider read %v", got.Headers)
+	}
+	m, _ := other.Bind(ctx, stream.ID)
+	d, _ := streams.AsDurable(m)
+	ch, err := d.Consume(ctx, subject, "headed")
+	if err != nil {
+		t.Fatalf("Consume: %v", err)
+	}
+
+	id, err := m.Publish(ctx, subject, event{User: "ada"}, streams.Header("site", "plant-4"))
+	if err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	first := recvDelivery(t, ch, 10*time.Second)
+	if first.Headers.Get("lang") != "go" || first.Headers.Get("site") != "plant-4" {
+		t.Errorf("headers = %v", first.Headers)
+	}
+	if _, ok := first.Headers["Nats-Msg-Id"]; ok {
+		t.Errorf("the server's header leaked: %v", first.Headers)
+	}
+	if perr := first.Nak(ctx); perr != nil {
+		t.Fatalf("Nak: %v", perr)
+	}
+	second := recvDelivery(t, ch, 10*time.Second)
+	if second.ID != id || second.Attempt != 2 || second.Headers.Get("site") != "plant-4" {
+		t.Errorf("redelivery %q attempt %d headers %v", second.ID, second.Attempt, second.Headers)
+	}
+	_ = second.Ack(ctx)
+
+	b, _ := streams.AsBatch(m)
+	ids, err := b.PublishBatch(ctx, subject, []any{event{User: "a"}, event{User: "b"}}, streams.Header("site", "plant-4"))
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+	for _, id := range ids {
+		got := recvDelivery(t, ch, 10*time.Second)
+		if got.ID != id || got.Headers.Get("site") != "plant-4" {
+			t.Errorf("batch entry %q arrived as %q with %v", id, got.ID, got.Headers)
+		}
+		_ = got.Ack(ctx)
+	}
+
+	js, _ := jetstream.New(nc)
+	handle, _ := js.Stream(ctx, stream.ID)
+	raw, err := handle.GetMsg(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetMsg: %v", err)
+	}
+	if raw.Header.Get("lang") != "go" || raw.Header.Get("Nats-Msg-Id") != id {
+		t.Errorf("stored headers = %v", raw.Header)
+	}
+
+	// An update replaces the set; one without headers leaves none behind.
+	updated, err := s.Update(ctx, stream.ID, streams.Stream{Name: "headed", Subjects: []string{subject}})
+	if err != nil || updated.Headers != nil {
+		t.Errorf("Update = %v, %v", updated.Headers, err)
+	}
+	if got, _ := s.Get(ctx, stream.ID); got.Headers != nil {
+		t.Errorf("Get after the update = %v", got.Headers)
+	}
+	if _, err := s.Update(ctx, stream.ID, headed(subject).WithHeader("Nats-Expected-Stream", "x")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Update with a reserved key = %v", err)
+	}
+}
+
+func TestJetStreamRefusesBadHeadersAndRetain(t *testing.T) {
+	s := jetStream(t)
+	ctx := t.Context()
+
+	if _, err := s.Create(ctx, headed(subject).WithHeader("Nats-TTL", "1")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Create with Nats-TTL = %v", err)
+	}
+	if _, err := s.Create(ctx, headed(subject).WithHeader("", "1")); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Create with an empty key = %v", err)
+	}
+	_, m := declare(t, s, subject)
+	reserved := streams.Header("Nats-Msg-Id", "x")
+	if _, err := m.Publish(ctx, subject, event{}, reserved); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("Publish = %v", err)
+	}
+	b, _ := streams.AsBatch(m)
+	if _, err := b.PublishBatch(ctx, subject, []any{event{}}, reserved); !errors.Is(err, streams.ErrInvalidHeader) {
+		t.Errorf("PublishBatch = %v", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}, streams.Retain()); !errors.Is(err, streams.ErrUnsupported) || !strings.Contains(err.Error(), "retain") {
+		t.Errorf("Publish with Retain = %v", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}, streams.Expires(500*time.Millisecond)); !errors.Is(err, streams.ErrUnsupported) || !strings.Contains(err.Error(), "whole seconds") {
+		t.Errorf("Publish with a sub-second expiry = %v", err)
+	}
+}
+
+// Nats-TTL: the server removes the message once its expiry passes, while one
+// without an expiry stays.
+func TestJetStreamExpiryRemovesTheMessage(t *testing.T) {
+	nc := testConn(t)
+	s, _ := streamsnats.UseJetStream(nc)
+	stream, m := declare(t, s, subject)
+	ctx := t.Context()
+
+	gone, err := m.Publish(ctx, subject, event{User: "late"}, streams.Expires(time.Second))
+	if err != nil {
+		t.Fatalf("Publish with Expires: %v", err)
+	}
+	kept, _ := m.Publish(ctx, subject, event{User: "kept"})
+
+	js, _ := jetstream.New(nc)
+	handle, _ := js.Stream(ctx, stream.ID)
+	raw, err := handle.GetMsg(ctx, 1)
+	if err != nil {
+		t.Fatalf("GetMsg: %v", err)
+	}
+	if raw.Header.Get("Nats-TTL") != "1" {
+		t.Errorf("Nats-TTL = %q, want 1", raw.Header.Get("Nats-TTL"))
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		info, _ := handle.Info(ctx)
+		if info.State.Msgs == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the message did not expire")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	p, _ := streams.AsPositioned(m)
+	ch, _ := p.ConsumeFrom(ctx, subject, "late", streams.FromEarliest)
+	d := recvDelivery(t, ch, 10*time.Second)
+	if d.ID == gone || d.ID != kept {
+		t.Errorf("delivered %q, want only %q", d.ID, kept)
+	}
+}
+
+// A stream another tool created without allow_msg_ttl refuses an expiry by
+// name until it is updated through this provider.
+func TestJetStreamExpiryNeedsAllowMsgTTL(t *testing.T) {
+	nc := testConn(t)
+	s, _ := streamsnats.UseJetStream(nc)
+	ctx := t.Context()
+
+	js, _ := jetstream.New(nc)
+	if _, err := js.CreateStream(ctx, jetstream.StreamConfig{Name: "FOREIGN", Subjects: []string{subject}}); err != nil {
+		t.Fatalf("CreateStream: %v", err)
+	}
+	m, _ := s.Bind(ctx, "FOREIGN")
+	if _, err := m.Publish(ctx, subject, event{}, streams.Expires(5*time.Second)); !errors.Is(err, streams.ErrUnsupported) || !strings.Contains(err.Error(), "allow_msg_ttl") {
+		t.Errorf("Publish with Expires = %v, want ErrUnsupported naming allow_msg_ttl", err)
+	}
+	if _, err := m.Publish(ctx, subject, event{}); err != nil {
+		t.Errorf("Publish without an expiry: %v", err)
+	}
+	if _, err := s.Update(ctx, "FOREIGN", streams.Stream{Name: "foreign", Subjects: []string{subject}}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	m, _ = s.Bind(ctx, "FOREIGN")
+	if _, err := m.Publish(ctx, subject, event{}, streams.Expires(5*time.Second)); err != nil {
+		t.Errorf("Publish with Expires after the update: %v", err)
+	}
+}
+
+// A delayed nak: the server holds the redelivery back for the delay.
+func TestJetStreamNakAfterHoldsTheRedeliveryBack(t *testing.T) {
+	_, m := declare(t, jetStream(t), subject)
+	d, _ := streams.AsDurable(m)
+	ctx := t.Context()
+
+	ch, _ := d.Consume(ctx, subject, "patient")
+	id, _ := m.Publish(ctx, subject, event{User: "ada"})
+	first := recvDelivery(t, ch, 10*time.Second)
+	if !first.CanDelayRedelivery() || first.MaxRedeliveryDelay() != 0 {
+		t.Errorf("CanDelayRedelivery %v, MaxRedeliveryDelay %s", first.CanDelayRedelivery(), first.MaxRedeliveryDelay())
+	}
+	naked := time.Now()
+	if err := first.NakAfter(ctx, 2*time.Second); err != nil {
+		t.Fatalf("NakAfter: %v", err)
+	}
+	select {
+	case early := <-ch:
+		t.Fatalf("redelivered after %s, before the delay: %+v", time.Since(naked), early.Message)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	second := recvDelivery(t, ch, 10*time.Second)
+	if time.Since(naked) < 2*time.Second || second.ID != id || second.Attempt != 2 {
+		t.Errorf("redelivered %q attempt %d after %s", second.ID, second.Attempt, time.Since(naked))
+	}
+	_ = second.Ack(ctx)
+}
+
+// A pipelined batch several times its in-flight window, and larger than the
+// provider's in-flight limit, finishes and is stored in order.
+func TestJetStreamALargeBatchLandsInOrder(t *testing.T) {
+	_, m := declare(t, jetStream(t), subject)
+	ctx := t.Context()
+
+	values := make([]any, 6000)
+	for i := range values {
+		values[i] = event{User: strconv.Itoa(i)}
+	}
+	b, _ := streams.AsBatch(m)
+	ids, err := b.PublishBatch(ctx, subject, values)
+	if err != nil {
+		t.Fatalf("PublishBatch: %v", err)
+	}
+	if len(ids) != len(values) {
+		t.Fatalf("got %d ids, want %d", len(ids), len(values))
+	}
+	p, _ := streams.AsPositioned(m)
+	ch, _ := p.ConsumeFrom(ctx, subject, "in-order", streams.FromEarliest)
+	for i, id := range ids {
+		d := recvDelivery(t, ch, 10*time.Second)
+		if d.ID != id {
+			t.Fatalf("entry %d arrived as %q, want %q", i, d.ID, id)
+		}
+		_ = d.Ack(ctx)
+	}
+}
+
+// Several batches at once, together far beyond the provider's in-flight limit,
+// all finish: a batch waiting for room settles its own waits first.
+func TestJetStreamConcurrentBatchesDoNotDeadlock(t *testing.T) {
+	_, m := declare(t, jetStream(t), subject)
+	b, _ := streams.AsBatch(m)
+
+	values := make([]any, 1000)
+	for i := range values {
+		values[i] = event{User: "u"}
+	}
+	errs := make(chan error, 16)
+	for range 16 {
+		go func() {
+			_, err := b.PublishBatch(t.Context(), subject, values)
+			errs <- err
+		}()
+	}
+	for range 16 {
+		select {
+		case err := <-errs:
+			if err != nil {
+				t.Errorf("PublishBatch: %v", err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("the batches did not finish")
+		}
+	}
+}
+
+// The consumer settings land on the consumers the server holds.
+func TestJetStreamConsumerSettings(t *testing.T) {
+	nc := testConn(t)
+	ctx := t.Context()
+	js, _ := jetstream.New(nc)
+
+	for _, tc := range []struct {
+		name              string
+		opts              []streamsnats.Option
+		ackWait, inactive time.Duration
+		maxDeliver        int
+	}{
+		{"defaults", nil, 30 * time.Second, 30 * time.Second, -1},
+		{"set", []streamsnats.Option{
+			streamsnats.WithAckWait(time.Second), streamsnats.WithMaxDeliver(3), streamsnats.WithInactiveThreshold(2 * time.Second),
+		}, time.Second, 2 * time.Second, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := streamsnats.UseJetStream(nc, tc.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			subj := "settings." + tc.name
+			stream, err := s.Create(ctx, streams.Stream{Name: tc.name, Subjects: []string{subj}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, _ := s.Bind(ctx, stream.ID)
+			handle, _ := js.Stream(ctx, stream.ID)
+
+			subCtx, cancel := context.WithCancel(ctx)
+			if _, perr := m.Subscribe(subCtx, subj); perr != nil {
+				t.Fatal(perr)
+			}
+			lister := handle.ListConsumers(ctx)
+			var found int
+			for info := range lister.Info() {
+				found++
+				if info.Config.InactiveThreshold != tc.inactive || info.Config.Durable != "" {
+					t.Errorf("ordered consumer: inactive %s durable %q", info.Config.InactiveThreshold, info.Config.Durable)
+				}
+			}
+			if found != 1 {
+				t.Errorf("found %d consumers, want the one ordered consumer", found)
+			}
+			cancel()
+
+			d, _ := streams.AsDurable(m)
+			if _, perr := d.Consume(ctx, subj, "c"); perr != nil {
+				t.Fatal(perr)
+			}
+			c, err := handle.Consumer(ctx, "c")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg := c.CachedInfo().Config
+			if cfg.AckWait != tc.ackWait || cfg.MaxDeliver != tc.maxDeliver {
+				t.Errorf("durable: ack wait %s, max deliver %d", cfg.AckWait, cfg.MaxDeliver)
+			}
+		})
+	}
+}
+
+// UseJetStream asks the server, so one without JetStream fails at startup.
+func TestUseJetStreamRefusesAServerWithoutJetStream(t *testing.T) {
+	opts := natstest.DefaultTestOptions
+	opts.Port = -1
+	srv := natstest.RunServer(&opts)
+	t.Cleanup(srv.Shutdown)
+	nc, err := gonats.Connect(srv.ClientURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(nc.Close)
+
+	if _, err := streamsnats.UseJetStream(nc); err == nil {
+		t.Error("UseJetStream succeeded against a server without JetStream")
 	}
 }

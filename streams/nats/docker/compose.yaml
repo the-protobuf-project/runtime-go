@@ -3,8 +3,8 @@ services:
     image: nats:latest
     container_name: nats-local
     ports:
-      - "4222:4222" # clients
-      - "8222:8222" # monitoring
+      - "127.0.0.1:4222:4222" # clients
+      - "127.0.0.1:8222:8222" # monitoring
     # JetStream is off by default, and without it ConnectJetStream fails at
     # startup and Durable and Positioned have nothing behind them.
     command:

@@ -39,6 +39,53 @@ func encode(codec streams.Codec, id string, value any) (*ua.Variant, error) {
 	return v, nil
 }
 
+// dataValue is what a write sends for value.
+//
+// A *ua.DataValue (or a ua.DataValue) is written as given, its status and
+// source timestamp included, as a gateway forwarding a device's reading would
+// send it; its value must still be one OPC UA has a type for. Anything else is
+// encoded and sent with no status or timestamps, and the server stamps the
+// write with its own time.
+func dataValue(codec streams.Codec, id string, value any) (*ua.DataValue, error) {
+	var dv ua.DataValue
+	switch v := value.(type) {
+	case *ua.DataValue:
+		if v == nil {
+			return nil, fmt.Errorf("%w: a nil DataValue has no value to write", streams.ErrUnsupported)
+		}
+		dv = *v
+	case ua.DataValue:
+		dv = v
+	default:
+		variant, err := encode(codec, id, value)
+		if err != nil {
+			return nil, err
+		}
+		return &ua.DataValue{EncodingMask: ua.DataValueValue, Value: variant}, nil
+	}
+	// The mask says which fields are on the wire, so every field set is
+	// marked, whatever the caller's mask said.
+	if dv.Value != nil {
+		dv.EncodingMask |= ua.DataValueValue
+	}
+	if dv.Status != 0 {
+		dv.EncodingMask |= ua.DataValueStatusCode
+	}
+	if !dv.SourceTimestamp.IsZero() {
+		dv.EncodingMask |= ua.DataValueSourceTimestamp
+	}
+	if dv.SourcePicoseconds != 0 {
+		dv.EncodingMask |= ua.DataValueSourcePicoseconds
+	}
+	if !dv.ServerTimestamp.IsZero() {
+		dv.EncodingMask |= ua.DataValueServerTimestamp
+	}
+	if dv.ServerPicoseconds != 0 {
+		dv.EncodingMask |= ua.DataValueServerPicoseconds
+	}
+	return &dv, nil
+}
+
 // decode turns a node's value into a delivered message.
 //
 // A ByteString holding this module's frame is unpacked, so it decodes the way

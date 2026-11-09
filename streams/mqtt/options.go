@@ -25,6 +25,9 @@ type config struct {
 	username string
 	password []byte
 	server   string
+
+	publishTimeout time.Duration
+	publishConns   int
 }
 
 const (
@@ -45,12 +48,22 @@ const (
 	// autopaho's own default is ten seconds, which is ten seconds of a
 	// consumer receiving nothing after a broker restart.
 	defaultRetry = 2 * time.Second
+
+	// defaultPublishTimeout is how long a publish waits for the broker to
+	// acknowledge it once it is on the wire.
+	defaultPublishTimeout = 10 * time.Second
+
+	// defaultPublishConnections is one, because one connection is all most
+	// brokers need: Mosquitto's single thread is the limit well before the
+	// connection is.
+	defaultPublishConnections = 1
 )
 
 func newConfig(opts ...Option) config {
 	cfg := config{
 		log: telemetry.NoopLogger, meter: telemetry.NoopMeter,
 		qos: defaultQoS, expiry: defaultExpiry, dial: defaultDial, retry: defaultRetry,
+		publishTimeout: defaultPublishTimeout, publishConns: defaultPublishConnections,
 	}
 	for _, opt := range opts {
 		opt(&cfg)
@@ -63,6 +76,12 @@ func newConfig(opts ...Option) config {
 	}
 	if cfg.retry <= 0 {
 		cfg.retry = defaultRetry
+	}
+	if cfg.publishTimeout <= 0 {
+		cfg.publishTimeout = defaultPublishTimeout
+	}
+	if cfg.publishConns < 1 {
+		cfg.publishConns = 1
 	}
 	return cfg
 }
@@ -158,4 +177,36 @@ func WithReconnectDelay(d time.Duration) Option {
 // [Connect] already has the address and ignores this.
 func WithServer(address string) Option {
 	return func(c *config) { c.server = address }
+}
+
+// WithPublishTimeout sets how long a publish waits for the broker to take
+// responsibility for a message once it is on the wire, and a batch for all of
+// its messages. Defaults to 10 seconds.
+//
+// It does not bound waiting for a connection that is being dialed again: that
+// is ctx's to decide, as [manager.Publish] describes. At QoS 0 there is no
+// acknowledgement and it bounds nothing.
+func WithPublishTimeout(d time.Duration) Option {
+	return func(c *config) { c.publishTimeout = d }
+}
+
+// WithPublishConnections sets how many connections [Connect] publishes over.
+// Defaults to 1.
+//
+// Every QoS 1 publish waits for its PUBACK, and one connection carries every
+// request through one socket in turn, so with many concurrent publishers it
+// becomes the queue they all wait in. Several connections share the load.
+//
+// Each topic always takes the same connection, chosen by a hash of the topic.
+// MQTT orders messages per connection, so this is what keeps publishes on a
+// topic in the order they were sent, concurrent ones included, whatever the
+// count. The cost is that the spread is across topics: publishers all on one
+// topic share one connection, and only publishing to several gains from more.
+//
+// The first connection uses the client id ([WithClientID] or a generated one)
+// and the others append -1, -2 and so on, since a broker gives a client id to
+// one connection at a time. [Use] publishes through the one connection it is
+// given and ignores this.
+func WithPublishConnections(n int) Option {
+	return func(c *config) { c.publishConns = n }
 }
