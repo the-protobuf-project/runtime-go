@@ -10,7 +10,7 @@ require (
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261023180446-a76d56a9756b
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261024035205-2d2b451ed122
-	go.mongodb.org/mongo-driver/v2 v2.9.2
+	go.mongodb.org/mongo-driver/v2 v2.9.3
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.3
