@@ -30,6 +30,9 @@ type config struct {
 
 	// confirmAcks says a durable Ack waits for Redis to answer its XACK.
 	confirmAcks bool
+
+	// autoPipeline sends single publishes through go-redis's auto-pipeliner.
+	autoPipeline bool
 }
 
 // defaultReclaim is how long a delivered-but-unacknowledged message sits with
@@ -125,6 +128,23 @@ func WithConfirmAcks(confirm bool) Option {
 	return func(c *config) { c.confirmAcks = confirm }
 }
 
+// WithAutoPipeline sends each single publish — a PUBLISH, or a durable
+// stream's XADD — through go-redis's auto-pipeliner, so concurrent publishes
+// share pipelines instead of each taking a connection and a round trip of its
+// own. Off by default, because go-redis marks the auto-pipeliner experimental.
+//
+// It is what runtime-rs does by default over its one multiplexed connection.
+// Each publish still returns only once Redis has answered it, and is still
+// never repeated once it may have been sent. Reads, subscriptions, batches
+// and acknowledgements stay on the client as before: a blocking read inside a
+// shared pipeline would hold up every publish queued behind it.
+//
+// A client that has no auto-pipeliner (a *redis.Ring) publishes as before,
+// and the fallback is logged.
+func WithAutoPipeline() Option {
+	return func(c *config) { c.autoPipeline = true }
+}
+
 // WithCodec sets how payloads are encoded. Defaults to [streams.JSON].
 //
 // It changes what is published; what is *read* is decided by the message, which
@@ -198,8 +218,22 @@ func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) st
 
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 
+	pub, ap := rdb, (*goredis.AutoPipeliner)(nil)
+	if cfg.autoPipeline {
+		var err error
+		if ap, err = rdb.AutoPipeline(); err != nil {
+			cfg.log.Warn(context.Background(), "publishing without auto-pipelining: the client has none",
+				telemetry.Fields{"error": err.Error()})
+			ap = nil
+		} else {
+			pub = ap
+		}
+	}
+
 	return &streamHandler{
 		rdb:      rdb,
+		pub:      pub,
+		ap:       ap,
 		codec:    codec,
 		registry: registry,
 		metrics:  metrics,

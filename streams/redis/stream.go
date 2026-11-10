@@ -23,7 +23,12 @@ import (
 // delivery. They share every other behavior — subject validation, metadata,
 // listing — so they share an implementation and differ only where it matters.
 type streamHandler struct {
-	rdb      goredis.UniversalClient
+	rdb goredis.UniversalClient
+	// pub sends single publishes: ap when auto-pipelining, rdb otherwise.
+	pub goredis.UniversalClient
+	// ap is the auto-pipeliner this package made, closed with the provider.
+	ap *goredis.AutoPipeliner
+
 	codec    streams.Codec
 	registry *streams.Registry
 	metrics  *core.Metrics
@@ -45,9 +50,17 @@ type streamHandler struct {
 
 // Close releases the connection, if this package made it.
 //
-// It is a no-op on a provider built by [Use], which does not own its client —
-// so a caller may close either kind without having to remember which it has.
+// It leaves the client of a provider built by [Use] open, since that belongs
+// to the caller — so a caller may close either kind without having to remember
+// which it has. Either way it closes the auto-pipeliner [WithAutoPipeline]
+// made.
 func (s *streamHandler) Close() error {
+	if s.ap != nil {
+		// Drains what is queued; the client underneath stays open.
+		if err := s.ap.Close(); err != nil {
+			return fmt.Errorf("redis: cannot close the auto-pipeliner: %w", err)
+		}
+	}
 	if !s.owned {
 		return nil
 	}

@@ -17,6 +17,7 @@ require (
 	github.com/twmb/franz-go v1.22.2
 	github.com/twmb/franz-go/pkg/kadm v1.19.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260811033724-b8e7523ac75a
+	github.com/twmb/franz-go/pkg/kmsg v1.15.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -71,7 +72,6 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/the-protobuf-project/telemetry/telemetry-go v0.0.0-20261021175734-19bcab17b113 // indirect
-	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect
 	github.com/xo/terminfo v1.2.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
@@ -111,3 +111,9 @@ replace github.com/the-protobuf-project/runtime-go/observability => ../observabi
 replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
 
 replace github.com/the-protobuf-project/runtime-go/ulid => ../ulid
+
+// Until go-zeromq/zmq4 releases batched PUB writes and buffered reads, which
+// lift the publisher from about 200k to about 630k messages a second. A
+// replace binds only this module: a program importing it still resolves
+// go-zeromq/zmq4 itself, which the driver works with as well.
+replace github.com/go-zeromq/zmq4 => github.com/oh-tarnished/zmq4 v0.0.0-20261110020246-43ad1f95a6c1

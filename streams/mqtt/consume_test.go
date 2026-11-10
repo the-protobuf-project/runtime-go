@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
+	streamsmqtt "github.com/the-protobuf-project/runtime-go/streams/mqtt"
 )
 
 // MQTT is durable but has no log to seek, which is exactly why the contract
@@ -100,6 +101,63 @@ func TestASessionKeepsMessagesWhileTheConsumerIsAway(t *testing.T) {
 	}
 	if decoded.User != "second" {
 		t.Errorf("resumed at %+v, want the message published while detached", decoded)
+	}
+}
+
+// A second consumer under the same name takes the session, and the first one's
+// channel closes rather than dialing again: dialing again would take it back,
+// and the two would trade it, each handed what the other never acknowledged.
+func TestASecondConsumerUnderTheNameTakesTheSession(t *testing.T) {
+	_, m := declare(t, testStreams(t, streamsmqtt.WithReconnectDelay(50*time.Millisecond)), subject)
+	d, _ := streams.AsDurable(m)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	first, err := d.Consume(ctx, subject, "billing")
+	if err != nil {
+		t.Fatalf("Consume (first): %v", err)
+	}
+	second, err := d.Consume(ctx, subject, "billing")
+	if err != nil {
+		t.Fatalf("Consume (second): %v", err)
+	}
+	closed := time.After(10 * time.Second)
+	for open := true; open; {
+		select {
+		case _, open = <-first:
+		case <-closed:
+			t.Fatal("the replaced consumer's channel is still open")
+		}
+	}
+
+	const n = 20
+	for i := range n {
+		if _, perr := m.Publish(ctx, subject, event{User: fmt.Sprint(i)}); perr != nil {
+			t.Fatalf("Publish: %v", perr)
+		}
+	}
+	seen := map[string]bool{}
+	for range n {
+		got := recv(t, second, 10*time.Second)
+		var e event
+		if derr := got.Decode(&e); derr != nil {
+			t.Fatalf("Decode: %v", derr)
+		}
+		if seen[e.User] {
+			t.Fatalf("message %s delivered twice", e.User)
+		}
+		seen[e.User] = true
+		if aerr := got.Ack(ctx); aerr != nil {
+			t.Fatalf("Ack: %v (the session changed hands again)", aerr)
+		}
+	}
+	select {
+	case got, ok := <-second:
+		if ok {
+			t.Fatalf("an extra delivery %+v", got.Message)
+		}
+		t.Fatal("the consumer that took the session lost it")
+	case <-time.After(time.Second):
 	}
 }
 

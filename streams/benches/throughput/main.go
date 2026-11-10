@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/pprof"
 	"slices"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gopcua/opcua/ua"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
@@ -179,6 +181,15 @@ func (a args) receiversPerSubject() int {
 func payload(a args, seq uint64, body string) any {
 	switch a.message {
 	case "opcua":
+		if a.backend == "opcua-pubsub" {
+			// A DataValue stamped now, so the reader has a send time: a
+			// PubSub message id is the NetworkMessage's, not a timestamp.
+			return &ua.DataValue{
+				EncodingMask:    ua.DataValueValue | ua.DataValueSourceTimestamp,
+				Value:           ua.MustVariant(int64(seq)),
+				SourceTimestamp: time.Now(),
+			}
+		}
 		// OPC UA writes a sized integer as the node's own Int64.
 		return int64(seq)
 	case "int64":
@@ -214,7 +225,7 @@ func readMessage(a args, msg streams.Message) (seq uint64, latency time.Duration
 	}
 	switch a.message {
 	case "opcua":
-		return opcuaRead(msg)
+		return opcuaRead(a, msg)
 	case "int64":
 		var v wrapperspb.Int64Value
 		if msg.Decode(&v) != nil || v.Value < 0 {
@@ -246,9 +257,25 @@ func readMessage(a args, msg streams.Message) (seq uint64, latency time.Duration
 	}
 }
 
-// opcuaRead reads the sequence of an OPC UA value the bench wrote and, from
-// the source timestamp the provider hands over as the message id, its latency.
-func opcuaRead(msg streams.Message) (uint64, time.Duration, bool) {
+// opcuaRead reads the sequence of an OPC UA value the bench wrote and its
+// latency: from the source timestamp the provider hands over as the message
+// id, or, over PubSub, from the DataValue's own source timestamp.
+func opcuaRead(a args, msg streams.Message) (uint64, time.Duration, bool) {
+	if a.backend == "opcua-pubsub" {
+		var dv ua.DataValue
+		if msg.Decode(&dv) != nil || dv.Value == nil {
+			return 0, -1, false
+		}
+		seq, ok := dv.Value.Value().(int64)
+		if !ok || seq < 0 {
+			return 0, -1, false
+		}
+		latency := time.Duration(-1)
+		if !dv.SourceTimestamp.IsZero() {
+			latency = max(time.Since(dv.SourceTimestamp), 0)
+		}
+		return uint64(seq), latency, true
+	}
 	var seq int64
 	if msg.Decode(&seq) != nil || seq < 0 {
 		return 0, -1, false
@@ -337,7 +364,9 @@ func resultsPath() string {
 // to the results file.
 func main() {
 	a := parseArgs(os.Args[1:])
+	stop := profile(os.Getenv("BENCH_CPUPROFILE"))
 	report := run(a)
+	stop()
 	pretty, _ := json.MarshalIndent(report, "", "  ")
 	fmt.Println(string(pretty))
 	fmt.Fprintln(os.Stderr, verdict(report))
@@ -353,6 +382,25 @@ func main() {
 	defer func() { _ = f.Close() }()
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		fatalf("write results file %s: %v", path, err)
+	}
+}
+
+// profile writes a CPU profile of the run to path, when one is given, until
+// the returned function is called.
+func profile(path string) func() {
+	if path == "" {
+		return func() {}
+	}
+	f, err := os.Create(path) //nolint:gosec // a path the operator chose
+	if err != nil {
+		fatalf("create CPU profile %s: %v", path, err)
+	}
+	if err := pprof.StartCPUProfile(f); err != nil {
+		fatalf("start CPU profile: %v", err)
+	}
+	return func() {
+		pprof.StopCPUProfile()
+		_ = f.Close()
 	}
 }
 

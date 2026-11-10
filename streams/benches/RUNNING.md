@@ -71,6 +71,7 @@ default 32 the harness measures itself.
 | `RABBITMQ_PUBLISH_CHANNELS` | rabbitmq | publishing channel pool, `rabbitmq.WithPublishChannels` (default: the driver's) |
 | `REDIS_ADDR`, `REDIS_TLS_ADDR`, `REDIS_TLS_CERTS` | redis, redis-durable | plain and TLS servers, and the TLS certificates |
 | `REDIS_CONFIRM_ACKS` | redis-durable | `1` makes an ack wait for XACK, `redis.WithConfirmAcks(true)`; the harness default is `0`, as in runtime-rs |
+| `REDIS_AUTO_PIPELINE` | redis, redis-durable | `0` publishes without `redis.WithAutoPipeline()`; the harness default is `1`, as runtime-rs pipelines publishes over its multiplexed connection |
 | `MQTT_HOST`, `MQTT_PORT`, `MQTT_TLS_ADDR` | mqtt, opcua-pubsub | plain and TLS brokers |
 | `MQTT_PUBLISH_CONNECTIONS` | mqtt | publishing connections, `mqtt.WithPublishConnections` (default: the driver's, 1) |
 | `OPCUA_URL`, `OPCUA_E2E_URL`, `OPCUA_PUBLISHING_MS` | opcua | plain and secure servers, and the subscription's publishing interval (default 20 ms) |

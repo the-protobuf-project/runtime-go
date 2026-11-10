@@ -624,9 +624,11 @@ Every option has a default that is the recommended setting.
 | Redis | `WithPrefix`, `WithDatabase`, `WithMaxLen`, `WithAuth` | none, client's, unbounded, — |
 | Redis | `WithReclaimAfter`: how long an entry may sit unacknowledged; also the longest delayed nak | 30 s |
 | Redis | `WithConfirmAcks`: whether `Ack` waits for the XACK | true |
+| Redis | `WithAutoPipeline`: single publishes share pipelines through go-redis's (experimental) auto-pipeliner, as runtime-rs pipelines them | off |
 | MQTT | `WithQoS`, `WithSessionExpiry`, `WithClientID` | 1, 24 h, generated |
 | MQTT | `WithPublishTimeout`, `WithPublishConnections` (by topic, so each keeps its order) | 10 s, 1 |
 | ZeroMQ | `WithSettle`: how long `Subscribe` waits for the subscription to reach the publisher | 250 ms |
+| ZeroMQ | `WithHighWaterMark`: messages queued per subscriber before the publisher drops the next, as runtime-rs | 100,000 |
 | OPC UA | `WithPublishingInterval`, `WithSamplingInterval`, `WithQueueSize`, `WithBuffer` | 100 ms, 0, 64, 4,096 |
 | OPC UA | `WithKeepAliveCount`, `WithLifetimeCount`, `WithMaxNotificationsPerPublish`, `WithInitialValue` | 10, 60, 1,000, false |
 | OPC UA PubSub | `WithPublisherID`, `WithPrefix`, `WithQoS` | `runtime-go-<ULID>`, `opcua`, 1 |

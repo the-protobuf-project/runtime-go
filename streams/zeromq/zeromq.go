@@ -24,6 +24,7 @@ type config struct {
 	log    telemetry.Logger
 	meter  telemetry.Meter
 	settle time.Duration
+	hwm    int
 }
 
 // defaultSettle is how long [Subscribe] waits for a subscription to reach the
@@ -32,6 +33,22 @@ type config struct {
 // It is a guess at a round trip, because ZeroMQ gives nothing better to wait
 // on. Long enough for a local socket or a LAN; [WithSettle] raises it.
 const defaultSettle = 250 * time.Millisecond
+
+// defaultHighWaterMark is how many messages the publisher queues for one
+// subscriber before it drops the next, as runtime-rs's ZeroMQ publisher does.
+const defaultHighWaterMark = 100_000
+
+// WithHighWaterMark sets how many messages the publisher queues for one
+// subscriber that is not keeping up before it drops the next. Defaults to
+// [defaultHighWaterMark].
+//
+// Dropping is ZeroMQ PUB/SUB's answer to a slow subscriber: one that falls
+// behind loses messages instead of slowing the publisher and every other
+// subscriber down. A higher mark rides out longer bursts at the cost of
+// memory held per subscriber. It applies to [Publish] only.
+func WithHighWaterMark(n int) Option {
+	return func(c *config) { c.hwm = n }
+}
 
 // WithLogger sets where these streams write their own records. Defaults to
 // [telemetry.NoopLogger].
@@ -66,7 +83,7 @@ func WithCodec(c streams.Codec) Option {
 }
 
 func newConfig(opts ...Option) config {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, settle: defaultSettle}
+	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, settle: defaultSettle, hwm: defaultHighWaterMark}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -93,6 +110,11 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	cfg := newConfig(opts...)
 
 	sock := zmq4.NewPub(ctx)
+	// Set before Listen: each subscriber's queue is sized as it connects.
+	if err := sock.SetOption(zmq4.OptionHWM, cfg.hwm); err != nil {
+		_ = sock.Close()
+		return nil, fmt.Errorf("zeromq: cannot set the high-water mark to %d: %w", cfg.hwm, err)
+	}
 	if err := sock.Listen(endpoint); err != nil {
 		return nil, fmt.Errorf("zeromq: cannot bind %s: %w", endpoint, err)
 	}

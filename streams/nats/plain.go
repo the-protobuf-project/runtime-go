@@ -189,39 +189,50 @@ func (m *plainManager) checkSubject(ctx context.Context, subject string) error {
 // [streams.Options.Expires] and [streams.Options.Retain], because it holds
 // nothing to expire or retain.
 func (m *plainManager) Publish(ctx context.Context, subject string, value any, opts ...streams.Option) (string, error) {
-	if err := m.checkSubject(ctx, subject); err != nil {
+	o := streams.NewOptions(opts...)
+	headers, err := m.prepare(ctx, subject, o)
+	if err != nil {
 		return "", err
+	}
+	id := o.ID
+	if id == "" {
+		id = core.NewID()
+	}
+	if err := m.send(ctx, subject, id, value, headers); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// prepare checks a publish to subject with o and returns the headers it
+// carries. A batch prepares once for all of its messages.
+func (m *plainManager) prepare(ctx context.Context, subject string, o streams.Options) (streams.Headers, error) {
+	if err := m.checkSubject(ctx, subject); err != nil {
+		return nil, err
 	}
 	if strings.ContainsAny(subject, "*>") {
 		// A stream may declare a wildcard, but a message has to land somewhere
 		// specific. NATS would reject this at the server; saying so here names
 		// the call that did it.
-		return "", fmt.Errorf("%w: cannot publish to the wildcard subject %q, only subscribe to it", streams.ErrUnknownSubject, subject)
+		return nil, fmt.Errorf("%w: cannot publish to the wildcard subject %q, only subscribe to it", streams.ErrUnknownSubject, subject)
 	}
-
-	o := streams.NewOptions(opts...)
 	if o.TTL > 0 {
-		return "", fmt.Errorf("%w: core NATS delivers immediately and cannot schedule", streams.ErrUnsupported)
+		return nil, fmt.Errorf("%w: core NATS delivers immediately and cannot schedule", streams.ErrUnsupported)
 	}
 	if o.Expires > 0 {
-		return "", fmt.Errorf("%w: core NATS holds no message that could expire; use JetStream for an expiry", streams.ErrUnsupported)
+		return nil, fmt.Errorf("%w: core NATS holds no message that could expire; use JetStream for an expiry", streams.ErrUnsupported)
 	}
 	if err := refuseRetain(o, "core NATS keeps nothing for a later subscriber"); err != nil {
-		return "", err
+		return nil, err
 	}
-	headers, err := outgoing(m.stream, o)
-	if err != nil {
-		return "", err
-	}
+	return outgoing(m.stream, o)
+}
 
-	id := o.ID
-	if id == "" {
-		id = core.NewID()
-	}
-
+// send packs value under id and queues it on subject.
+func (m *plainManager) send(ctx context.Context, subject, id string, value any, headers streams.Headers) error {
 	body, err := core.Pack(m.p.codec, id, value)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	// A message without headers goes out exactly as before, as a plain PUB,
@@ -233,11 +244,11 @@ func (m *plainManager) Publish(ctx context.Context, subject string, value any, o
 	}
 	if err != nil {
 		m.p.log.Error(ctx, "could not publish", err, telemetry.Fields{"subject": subject, "id": id})
-		return "", fmt.Errorf("nats: cannot publish on %q: %w", subject, err)
+		return fmt.Errorf("nats: cannot publish on %q: %w", subject, err)
 	}
 
 	m.p.log.Debug(ctx, "published", telemetry.Fields{"subject": subject, "id": id, "bytes": len(body)})
-	return id, nil
+	return nil
 }
 
 // Subscribe returns a channel of messages for a subject.
@@ -261,8 +272,10 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 
 	// Buffered so a slow reader does not push back into the client's own
 	// dispatch loop, which would stall every other subscription on this
-	// connection rather than just this one.
-	raw := make(chan *gonats.Msg, core.Prefetch(o))
+	// connection rather than just this one. nats.go drops a message that
+	// finds this full (a slow consumer), so it holds a burst's worth, sized
+	// as runtime-rs's client sizes each subscription's buffer.
+	raw := make(chan *gonats.Msg, max(subscriptionCapacity, core.Prefetch(o)))
 
 	var (
 		sub *gonats.Subscription
@@ -331,13 +344,31 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 	return out, nil
 }
 
+// subscriptionCapacity is how many received messages a subscription holds
+// for its reader before nats.go drops the next: async-nats's default, which
+// runtime-rs uses.
+const subscriptionCapacity = 64 * 1024
+
 // PublishBatch sends several values on a subject.
 //
 // Core NATS publishes without waiting for the server, so publishing in turn is
 // already as batched as this gets. Every entry carries the same headers.
 func (m *plainManager) PublishBatch(ctx context.Context, subject string, values []any, opts ...streams.Option) ([]string, error) {
-	if err := core.CheckBatch(streams.NewOptions(opts...)); err != nil {
+	o := streams.NewOptions(opts...)
+	if err := core.CheckBatch(o); err != nil {
 		return nil, err
 	}
-	return core.PublishEach(ctx, m, subject, values, opts...)
+	headers, err := m.prepare(ctx, subject, o)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(values))
+	var failures []error
+	for i, value := range values {
+		ids[i] = core.NewID()
+		if serr := m.send(ctx, subject, ids[i], value, headers); serr != nil {
+			failures = append(failures, fmt.Errorf("entry %d: %w", i, serr))
+		}
+	}
+	return ids, core.BatchError(subject, len(values), failures)
 }

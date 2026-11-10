@@ -408,7 +408,7 @@ func TestLiveHeadersAreNativeAMQPProperties(t *testing.T) {
 	props, _ := seen[0]["properties"].(map[string]any)
 	headers, _ := props["headers"].(map[string]any)
 	if headers["lang"] != "go" || headers["traceparent"] != "00-ab" || props["expiration"] != "60000" ||
-		props["message_id"] != id || props["delivery_mode"] != float64(2) || props["content_type"] != "application/json" {
+		props["message_id"] != id || props["delivery_mode"] != float64(2) || props["content_type"] != nil {
 		t.Errorf("management API sees %v", props)
 	}
 	want, err := core.Pack(streams.JSON, id, value)

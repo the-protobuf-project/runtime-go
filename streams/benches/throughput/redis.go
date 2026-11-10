@@ -18,6 +18,7 @@ import (
 
 	goredis "github.com/redis/go-redis/v9"
 
+	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/codec/protobuf"
 	"github.com/the-protobuf-project/runtime-go/streams/redis"
 )
@@ -57,9 +58,20 @@ func connectRedis(ctx context.Context, durable bool, profile string) (*conn, err
 	}
 	// Acks are queued rather than awaited, as the Rust harness runs them;
 	// REDIS_CONFIRM_ACKS=1 measures the default, an ack that waits for XACK.
-	s := use(rdb, redis.WithPrefix(prefix), redis.WithCodec(protobuf.Codec),
-		redis.WithConfirmAcks(env("REDIS_CONFIRM_ACKS", "0") == "1"))
+	// Publishes are auto-pipelined, as runtime-rs's multiplexed connection
+	// pipelines them; REDIS_AUTO_PIPELINE=0 measures the default.
+	provider := []redis.Option{redis.WithPrefix(prefix), redis.WithCodec(protobuf.Codec),
+		redis.WithConfirmAcks(env("REDIS_CONFIRM_ACKS", "0") == "1")}
+	if env("REDIS_AUTO_PIPELINE", "1") == "1" {
+		provider = append(provider, redis.WithAutoPipeline())
+	}
+	s := use(rdb, provider...)
 	c := one(s)
-	c.release = func() { _ = rdb.Close() }
+	c.release = func() {
+		if closer, ok := s.(streams.Closer); ok {
+			_ = closer.Close()
+		}
+		_ = rdb.Close()
+	}
 	return c, nil
 }

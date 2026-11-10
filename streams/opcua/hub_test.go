@@ -420,6 +420,25 @@ func restart(t *testing.T, srv *server.Server, p *proxy, renumbered bool) *serve
 	return again
 }
 
+// recreated waits until srv holds the client's recreated monitored item and
+// the server has settled. gopcua's in-process server reports a new item from a
+// goroutine that races its own Write handler (the race detector catches it),
+// so a test writes only once the item exists, after the namespace watchdog
+// (one keep-alive period, a second by default) has had its turn to move it.
+func recreated(t *testing.T, srv *server.Server) {
+	t.Helper()
+	eventually(t, "the item to be recreated", func() bool {
+		_, items := monitored(srv)
+		return items == 1
+	})
+	time.Sleep(2 * time.Second)
+	eventually(t, "the item to settle", func() bool {
+		_, items := monitored(srv)
+		return items == 1
+	})
+	settleServer()
+}
+
 // publishUntil writes v until a write succeeds, as one fails while the client
 // reconnects.
 func publishUntil(t *testing.T, m streams.Manager, subject string, v any) {
@@ -480,6 +499,7 @@ func TestSubscriptionsSurviveAServerRestart(t *testing.T) {
 	}
 
 	srv = restart(t, srv, p, false)
+	recreated(t, srv)
 	publishUntil(t, m, count, int32(3))
 	receiveUntil(t, m, count, msgs, 3)
 
@@ -506,7 +526,8 @@ func TestNamespaceURIsFollowARenumberedServer(t *testing.T) {
 		t.Fatalf("got %d, want 1", got)
 	}
 
-	restart(t, srv, p, true)
+	again := restart(t, srv, p, true)
+	recreated(t, again)
 	publishUntil(t, m, subject, int32(7))
 	receiveUntil(t, m, subject, msgs, 9)
 }

@@ -306,3 +306,36 @@ func TestCancelingClosesTheSubscription(t *testing.T) {
 		t.Error("the channel never closed after cancellation")
 	}
 }
+
+// A burst shorter than the high-water mark is queued for a subscriber that
+// has fallen behind rather than dropped, and arrives whole and in order.
+func TestABurstWithinTheHighWaterMarkArrivesWhole(t *testing.T) {
+	pm, sm := pair(t, subject)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+
+	ch, err := sm.Subscribe(ctx, subject, streams.Prefetch(16))
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	const n = 50_000
+	for i := range n {
+		if _, perr := pm.Publish(ctx, subject, event{User: fmt.Sprint(i)}); perr != nil {
+			t.Fatalf("Publish %d: %v", i, perr)
+		}
+	}
+	for i := range n {
+		select {
+		case msg := <-ch:
+			var e event
+			if derr := msg.Decode(&e); derr != nil {
+				t.Fatalf("Decode: %v", derr)
+			}
+			if e.User != fmt.Sprint(i) {
+				t.Fatalf("message %d is %s", i, e.User)
+			}
+		case <-ctx.Done():
+			t.Fatalf("received %d of %d", i, n)
+		}
+	}
+}

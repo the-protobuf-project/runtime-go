@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
@@ -103,12 +104,31 @@ func NewFeed[R Record](spec FeedSpec[R]) Feed {
 			return out, next, err
 		},
 		fetch: func(ctx context.Context, names []string) (map[string]fetched, error) {
-			page, _, err := spec.List(ctx, Query{PageSize: int32(len(names)), ShowDeleted: true, Names: names})
-			out := make(map[string]fetched, len(page))
-			for _, r := range page {
-				out[r.GetName()] = fetched{etag: r.GetEtag(), data: func() ([]byte, error) { return spec.Data(r) }}
+			out := make(map[string]fetched, len(names))
+			if len(names) == 0 {
+				return out, nil
 			}
-			return out, err
+			seen := map[string]bool{}
+			for token := ""; ; {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+				page, next, err := spec.List(ctx, Query{PageSize: int32(len(names)), PageToken: token, ShowDeleted: true, Names: names})
+				if err != nil {
+					return nil, err
+				}
+				for _, r := range page {
+					out[r.GetName()] = fetched{etag: r.GetEtag(), data: func() ([]byte, error) { return spec.Data(r) }}
+				}
+				if next == "" {
+					return out, nil
+				}
+				if seen[next] {
+					return nil, fmt.Errorf("events: feed %q repeated page token %q", spec.ID, next)
+				}
+				seen[next] = true
+				token = next
+			}
 		},
 	}
 }

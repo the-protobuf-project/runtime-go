@@ -14,6 +14,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/eclipse/paho.golang/paho/session"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/internal/batchconn"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -122,6 +123,10 @@ func (p *Provider) dial(ctx context.Context, c connection) (*autopaho.Connection
 			report(err)
 		},
 		ClientConfig: paho.ClientConfig{ClientID: c.clientID},
+	}
+	// Writes are gathered across packets, as in the mqtt package.
+	if dial := batchconn.Dialer(p.server, schemes[p.server.Scheme], p.cfg.tls); dial != nil {
+		cfg.AttemptConnection = dial
 	}
 	if c.onPublish != nil {
 		cfg.OnPublishReceived = []func(paho.PublishReceived) (bool, error){c.onPublish}

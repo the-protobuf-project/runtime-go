@@ -140,7 +140,7 @@ func (m *durableManager) Publish(ctx context.Context, subject string, value any,
 		"subject": subject, "id": id, "key": key, "bytes": len(body),
 	})
 
-	if err := sendOnce(ctx, m.handler.rdb, m.xadd(key, body, headers)...); err != nil {
+	if err := sendOnce(ctx, m.handler.pub, m.xadd(key, body, headers)...); err != nil {
 		m.handler.log.Error(ctx, "could not append", err,
 			telemetry.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("redis: cannot append to %q: %w", subject, err)

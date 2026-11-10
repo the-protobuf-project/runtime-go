@@ -2,14 +2,17 @@ package mqtt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/eclipse/paho.golang/paho/session"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/internal/batchconn"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -52,6 +55,10 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 		}
 	}
 
+	// Set once the broker hands the session to another connection, when
+	// tune.onTakenOver asks for that to end this one.
+	var taken atomic.Bool
+
 	cfg := autopaho.ClientConfig{
 		ServerUrls:                    []*url.URL{s.server},
 		TlsCfg:                        s.cfg.tls,
@@ -83,11 +90,34 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 			PacketTimeout: s.cfg.publishTimeout,
 		},
 	}
+	// Writes are gathered across packets, as runtime-rs's client gathers
+	// them: paho writes each packet on its own, which over TLS is two records
+	// and two system calls per packet, PUBACKs included.
+	if dial := batchconn.Dialer(s.server, schemes[s.server.Scheme], s.cfg.tls); dial != nil {
+		cfg.AttemptConnection = dial
+	}
 	if tune.session != nil {
 		cfg.Session = tune.session
 	}
+	if tune.onTakenOver != nil {
+		cfg.OnServerDisconnect = func(d *paho.Disconnect) {
+			if d.ReasonCode != reasonSessionTakenOver {
+				return
+			}
+			taken.Store(true)
+			s.log.Warn(context.Background(), "the broker gave this session to another connection",
+				telemetry.Fields{"client_id": clientID, "server": s.server.Redacted()})
+			tune.onTakenOver()
+		}
+	}
 	receiveMax := tune.receiveMax
 	cfg.ConnectPacketBuilder = func(cp *paho.Connect, _ *url.URL) (*paho.Connect, error) {
+		if taken.Load() {
+			// Dialing again would take the session back from the connection
+			// that took it, and the two would trade it for as long as both
+			// run.
+			return nil, errSessionTakenOver
+		}
 		if receiveMax > 0 {
 			// The broker holds back what the consumer has not caught up
 			// with, in the session's queue, instead of pushing it all down
@@ -148,7 +178,20 @@ type tuning struct {
 	// sends retained messages on every SUBSCRIBE, 1 only when the
 	// subscription is new.
 	retainHandling byte
+
+	// onTakenOver, when set, is called when the broker disconnects the
+	// connection because another took its session, and stops it being dialed
+	// again.
+	onTakenOver func()
 }
+
+// reasonSessionTakenOver is the reason code (0x8E) of the DISCONNECT a broker
+// sends a connection whose client id another connection has just claimed.
+const reasonSessionTakenOver = 0x8E
+
+// errSessionTakenOver stops a connection whose session was taken from being
+// dialed again.
+var errSessionTakenOver = errors.New("mqtt: another connection took this session")
 
 // errPacketIDInUse is the reason code (0x91) a broker answers a SUBSCRIBE with
 // when its packet identifier is one the broker is still using.

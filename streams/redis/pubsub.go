@@ -81,7 +81,7 @@ func (m *streamManager) Publish(ctx context.Context, subject string, value any, 
 	// there is no window a second send would cover — it would only deliver the
 	// message twice. That includes go-redis's own repeat after a dropped
 	// connection, which sendOnce turns off.
-	if err := sendOnce(ctx, m.handler.rdb, "PUBLISH", channel, body); err != nil {
+	if err := sendOnce(ctx, m.handler.pub, "PUBLISH", channel, body); err != nil {
 		m.handler.log.Error(ctx, "could not publish", err,
 			telemetry.Fields{"subject": subject, "id": id})
 		return "", fmt.Errorf("redis: cannot publish on %q: %w", subject, err)

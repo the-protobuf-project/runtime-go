@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"math"
 	"strings"
+	"sync"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
@@ -29,7 +30,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 	}
 
 	o := streams.NewOptions(opts...)
-	raw, cm, err := m.attach(ctx, subject, o.Group, "runtime-go-sub-"+core.NewID(), 0, 0)
+	raw, cm, err := m.attach(ctx, subject, o.Group, "runtime-go-sub-"+core.NewID(), 0, 0, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -63,10 +64,13 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 // the thing with a position.
 //
 // Two processes cannot share one name — MQTT gives a client id to one session,
-// and a second connection under it takes the first one's place. Pass
-// [streams.Group] to split work instead: that subscribes through a shared
-// subscription, where the broker distributes messages among the members and
-// each keeps a session of its own.
+// and a second connection under it takes the first one's place. The consumer
+// it replaced is told so by the broker (reason 0x8E), and its channel closes
+// rather than dialing again: dialing again would take the session back, and the
+// two would trade it between them for as long as both run, each redelivered
+// what the other never acknowledged. Pass [streams.Group] to split work
+// instead: that subscribes through a shared subscription, where the broker
+// distributes messages among the members and each keeps a session of its own.
 //
 // # Acknowledging is a packet on the wire
 //
@@ -100,7 +104,10 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		clientID += "-" + core.NewID()
 	}
 
-	raw, cm, err := m.attach(ctx, subject, o.Group, clientID, m.store.cfg.expiry, core.Prefetch(o))
+	takenOver := make(chan struct{})
+	var once sync.Once
+	raw, cm, err := m.attach(ctx, subject, o.Group, clientID, m.store.cfg.expiry, core.Prefetch(o),
+		func() { once.Do(func() { close(takenOver) }) })
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +128,10 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-takenOver:
+				m.store.log.Warn(ctx, "another connection took this consumer's session; ending the stream",
+					telemetry.Fields{"subject": subject, "consumer": consumer, "client_id": clientID})
 				return
 			case d := <-raw:
 				delivered++
@@ -155,7 +166,13 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 // A message's headers are its MQTT 5 user properties, and on a wildcard
 // subscription its subject is the topic it arrived on below the stream's
 // prefix, so a subscription to "user/+" reports "user/created".
-func (m *manager) attach(ctx context.Context, subject, group, clientID string, expiry uint32, prefetch int) (<-chan received, *autopaho.ConnectionManager, error) {
+//
+// onTakenOver, when set, is called once the broker hands this connection's
+// session to another under the same client id, after which the connection is
+// not dialed again.
+func (m *manager) attach(ctx context.Context, subject, group, clientID string, expiry uint32, prefetch int,
+	onTakenOver func(),
+) (<-chan received, *autopaho.ConnectionManager, error) {
 	filter := m.store.topic(m.stream.ID, subject)
 	if group != "" {
 		// A shared subscription: the broker gives each message to one member
@@ -168,9 +185,10 @@ func (m *manager) attach(ctx context.Context, subject, group, clientID string, e
 	raw := make(chan received, 64)
 
 	durable := expiry > 0
-	var tune tuning
+	tune := tuning{onTakenOver: onTakenOver}
 	if durable {
-		tune = tuning{receiveMax: uint16(min(max(prefetch, 1), math.MaxUint16)), retainHandling: 1}
+		tune.receiveMax = uint16(min(max(prefetch, 1), math.MaxUint16))
+		tune.retainHandling = 1
 	}
 	prefix := m.store.topic(m.stream.ID, "")
 	wildcard := hasWildcard(subject)

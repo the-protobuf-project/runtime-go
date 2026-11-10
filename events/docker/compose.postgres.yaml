@@ -1,0 +1,25 @@
+# PostgreSQL for the outbox's live tests (postgres_live_test.go):
+#
+#   docker compose -p tpp-events-live -f docker/compose.postgres.yaml up -d --wait
+#   go test -race -tags live ./ -run Live
+#   docker compose -p tpp-events-live -f docker/compose.postgres.yaml down -v
+#
+# Bound to loopback only, on a port of its own so it runs beside any other
+# PostgreSQL. EVENTS_TEST_DSN overrides where the tests connect.
+name: tpp-events-live
+services:
+  postgres:
+    image: postgres:17
+    container_name: tpp-events-postgres
+    environment:
+      POSTGRES_USER: events
+      POSTGRES_PASSWORD: events
+      POSTGRES_DB: events
+    ports:
+      - "127.0.0.1:15432:5432"
+    restart: "no"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "events"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
