@@ -210,7 +210,10 @@ func (d *Dispatcher) drain(ctx context.Context, hooks []Webhook, upTo time.Time)
 			if d.backingOff(key) {
 				continue
 			}
-			err := d.drainShard(ctx, o, shard, hooks, upTo)
+			attrs := map[string]any{"events.outbox": o.spec.Name, "events.shard": shard}
+			err := d.step(ctx, "drain", telemetry.SpanKindInternal, attrs, func(ctx context.Context, op *telemetry.Operation) error {
+				return d.drainShard(ctx, op, o, shard, hooks, upTo)
+			})
 			d.retried(key, err)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s shard %d: %w", o.spec.Name, shard, err))
@@ -221,7 +224,7 @@ func (d *Dispatcher) drain(ctx context.Context, hooks []Webhook, upTo time.Time)
 }
 
 // drainShard claims one shard and sends what it holds.
-func (d *Dispatcher) drainShard(ctx context.Context, o *Outbox, shard int, hooks []Webhook, upTo time.Time) error {
+func (d *Dispatcher) drainShard(ctx context.Context, op *telemetry.Operation, o *Outbox, shard int, hooks []Webhook, upTo time.Time) error {
 	m := d.outboxMetrics[o]
 	ctx, cancel := context.WithTimeout(ctx, o.spec.ClaimTimeout)
 	defer cancel()
@@ -234,6 +237,7 @@ func (d *Dispatcher) drainShard(ctx context.Context, o *Outbox, shard int, hooks
 		return nil
 	}
 	rows := claim.Rows()
+	op.ReadRecords(len(rows))
 	if len(rows) == 0 {
 		m.claim(ctx, ClaimEmpty)
 		return claim.Release()
@@ -264,6 +268,7 @@ func (d *Dispatcher) drainShard(ctx context.Context, o *Outbox, shard int, hooks
 	} else if err := claim.Commit(ctx, published); err != nil {
 		return errors.Join(sendErr, err)
 	}
+	op.WrittenRecords(len(published))
 	now := d.opts.Now()
 	for i := range rows {
 		if sent[i] {
@@ -335,7 +340,18 @@ func (d *Dispatcher) deliver(ctx context.Context, batch []Event) ([]bool, error)
 		}
 		return sent, nil
 	}
-	sent, err := d.opts.Sink.Deliver(ctx, batch)
+	var sent []bool
+	err := d.step(ctx, "sink", telemetry.SpanKindProducer, map[string]any{"messaging.batch.message_count": len(batch)},
+		func(ctx context.Context, op *telemetry.Operation) error {
+			var derr error
+			sent, derr = d.opts.Sink.Deliver(ctx, batch)
+			for _, ok := range sent {
+				if ok {
+					op.WrittenRecords(1)
+				}
+			}
+			return derr
+		})
 	if len(sent) != len(batch) {
 		return make([]bool, len(batch)), errors.Join(err,
 			fmt.Errorf("events: the sink reported %d results for %d events", len(sent), len(batch)))

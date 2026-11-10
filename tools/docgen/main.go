@@ -37,6 +37,9 @@ type pkg struct {
 	importPath string // full import path
 	synopsis   string // first sentence of the package doc
 	hasDoc     bool   // a doc.go file is present
+	module     string // the module it belongs to, relative to the repo root
+	modulePath string // that module's import path
+	command    bool   // a main package: an example or a tool, not a library
 }
 
 func main() {
@@ -125,7 +128,7 @@ func findRoot() (string, error) {
 // the documented packages in each, sorted by import path. The docgen tool's own
 // module is skipped.
 func collect(root string) ([]pkg, error) {
-	type module struct{ dir, path string }
+	type module struct{ dir, path, rel string }
 	var mods []module
 	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -142,7 +145,16 @@ func collect(root string) ([]pkg, error) {
 			if err != nil {
 				return err
 			}
-			mods = append(mods, module{filepath.Dir(p), mp})
+			rel, err := filepath.Rel(root, filepath.Dir(p))
+			if err != nil {
+				return err
+			}
+			// An examples module is documented with the module it shows.
+			rel = filepath.ToSlash(rel)
+			if i := strings.Index(rel+"/", "/examples/"); i >= 0 {
+				rel = rel[:i]
+			}
+			mods = append(mods, module{filepath.Dir(p), mp, rel})
 		}
 		return nil
 	})
@@ -173,6 +185,10 @@ func collect(root string) ([]pkg, error) {
 				return err
 			}
 			if ok {
+				info.module = m.rel
+				if !strings.Contains(m.path+"/", "/examples/") {
+					info.modulePath = m.path
+				}
 				out = append(out, info)
 			}
 			return nil
@@ -242,6 +258,7 @@ func describe(root, dir, modDir, modPath string) (pkg, bool, error) {
 		importPath: importPath,
 		synopsis:   dp.Synopsis(dp.Doc),
 		hasDoc:     hasDoc == nil,
+		command:    astPkg.Name == "main",
 	}, true, nil
 }
 
@@ -260,22 +277,140 @@ func modulePath(goMod string) (string, error) {
 	return "", fmt.Errorf("%s: no module directive", goMod)
 }
 
-// section renders the generated Packages block (between the markers).
+// section renders the generated block (between the markers): a table of the
+// modules, then a collapsible index of each module's packages.
 func section(pkgs []pkg) string {
+	byModule := map[string][]pkg{}
+	var modules []string
+	for _, p := range pkgs {
+		if _, seen := byModule[p.module]; !seen {
+			modules = append(modules, p.module)
+		}
+		byModule[p.module] = append(byModule[p.module], p)
+	}
+	sort.Strings(modules)
+
 	var b strings.Builder
 	b.WriteString(beginMarker + "\n")
-	b.WriteString("## Packages\n\n")
-	b.WriteString("`runtime-go` is a Go multi-module workspace — import only the modules you need\n")
-	b.WriteString("(the `orm` driver never pulls in go-ethereum, and vice-versa). Every package\n")
-	b.WriteString("carries a `doc.go`; this table is generated from those docs by `tools/docgen`\n")
-	b.WriteString("(`make docs`). See each package's Go doc for how it works and example usage.\n\n")
-	b.WriteString("| Package | Import path | Summary |\n")
-	b.WriteString("| --- | --- | --- |\n")
-	for _, p := range pkgs {
-		b.WriteString(fmt.Sprintf("| [`%s`](%s) | `%s` | %s |\n", p.rel, p.rel, p.importPath, p.synopsis))
+	b.WriteString("## Modules\n\n")
+	b.WriteString("Each module is its own `go get`: import the ones you use, and nothing else\n")
+	b.WriteString("comes with them. The summaries are the packages' own docs, collected by\n")
+	b.WriteString("`tools/docgen` (`make docs`).\n\n")
+	b.WriteString("| Module | What it is for |\n| --- | --- |\n")
+	for _, m := range modules {
+		fmt.Fprintf(&b, "| [`%s`](%s) | %s |\n", m, m, firstClause(summary(lead(m, byModule[m]))))
+	}
+
+	b.WriteString("\n## Package index\n")
+	for _, m := range modules {
+		var libs, cmds []pkg
+		for _, p := range byModule[m] {
+			switch {
+			case p.command:
+				cmds = append(cmds, p)
+			case isInternal(p.rel):
+				// Not importable from outside the module: an implementation
+				// detail, documented in its own doc.go.
+			default:
+				libs = append(libs, p)
+			}
+		}
+		fmt.Fprintf(&b, "\n<details>\n<summary><b>%s</b> · %s</summary>\n\n", m, count(len(libs), "package"))
+		fmt.Fprintf(&b, "`go get %s`\n\n", modulePathOf(byModule[m]))
+		if len(libs) > 0 {
+			b.WriteString("| Package | What it does |\n| --- | --- |\n")
+			for _, p := range libs {
+				fmt.Fprintf(&b, "| [`%s`](%s) | %s |\n", p.rel, p.rel, summary(p.synopsis))
+			}
+		}
+		if len(cmds) > 0 {
+			b.WriteString("\nExamples and tools:\n\n")
+			for _, p := range cmds {
+				fmt.Fprintf(&b, "- [`%s`](%s): %s\n", p.rel, p.rel, summary(p.synopsis))
+			}
+		}
+		b.WriteString("\n</details>\n")
 	}
 	b.WriteString(endMarker)
 	return b.String()
+}
+
+// lead is the synopsis that describes a module: its root package's, or the
+// first library package's when the module has no root package.
+func lead(module string, pkgs []pkg) string {
+	for _, p := range pkgs {
+		if p.rel == module {
+			return p.synopsis
+		}
+	}
+	for _, p := range pkgs {
+		if !p.command && !isInternal(p.rel) {
+			return p.synopsis
+		}
+	}
+	return ""
+}
+
+// modulePathOf is the import path of the module pkgs belong to.
+func modulePathOf(pkgs []pkg) string {
+	for _, p := range pkgs {
+		if p.modulePath != "" {
+			return p.modulePath
+		}
+	}
+	return ""
+}
+
+// firstClause shortens a summary to what comes before its first colon or
+// dash, when that is a sentence on its own: the module table says what each
+// module is for, and the index says the rest.
+func firstClause(s string) string {
+	cut := len(s)
+	for _, sep := range []string{": ", " — ", "; "} {
+		if i := strings.Index(s, sep); i >= 0 && i < cut {
+			cut = i
+		}
+	}
+	if cut < 30 || cut == len(s) {
+		return s
+	}
+	return strings.TrimRight(s[:cut], " .") + "."
+}
+
+func isInternal(rel string) bool {
+	return strings.Contains("/"+rel+"/", "/internal/")
+}
+
+func count(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// summary turns a Go doc synopsis into a table cell: "Package cache is the
+// contract for ..." reads as "The contract for ...", "Package kafka delivers
+// streams over Kafka." as "Delivers streams over Kafka.".
+func summary(synopsis string) string {
+	s := synopsis
+	for _, prefix := range []string{"Package ", "Command "} {
+		if rest, ok := strings.CutPrefix(s, prefix); ok {
+			if i := strings.IndexByte(rest, ' '); i >= 0 {
+				s = rest[i+1:]
+			}
+			break
+		}
+	}
+	for _, verb := range []string{"is ", "are "} {
+		if rest, ok := strings.CutPrefix(s, verb); ok {
+			s = rest
+			break
+		}
+	}
+	if s != "" {
+		s = strings.ToUpper(s[:1]) + s[1:]
+	}
+	return strings.ReplaceAll(s, "|", "\\|")
 }
 
 // splice replaces the marked Packages block in the README, or inserts it before

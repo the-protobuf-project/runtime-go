@@ -1,5 +1,7 @@
-// Package evm implements the backend-agnostic store.Driver against an EVM chain,
-// driving the Solidity storage contracts protorm generates. It is the chain
+// Package evm stores records on an EVM chain, through the Solidity storage
+// contracts protorm generates.
+//
+// It implements the backend-agnostic store.Driver, and is the chain
 // counterpart of the orm driver: the same dynamic philosophy, but the record is
 // ABI-encoded for a contract call instead of mapped to SQL.
 //

@@ -3,7 +3,7 @@ package network
 import (
 	"time"
 
-	"go.opentelemetry.io/otel/propagation"
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // ClientType identifies which kind of network client NewConnection creates.
@@ -63,14 +63,16 @@ type ConnectionOptions struct {
 	// is reachable. If empty, DefaultGraphQLConnectivityQuery is used.
 	GraphQLConnectivityQuery string
 
-	// TracePropagator, when set, injects the calling context's active span into
-	// every outgoing GraphQL and HTTP request as headers (e.g.
-	// propagation.TraceContext{} for the W3C traceparent/tracestate headers),
-	// so a downstream service that continues the same propagator sees this
-	// request as a child span — distributed tracing across the wire with no
-	// per-request wiring beyond passing a context that already carries a span
-	// (e.g. one opened by your tracing SDK). Nil (the default) injects nothing.
-	TracePropagator propagation.TextMapPropagator
+	// Signals traces, measures and logs every request: each HTTP or GraphQL
+	// request is a client span (network.request) and a share of
+	// runtime.operation.count and runtime.operation.duration, labeled
+	// component "network", backend "http" or "graphql" or "websocket",
+	// operation and outcome, and carries its trace to the server in its
+	// headers (W3C traceparent and tracestate), so a downstream service sees
+	// it as the parent of its own span. A WebSocket handshake is one
+	// network.dial span carrying the same headers. The zero Signals reports
+	// nothing and injects nothing.
+	Signals telemetry.Signals
 }
 
 // defaultOpts holds the zero-value options applied to a freshly created Network.

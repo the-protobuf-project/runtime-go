@@ -104,15 +104,18 @@ func TestNotFoundIsNotAnError(t *testing.T) {
 
 	_, _ = db.Get(context.Background(), userRes, "x")
 
-	labels := r.labelsFor("database_operations_total")
+	labels := r.labelsFor("runtime.operation.count")
 	if len(labels) != 1 {
 		t.Fatalf("recorded %d operations, want 1", len(labels))
 	}
 	if got := labels[0]["outcome"]; got != "not_found" {
 		t.Errorf("outcome = %q, want not_found", got)
 	}
-	if got := labels[0]["resource"]; got != "User" {
-		t.Errorf("resource = %q, want User", got)
+	if _, leaked := labels[0]["resource"]; leaked {
+		t.Errorf("the resource became a label: %v", labels[0])
+	}
+	if got := labels[0]["component"]; got != "database" {
+		t.Errorf("component = %q, want database", got)
 	}
 	if got := labels[0]["backend"]; got != "stub" {
 		t.Errorf("backend = %q, want stub", got)
@@ -127,14 +130,14 @@ func TestOutcomesAreDistinguished(t *testing.T) {
 		{nil, "ok"},
 		{fmt.Errorf("%w: x", store.ErrNotFound), "not_found"},
 		{fmt.Errorf("%w: x", store.ErrAlreadyExists), "conflict"},
-		{fmt.Errorf("%w: x", store.ErrUnimplemented), "unimplemented"},
+		{fmt.Errorf("%w: x", store.ErrUnimplemented), "unsupported"},
 		{errors.New("connection reset"), "error"},
 	} {
 		r := newRecorder()
 		db := instrumented(&stub{err: tc.err}, r)
 		_, _ = db.Get(context.Background(), userRes, "x")
 
-		labels := r.labelsFor("database_operations_total")
+		labels := r.labelsFor("runtime.operation.count")
 		if len(labels) != 1 || labels[0]["outcome"] != tc.want {
 			t.Errorf("err %v -> outcome %v, want %q", tc.err, labels, tc.want)
 		}
@@ -150,7 +153,7 @@ func TestRowsReadIsCounted(t *testing.T) {
 	if _, err := db.List(context.Background(), userRes, store.ListOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	if got := len(r.labelsFor("database_rows_read_total")); got != 1 {
+	if got := len(r.labelsFor("runtime.records.read")); got != 1 {
 		t.Fatalf("rows counter recorded %d times, want 1", got)
 	}
 }
@@ -165,7 +168,7 @@ func TestKeysAreNotLabels(t *testing.T) {
 		_, _ = db.Get(context.Background(), userRes, fmt.Sprintf("user-%d", i))
 	}
 	seen := map[string]bool{}
-	for _, l := range r.labelsFor("database_operations_total") {
+	for _, l := range r.labelsFor("runtime.operation.count") {
 		seen[fmt.Sprint(l)] = true
 	}
 	if len(seen) != 1 {

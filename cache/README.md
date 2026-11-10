@@ -231,10 +231,19 @@ all, _ := users.List(ctx)     // returns []User
 ```go
 docs := cache.Chain(db.Document,
     cache.WithRetryMiddleware(3, 100*time.Millisecond),
-    cache.WithLoggingMiddleware(logger),
-    cache.WithTelemetryMiddleware(meter),
+    cache.WithObservabilityMiddleware(signals),
 )
 ```
+
+`WithObservability` traces, measures and logs every operation through the
+[telemetry](../telemetry) contract, the Go twin of runtime-rs's
+`cache::with_observability`: a client span named `cache.<operation>` and a share
+of `runtime.operation.count` and `runtime.operation.duration`, labeled
+`component`, `backend`, `operation` and `outcome`. A miss is `not_found`, which
+does not fail the span. Keys and values are never recorded. An `Indexed` cache
+stays `Indexed`; `WithVolatileObservability` and `WithAsideObservability` cover
+the other two shapes. The older `WithLoggingMiddleware` and
+`WithTelemetryMiddleware` still work.
 
 The outermost wrapper runs first, so the order above times the whole retried
 operation. `WithRetry` retries reads and deletes but **not** writes — `Create`

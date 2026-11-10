@@ -46,7 +46,7 @@ func (h *HTTPClient) Connect(opts ConnectionOptions) error {
 	h.ConnectionOptions = opts
 	// A dedicated pooled transport: the shared default keeps only 2 idle
 	// connections per host, which churns TCP under concurrent traffic.
-	h.client = newPooledClient(opts.Timeout)
+	h.client = newPooledClient(opts.Timeout, opts.Signals, "http")
 
 	fullURL, err := buildFullURL(opts.URL, 0)
 	if err != nil {

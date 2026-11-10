@@ -89,12 +89,41 @@ type Message struct {
 	// not have to know: a message decodes the way it was written, not the way
 	// this program happens to be configured.
 	codec Codec
+
+	// ctx carries the span an instrumented provider started on receiving it;
+	// nil when the provider is not instrumented. See [Instrument].
+	ctx context.Context
 }
+
+// Context carries the span an instrumented provider started on receiving the
+// message, a child of the publisher's through the message's headers, so the
+// work done with it is traced as part of the message's trace. It is
+// context.Background() when the provider is not instrumented; see
+// [Message.Traced].
+func (m Message) Context() context.Context {
+	if m.ctx == nil {
+		return context.Background()
+	}
+	return m.ctx
+}
+
+// Traced reports whether an instrumented provider started a span on receiving
+// the message, so [Message.Context] carries it.
+func (m Message) Traced() bool { return m.ctx != nil }
 
 // NewMessage assembles a delivered message. Providers build one through
 // runtime-go/streams/core rather than calling this directly.
 func NewMessage(id, subject string, data []byte, codec Codec) Message {
 	return Message{ID: id, Subject: subject, Data: data, codec: codec}
+}
+
+// CodecName is the name of the codec the publisher encoded with, as it
+// travels on the wire; "json" for a message assembled without one.
+func (m Message) CodecName() string {
+	if m.codec == nil {
+		return JSON.Name()
+	}
+	return m.codec.Name()
 }
 
 // Decode unmarshals the payload into dest, which must be a non-nil pointer.

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // Protocol names what a [Service] speaks.
@@ -77,6 +79,15 @@ type Config struct {
 	// ReadyTimeout is how long [Runtime.Start] waits for one service to report
 	// itself mounted. Zero means [DefaultReadyTimeout].
 	ReadyTimeout time.Duration
+
+	// Signals traces, measures and logs every request the runtime's own
+	// listeners serve: a server span named agents.request, continuing the
+	// caller's trace from its headers (W3C traceparent and tracestate), its
+	// route as http.route, and a share of runtime.operation.count and
+	// runtime.operation.duration, labeled component "agents", backend "http",
+	// operation and outcome. A host that owns the server through Mux
+	// instruments it itself. The zero Signals reports nothing.
+	Signals telemetry.Signals
 }
 
 // DefaultHost is where the shared listener binds when a config names no host.

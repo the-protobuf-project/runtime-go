@@ -238,3 +238,27 @@ func TestOutcomeLabelsMatchRuntimeRs(t *testing.T) {
 		}
 	}
 }
+
+type traceparent string
+
+func (traceparent) Start(ctx context.Context, _ string, _ ...telemetry.SpanOption) (context.Context, telemetry.Span) {
+	return ctx, nil
+}
+func (p traceparent) Inject(_ context.Context, h map[string]string)                  { h["traceparent"] = string(p) }
+func (traceparent) Extract(ctx context.Context, _ map[string]string) context.Context { return ctx }
+
+func TestTraceIDReadsTheTraceparent(t *testing.T) {
+	for header, want := range map[string]string{
+		"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01": "4bf92f3577b34da6a3ce929d0e0e4736",
+		"00-00000000000000000000000000000000-00f067aa0ba902b7-01": "",
+		"garbage": "",
+		"":        "",
+	} {
+		if got := telemetry.TraceID(t.Context(), traceparent(header)); got != want {
+			t.Errorf("%q -> %q, want %q", header, got, want)
+		}
+	}
+	if telemetry.TraceID(t.Context(), nil) != "" || telemetry.TraceID(t.Context(), telemetry.NoopTracer) != "" {
+		t.Error("a nil or no-op tracer has no trace id")
+	}
+}

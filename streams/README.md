@@ -492,7 +492,7 @@ lease timeout, a delayed retry. On Redis that is a separate constructor with its
 own key namespace:
 
 ```go
-notify := streamsredis.ConnectScheduled(rdb)
+notify := streamsredis.UseScheduled(rdb)
 
 n, _ := notify.Create(ctx, streams.Stream{Name: "reminders", Subjects: []string{"pill"}})
 nm, _ := notify.Bind(ctx, n.ID)
@@ -661,6 +661,56 @@ Version 2 is written only by transports with no header mechanism of their own
 | MQTT, OPC UA PubSub | TLS | mutual TLS with certificate identity, or password with per-user ACLs |
 | ZeroMQ | none | the Go library implements neither TLS nor CURVE |
 | OPC UA | Basic256Sha256, Aes128Sha256RsaOaep, SignAndEncrypt | username and password, application certificate trust |
+
+## Telemetry
+
+`streams.Instrument` wraps any provider so every operation is traced, measured
+and logged through the [telemetry](../telemetry) contract, and keeps every
+capability the provider has: `AsDurable`, `AsPositioned` and `AsBatch` find them
+through the wrapper.
+
+```go
+obs := observability.Lazy("orders", "1.0.0")()
+signals := telemetry.Signals{Meter: obs.Meter(), Tracer: obs.Tracer(), Logger: obs.Log()}
+
+provider := streams.Instrument(nats.JetStream(js), signals, "nats")
+```
+
+| Span | Kind | Covers |
+| --- | --- | --- |
+| `streams.publish`, `streams.publish_batch` | producer | a publish, to the broker's acknowledgement |
+| `streams.subscribe`, `streams.consume` | client | opening a subscription or a durable consumer |
+| `streams.receive` | consumer | one message, receipt to hand-off |
+| `streams.deliver` | consumer | one delivery, receipt to ack or nak |
+| `streams.create`, `get`, `update`, `delete`, `list`, `bind` | client | the provider's lifecycle calls |
+
+A publish stamps each message's headers with its trace context (W3C
+`traceparent`, `tracestate`) and the send time (`sent-at`). The receiving side
+continues the trace, so `streams.receive` and `streams.deliver` are children of
+`streams.publish` in another process, in Go or Rust, and
+`streams.transit.duration` records the time between. `Message.Context()` carries
+the receiving span to your code; a delivery's span stays open until it is
+settled, so it covers the handling.
+
+Every operation is also a share of `runtime.operation.count` and
+`runtime.operation.duration`, labeled `component`, `backend`, `operation` and
+`outcome`. A missing stream is the `not_found` outcome, not a failure.
+
+### Typed topics
+
+`streams/topic` is the typed layer protoc-gen-streams generates against, the Go
+twin of runtime-rs's `streams::topic`. A topic carries its own codec
+(`topic.Protobuf[*pb.Order]()`, `topic.JSON[T]()`, or a generated FlatBuffers or
+Cap'n Proto codec), and with `topic.NewTelemetry` adds the steps the provider
+cannot see:
+
+```
+streams.send          the publish call, encode included
+  streams.encode      encoding with the topic's codec
+  streams.publish     the provider's, when it is instrumented
+streams.deliver       the provider's (or the topic's streams.process when it is not)
+  streams.decode      decoding with the codec the publisher used
+```
 
 ## Middleware
 

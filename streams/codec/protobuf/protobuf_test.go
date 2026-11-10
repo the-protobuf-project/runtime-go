@@ -1,6 +1,7 @@
 package protobuf_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -78,15 +79,21 @@ func TestThroughTheWireFrame(t *testing.T) {
 }
 
 // A program that has not been given this codec must refuse the message rather
-// than hand back a zero value.
+// than hand back a zero value. It is still delivered, so a typed topic holding
+// the codec can read it.
 func TestAProgramWithoutTheCodecRefuses(t *testing.T) {
 	body, err := core.Pack(protobuf.Codec, "msg-1", wrapperspb.String("hello"))
 	if err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 
-	if _, err := core.Unpack(streams.NewRegistry(), "counts", body); err == nil {
-		t.Fatal("a registry without the protobuf codec decoded a protobuf message")
+	msg, err := core.Unpack(streams.NewRegistry(), "counts", body)
+	if err != nil {
+		t.Fatalf("Unpack: %v", err)
+	}
+	var got wrapperspb.StringValue
+	if err := msg.Decode(&got); !errors.Is(err, streams.ErrUnsupported) {
+		t.Fatalf("a registry without the protobuf codec decoded a protobuf message: %v", err)
 	}
 }
 
