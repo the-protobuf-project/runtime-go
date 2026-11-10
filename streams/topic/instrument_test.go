@@ -6,6 +6,7 @@ package topic_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/streams/topic"
@@ -54,12 +55,27 @@ func TestAnInstrumentedPublishIsTheParentOfItsReceive(t *testing.T) {
 	if !msg.Traced() || msg.Context().Value(spanKey{}) != rcv.id {
 		t.Error("the message does not carry its receive span")
 	}
-	ops := mt.operations()
+	ops := settled(t, mt, "receive")
 	if ops["publish"] != "ok" || ops["receive"] != "ok" || ops["subscribe"] != "ok" {
 		t.Errorf("operations %v", ops)
 	}
 	if mt.count("streams.transit.duration") != 1 {
 		t.Errorf("transit recorded %d times", mt.count("streams.transit.duration"))
+	}
+}
+
+// settled waits for operation's outcome to be recorded and returns every
+// outcome so far. A receive finishes once its message is handed off, which is
+// after the subscriber holds it, so a test reading it at once can beat it.
+func settled(t *testing.T, mt *meter, operation string) map[string]string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		ops := mt.operations()
+		if _, ok := ops[operation]; ok || time.Now().After(deadline) {
+			return ops
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
