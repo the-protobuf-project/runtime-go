@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // A round is a trace: the round, each feed, the send, each delivery, and the
 // delivery's context reaching the webhook in its traceparent header.
 func TestARoundIsTracedToTheWebhook(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	sig := rec.Signals()
 	f := newFixture(t, Options{Meter: sig.Meter, Tracer: sig.Tracer, Logger: sig.Logger})
 	f.hook(t, "webhooks/a", nil)
@@ -51,7 +51,7 @@ func TestARoundIsTracedToTheWebhook(t *testing.T) {
 
 // A failed attempt is a failed deliver span, its status code kept.
 func TestAFailedAttemptFailsItsSpan(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	f := newFixture(t, Options{Tracer: rec})
 	f.recv.status = http.StatusServiceUnavailable
 	f.hook(t, "webhooks/a", nil)
@@ -67,7 +67,7 @@ func TestAFailedAttemptFailsItsSpan(t *testing.T) {
 	}
 }
 
-func spanByID(rec *telemetrytest.Recorder, id string) *telemetrytest.Span {
+func spanByID(rec *recorder.Recorder, id string) *recorder.Span {
 	for _, s := range rec.Spans() {
 		if s.ID == id {
 			return s

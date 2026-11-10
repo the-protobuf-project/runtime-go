@@ -10,19 +10,19 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // A call is a server span continuing the caller's trace from its metadata.
 func TestACallContinuesTheCallersTrace(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	r := newRPCTelemetry(rec.Signals())
 	ctx := metadata.NewIncomingContext(context.Background(), metadata.Pairs("traceparent", "caller-span"))
 	info := &grpc.UnaryServerInfo{FullMethod: "/shop.v1.ShopService/GetShelf"}
 
 	var inner string
 	_, err := r.unary(ctx, nil, info, func(ctx context.Context, _ any) (any, error) {
-		inner = telemetrytest.SpanID(ctx)
+		inner = recorder.SpanID(ctx)
 		return nil, status.Error(codes.NotFound, "no shelf")
 	})
 	if status.Code(err) != codes.NotFound {
@@ -45,7 +45,7 @@ func TestACallContinuesTheCallersTrace(t *testing.T) {
 }
 
 func TestAServerFaultFailsTheSpan(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	r := newRPCTelemetry(rec.Signals())
 	info := &grpc.UnaryServerInfo{FullMethod: "/x.Y/Z"}
 	_, _ = r.unary(context.Background(), nil, info, func(context.Context, any) (any, error) {

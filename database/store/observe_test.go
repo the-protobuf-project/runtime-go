@@ -15,32 +15,32 @@ import (
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
-// recorder captures what the instrumentation emitted, so these assert the
+// counterRecorder captures what the instrumentation emitted, so these assert the
 // signals a dashboard would actually read rather than that the code ran.
-type recorder struct {
+type counterRecorder struct {
 	mu       sync.Mutex
 	counters map[string][]telemetry.Labels
 }
 
-func newRecorder() *recorder {
-	return &recorder{counters: map[string][]telemetry.Labels{}}
+func newRecorder() *counterRecorder {
+	return &counterRecorder{counters: map[string][]telemetry.Labels{}}
 }
 
-func (r *recorder) Counter(name string, _ ...telemetry.InstrumentOption) telemetry.Counter {
+func (r *counterRecorder) Counter(name string, _ ...telemetry.InstrumentOption) telemetry.Counter {
 	return &recCounter{r: r, name: name}
 }
-func (r *recorder) UpDownCounter(string, ...telemetry.InstrumentOption) telemetry.UpDownCounter {
+func (r *counterRecorder) UpDownCounter(string, ...telemetry.InstrumentOption) telemetry.UpDownCounter {
 	return telemetry.NoopMeter.UpDownCounter("")
 }
-func (r *recorder) Gauge(string, ...telemetry.InstrumentOption) telemetry.Gauge {
+func (r *counterRecorder) Gauge(string, ...telemetry.InstrumentOption) telemetry.Gauge {
 	return telemetry.NoopMeter.Gauge("")
 }
-func (r *recorder) Histogram(name string, _ ...telemetry.InstrumentOption) telemetry.Histogram {
+func (r *counterRecorder) Histogram(name string, _ ...telemetry.InstrumentOption) telemetry.Histogram {
 	return &recHistogram{r: r, name: name}
 }
 
 type recCounter struct {
-	r    *recorder
+	r    *counterRecorder
 	name string
 }
 
@@ -51,7 +51,7 @@ func (c *recCounter) Add(_ context.Context, _ float64, labels telemetry.Labels) 
 }
 
 type recHistogram struct {
-	r    *recorder
+	r    *counterRecorder
 	name string
 }
 
@@ -61,7 +61,7 @@ func (h *recHistogram) Record(_ context.Context, _ float64, labels telemetry.Lab
 	h.r.counters[h.name] = append(h.r.counters[h.name], labels)
 }
 
-func (r *recorder) labelsFor(metric string) []telemetry.Labels {
+func (r *counterRecorder) labelsFor(metric string) []telemetry.Labels {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]telemetry.Labels(nil), r.counters[metric]...)
@@ -92,7 +92,7 @@ func (s *stub) List(context.Context, *store.Resource, store.ListOptions) (store.
 
 var userRes = &store.Resource{Name: "User", Table: "users", PKColumn: "id"}
 
-func instrumented(d store.Driver, r *recorder) *store.DB {
+func instrumented(d store.Driver, r *counterRecorder) *store.DB {
 	return store.Instrument(store.Build(d, "stub", "", nil), store.WithMeter(r))
 }
 

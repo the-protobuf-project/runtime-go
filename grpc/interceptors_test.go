@@ -16,8 +16,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// recorder is a unary interceptor that notes its name and passes the call on.
-func recorder(name string, seen *[]string) grpc.UnaryServerInterceptor {
+// noter is a unary interceptor that notes its name and passes the call on.
+func noter(name string, seen *[]string) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, h grpc.UnaryHandler) (any, error) {
 		*seen = append(*seen, name)
 		return h(ctx, req)
@@ -32,7 +32,7 @@ func runChain(t *testing.T, s *HybridServer, seen *[]string) []string {
 		t.Fatalf("resolveValidation: %v", err)
 	}
 	if s.validate != nil {
-		s.validate = recorder("validate", seen) // stands in for protovalidate
+		s.validate = noter("validate", seen) // stands in for protovalidate
 	}
 	chain := mcp.ChainUnaryInterceptors(s.unaryChain()...)
 	if _, err := chain(t.Context(), nil, &grpc.UnaryServerInfo{}, func(context.Context, any) (any, error) { return "ok", nil }); err != nil {
@@ -48,13 +48,13 @@ func TestInterceptorOrder(t *testing.T) {
 		want []string
 	}{
 		{"validation first by default", func(seen *[]string) []Option {
-			return []Option{WithValidation(), WithUnaryInterceptors(recorder("auth", seen))}
+			return []Option{WithValidation(), WithUnaryInterceptors(noter("auth", seen))}
 		}, []string{"validate", "auth"}},
 		{"validation last", func(seen *[]string) []Option {
-			return []Option{WithValidationLast(), WithUnaryInterceptors(recorder("auth", seen), recorder("audit", seen))}
+			return []Option{WithValidationLast(), WithUnaryInterceptors(noter("auth", seen), noter("audit", seen))}
 		}, []string{"auth", "audit", "validate"}},
 		{"no validation", func(seen *[]string) []Option {
-			return []Option{WithUnaryInterceptors(recorder("auth", seen))}
+			return []Option{WithUnaryInterceptors(noter("auth", seen))}
 		}, []string{"auth"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

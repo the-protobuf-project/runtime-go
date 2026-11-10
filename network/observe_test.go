@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // Every request is a client span, and the server receives its trace in the
@@ -21,7 +21,7 @@ func TestARequestIsTracedToTheServer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	c := newPooledClient(time.Second, rec.Signals(), "http")
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL+"/books/1", nil)
 	if err != nil {

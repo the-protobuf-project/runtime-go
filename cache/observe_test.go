@@ -9,7 +9,7 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/cache"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // doc is a Document whose Get answers with err.
@@ -45,7 +45,7 @@ func TestWithoutSignalsTheCacheIsUnwrapped(t *testing.T) {
 }
 
 func TestAMissIsNotAFailure(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	c := cache.WithObservability(doc{err: fmt.Errorf("%w: k", cache.ErrNotFound)}, rec.Signals())
 	_ = c.Get(t.Context(), "k", nil)
 
@@ -59,7 +59,7 @@ func TestAMissIsNotAFailure(t *testing.T) {
 }
 
 func TestAFailureFailsTheSpan(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	boom := errors.New("connection reset")
 	c := cache.WithObservability(doc{err: boom}, rec.Signals())
 	_ = c.Get(t.Context(), "k", nil)
@@ -72,7 +72,7 @@ func TestAFailureFailsTheSpan(t *testing.T) {
 }
 
 func TestAnIndexedCacheStaysIndexed(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	c := cache.WithObservability(doc{}, rec.Signals())
 	ix, ok := c.(cache.Indexed)
 	if !ok {
@@ -92,7 +92,7 @@ func TestAnIndexedCacheStaysIndexed(t *testing.T) {
 }
 
 func TestKeysNeverReachTheSignals(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	c := cache.WithObservability(doc{}, rec.Signals())
 	_ = c.Get(t.Context(), "secret-key-42", nil)
 	for _, m := range rec.Measurements("runtime.operation.count") {

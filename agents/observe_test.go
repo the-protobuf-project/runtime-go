@@ -6,15 +6,15 @@ import (
 	"testing"
 
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 func TestARequestIsAServerSpanUnderTheCallersTrace(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	mux := http.NewServeMux()
 	var inner string
 	mux.HandleFunc("POST /mcp/", func(w http.ResponseWriter, r *http.Request) {
-		inner = telemetrytest.SpanID(r.Context())
+		inner = recorder.SpanID(r.Context())
 		w.WriteHeader(http.StatusAccepted)
 	})
 	h := observeHTTP(mux, rec.Signals())

@@ -10,7 +10,7 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/database/store"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // txStub runs a transaction by handing fn a DB over itself.
@@ -22,8 +22,8 @@ func (s *txStub) Run(ctx context.Context, fn func(tx *store.DB) error) error {
 	return fn(store.Build(s, "stub", "", nil))
 }
 
-func traced(d store.Driver) (*store.DB, *telemetrytest.Recorder) {
-	rec := telemetrytest.New()
+func traced(d store.Driver) (*store.DB, *recorder.Recorder) {
+	rec := recorder.New()
 	return store.Instrument(store.Build(d, "stub", "shop", nil), store.WithSignals(rec.Signals())), rec
 }
 

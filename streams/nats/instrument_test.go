@@ -6,13 +6,13 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/streams"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
-	"github.com/the-protobuf-project/runtime-go/telemetry/telemetrytest"
+	"github.com/the-protobuf-project/runtime-go/telemetry/recorder"
 )
 
 // Through a real JetStream server: a delivery's span is its publish's child,
 // carried across in the message headers, and settles with the ack.
 func TestATraceCrossesJetStream(t *testing.T) {
-	rec := telemetrytest.New()
+	rec := recorder.New()
 	s := streams.Instrument(jetStream(t), rec.Signals(), "nats")
 	_, m := declare(t, s, subject)
 
