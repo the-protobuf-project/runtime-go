@@ -11,4 +11,4 @@
 // Its spans carry trace context through Inject and Extract as a
 // "traceparent" header holding the span's id, so a test can follow a trace
 // from a publisher to a receiver.
-package telemetrytest
+package telemetry_test

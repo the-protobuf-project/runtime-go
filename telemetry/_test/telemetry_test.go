@@ -1,4 +1,4 @@
-package telemetrytest
+package telemetry_test
 
 import (
 	"context"

@@ -306,14 +306,13 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>telemetry</b> · 2 packages</summary>
+<summary><b>telemetry</b> · 1 package</summary>
 
 `go get github.com/the-protobuf-project/runtime-go/telemetry`
 
 | Package | What it does |
 | --- | --- |
 | [`telemetry`](telemetry) | Defines the backend-agnostic contracts generated and hand-written code instruments against: Meter for metrics, Logger for logs and Tracer for spans. |
-| [`telemetry/telemetrytest`](telemetry/telemetrytest) | Records what code reports through the telemetry contracts, for its tests to check: one Recorder is a telemetry.Meter, a telemetry.Tracer and a telemetry.Logger, and keeps every measurement, span and log record in memory. |
 
 </details>
 
