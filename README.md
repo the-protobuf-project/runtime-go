@@ -599,4 +599,4 @@ Issues and pull requests are welcome. Please open an issue before submitting a l
 
 Apache 2.0, see [LICENSE](LICENSE).
 
-Copyright © 2026 The Protobuf Project authors | All rights reserved 
+Copyright © 2026 The Protobuf Project Authors. All rights reserved.
