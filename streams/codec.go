@@ -86,3 +86,40 @@ func (r *Registry) Lookup(name string) (Codec, error) {
 	}
 	return nil, fmt.Errorf("%w: this message was encoded with the %q codec, which this program does not have; register it with streams.NewRegistry", ErrUnsupported, name)
 }
+
+// Encoded is a value its publisher already encoded, published as it is.
+//
+// A provider frames Data under Codec instead of encoding the value with its
+// own codec, so a caller that owns its encoding (a typed topic whose wire
+// format is FlatBuffers or Cap'n Proto, converted by code buffers generates)
+// still publishes through any provider, and its subscribers read the codec it
+// used off the frame.
+type Encoded struct {
+	// Codec names the encoding, as [Codec.Name] would.
+	Codec string
+
+	// Data is the encoded payload.
+	Data []byte
+}
+
+// deferredCodec stands in for a codec this program does not have.
+//
+// A message encoded with one is still delivered, so a caller that decodes the
+// payload itself, a typed topic holding the codec, can read it; decoding it
+// through [Message.Decode] fails, naming the codec, exactly as looking it up
+// would have.
+type deferredCodec struct {
+	name string
+	err  error
+}
+
+func (d deferredCodec) Name() string                { return d.name }
+func (d deferredCodec) Marshal(any) ([]byte, error) { return nil, d.err }
+func (d deferredCodec) Unmarshal([]byte, any) error { return d.err }
+
+// Deferred returns a codec for a message whose codec, name, this program does
+// not have: [Message.Decode] fails with err, and [Message.CodecName] still
+// reports name. Providers reach it through runtime-go/streams/core.
+func Deferred(name string, err error) Codec {
+	return deferredCodec{name: name, err: err}
+}

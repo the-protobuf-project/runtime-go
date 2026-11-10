@@ -56,17 +56,30 @@ func Pack(codec streams.Codec, id string, value any) ([]byte, error) {
 
 // PackWith is [Pack] carrying headers in the frame, for a transport that has
 // nowhere else to put them. Without headers it writes exactly what Pack does.
+//
+// A [streams.Encoded] value is framed as it is, under its own codec name,
+// rather than encoded with codec.
 func PackWith(codec streams.Codec, id string, value any, headers streams.Headers) ([]byte, error) {
 	if codec == nil {
 		codec = streams.JSON
 	}
 
-	data, err := codec.Marshal(value)
-	if err != nil {
-		return nil, err
+	var (
+		data []byte
+		name string
+	)
+	if enc, ok := value.(streams.Encoded); ok {
+		if enc.Codec == "" {
+			return nil, fmt.Errorf("streams: an Encoded value has to name its codec")
+		}
+		data, name = enc.Data, enc.Codec
+	} else {
+		var err error
+		if data, err = codec.Marshal(value); err != nil {
+			return nil, err
+		}
+		name = codec.Name()
 	}
-
-	name := codec.Name()
 	if len(headers) == 0 {
 		out := make([]byte, 0, 2+binary.MaxVarintLen64*2+len(name)+len(id)+len(data))
 		out = append(out, frameMarker, frameVersion)
@@ -104,7 +117,9 @@ func PackWith(codec streams.Codec, id string, value any, headers streams.Headers
 //
 // The returned message carries the codec it was encoded with, so
 // [streams.Message.Decode] reads it the way the publisher wrote it rather than
-// the way this program is configured.
+// the way this program is configured. A codec the registry does not have is
+// not an error here: the message is delivered, its Decode fails naming the
+// codec, and a caller holding that codec reads [streams.Message.Data] itself.
 //
 // A payload that is not one of our frames is an error rather than a message
 // with an empty id: the id is what a caller correlates a delivery against, and
@@ -160,7 +175,9 @@ func Unpack(reg *streams.Registry, subject string, payload []byte) (streams.Mess
 	}
 	codec, err := reg.Lookup(string(name))
 	if err != nil {
-		return streams.Message{}, err
+		// Delivered rather than dropped: a typed topic holding this codec
+		// decodes the payload itself, and Message.Decode still fails naming it.
+		codec = streams.Deferred(string(name), err)
 	}
 
 	msg := streams.NewMessage(string(id), subject, rest, codec)

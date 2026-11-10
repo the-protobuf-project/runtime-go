@@ -68,6 +68,11 @@ type Options struct {
 	Sealer *Sealer
 	// Meter receives the metrics. Nil drops them.
 	Meter telemetry.Meter
+	// Tracer traces every round and its steps, and carries each delivery's
+	// trace to the webhook in a traceparent header. Nil traces nothing.
+	Tracer telemetry.Tracer
+	// Logger logs every step's completion. Nil logs nothing.
+	Logger telemetry.Logger
 	// Outboxes are drained each round, after the feeds (see [Outbox]).
 	Outboxes []*Outbox
 	// Sink receives every change a feed reads and every outbox event, besides
@@ -95,6 +100,10 @@ type Dispatcher struct {
 
 	metrics       deliveryMetrics
 	outboxMetrics map[*Outbox]outboxMetrics
+
+	// obs reports every round and step as an operation of component
+	// "events"; see [Dispatcher.Round].
+	obs *telemetry.Observer
 }
 
 // NewDispatcher returns a Dispatcher over store and feeds.
@@ -136,7 +145,17 @@ func NewDispatcher(store Store, feeds []Feed, opts Options) *Dispatcher {
 		shardRetries:  map[string]shardRetry{},
 		metrics:       newDeliveryMetrics(opts.Meter, opts.MetricPrefix),
 		outboxMetrics: om,
+		obs:           telemetry.Signals{Meter: opts.Meter, Tracer: opts.Tracer, Logger: opts.Logger}.Observer("events"),
 	}
+}
+
+// step runs fn as one operation of the dispatcher, backend "webhook", with
+// attrs on its span.
+func (d *Dispatcher) step(ctx context.Context, operation string, kind telemetry.SpanKind, attrs map[string]any, fn func(ctx context.Context, op *telemetry.Operation) error) error {
+	ctx, op := d.obs.Start(ctx, "webhook", operation, kind, telemetry.WithSpanAttributes(attrs))
+	err := fn(ctx, op)
+	op.FinishErr(err)
+	return err
 }
 
 // Start runs Round every interval until ctx ends, passing each failure to
@@ -164,7 +183,26 @@ func (d *Dispatcher) Start(ctx context.Context, interval time.Duration, logErr f
 // Safe to run on several servers at once: a change recorded twice collides on
 // its delivery's derived name, a delivery is claimed before it is sent, and an
 // outbox shard is drained by one server at a time.
+//
+// With Options.Tracer, Logger or Meter set, a round is one operation of
+// component "events", backend "webhook", and each of its steps one under it:
+//
+//	events.round
+//	  events.dispatch_feed  one per feed: the changes read and recorded
+//	  events.drain          one per outbox shard: the rows published
+//	    events.sink         the batch handed to the Sink
+//	  events.send           the deliveries due
+//	    events.deliver      one per delivery: the POST, client span
+//
+// Each is a share of runtime.operation.count and runtime.operation.duration,
+// besides the delivery metrics under Options.MetricPrefix.
 func (d *Dispatcher) Round(ctx context.Context) error {
+	return d.step(ctx, "round", telemetry.SpanKindInternal, nil, func(ctx context.Context, _ *telemetry.Operation) error {
+		return d.round(ctx)
+	})
+}
+
+func (d *Dispatcher) round(ctx context.Context) error {
 	if err := d.dispatch(ctx); err != nil {
 		return fmt.Errorf("webhooks: dispatch: %w", err)
 	}
@@ -215,7 +253,9 @@ func (d *Dispatcher) dispatch(ctx context.Context) error {
 		}
 	}
 	for _, f := range d.feeds {
-		if err := d.dispatchFeed(ctx, f, hooks, upTo); err != nil {
+		err := d.step(ctx, "dispatch_feed", telemetry.SpanKindInternal, map[string]any{"events.feed": f.id},
+			func(ctx context.Context, _ *telemetry.Operation) error { return d.dispatchFeed(ctx, f, hooks, upTo) })
+		if err != nil {
 			return fmt.Errorf("%s: %w", f.id, err)
 		}
 	}
@@ -457,7 +497,12 @@ func (d *Dispatcher) forget(cutoff time.Time) {
 
 // send attempts every PENDING delivery that is due.
 func (d *Dispatcher) send(ctx context.Context) error {
+	return d.step(ctx, "send", telemetry.SpanKindInternal, nil, d.sendDue)
+}
+
+func (d *Dispatcher) sendDue(ctx context.Context, op *telemetry.Operation) error {
 	due, err := d.store.DueDeliveries(ctx, d.opts.Now(), sendBatch)
+	op.ReadRecords(len(due))
 	if err != nil || len(due) == 0 {
 		return err
 	}
@@ -491,7 +536,7 @@ func (d *Dispatcher) send(ctx context.Context) error {
 		slots <- struct{}{}
 		go func() {
 			defer func() { <-slots; wg.Done() }()
-			if err := d.attempt(ctx, *dl, hooks[WebhookOf(dl.Name)]); err != nil {
+			if err := d.attemptTraced(ctx, *dl, hooks[WebhookOf(dl.Name)]); err != nil {
 				mu.Lock()
 				errs = append(errs, err)
 				mu.Unlock()
@@ -502,21 +547,41 @@ func (d *Dispatcher) send(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// attempt makes one attempt at dl. It claims dl first -- pushing its next
+// attemptTraced is attempt as one deliver operation, a client span holding
+// the endpoint's answer.
+func (d *Dispatcher) attemptTraced(ctx context.Context, dl Delivery, w *Webhook) error {
+	attrs := map[string]any{"events.delivery": dl.Name, "events.event_id": dl.EventID, "events.attempt": int(dl.AttemptCount) + 1}
+	return d.step(ctx, "deliver", telemetry.SpanKindClient, attrs, func(ctx context.Context, op *telemetry.Operation) error {
+		state, code, err := d.attempt(ctx, dl, w)
+		if code != 0 {
+			op.Span().SetAttribute("http.response.status_code", code)
+		}
+		if state != "" {
+			op.Span().SetAttribute("events.state", state)
+		}
+		if state == DeliverySucceeded.String() {
+			op.WrittenRecords(1)
+		}
+		return err
+	})
+}
+
+// attempt makes one attempt at dl and reports the state it left dl in and the
+// endpoint's status code, empty and zero when it did not send. It claims dl first -- pushing its next
 // attempt out, guarded by its etag -- so of several servers reading it due,
 // one sends it. A nil w is a deleted webhook: the delivery fails.
-func (d *Dispatcher) attempt(ctx context.Context, dl Delivery, w *Webhook) error {
+func (d *Dispatcher) attempt(ctx context.Context, dl Delivery, w *Webhook) (string, int, error) {
 	now := d.opts.Now()
 	if w != nil && w.Paused {
-		return nil // paused: it waits
+		return "", 0, nil // paused: it waits
 	}
 	dl.NextAttemptTime = now.Add(claimFor)
 	dl, err := d.store.UpdateDelivery(ctx, dl, []string{PathNextAttemptTime})
 	if errors.Is(err, ErrConflict) {
-		return nil // another server claimed it
+		return "", 0, nil // another server claimed it
 	}
 	if err != nil {
-		return err
+		return "", 0, err
 	}
 
 	code, sendErr := 0, errors.New("the webhook was deleted")
@@ -544,7 +609,7 @@ func (d *Dispatcher) attempt(ctx context.Context, dl Delivery, w *Webhook) error
 		d.metrics.attempt(ctx, OutcomeRetrying)
 	}
 	_, err = d.store.UpdateDelivery(ctx, dl, paths)
-	return err
+	return dl.State.String(), code, err
 }
 
 // Backoff is the wait after the nth failed attempt: 30 seconds, doubling, at
@@ -590,6 +655,11 @@ func (d *Dispatcher) post(ctx context.Context, w *Webhook, dl *Delivery) (int, e
 	req.Header.Set(HeaderID, dl.EventID)
 	req.Header.Set(HeaderTimestamp, strconv.FormatInt(now.Unix(), 10))
 	req.Header.Set(HeaderSignature, strings.Join(sigs, " "))
+	trace := map[string]string{}
+	d.obs.Tracer().Inject(ctx, trace)
+	for k, v := range trace {
+		req.Header.Set(k, v)
+	}
 	resp, err := d.opts.Client.Do(req)
 	if err != nil {
 		return 0, err

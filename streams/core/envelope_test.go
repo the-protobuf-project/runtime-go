@@ -84,19 +84,46 @@ func TestUnpackRejectsAnUnknownFrameVersion(t *testing.T) {
 }
 
 // A codec this program does not have must be refused by name rather than
-// decoded as something else.
-func TestUnpackRefusesAnUnknownCodec(t *testing.T) {
+// decoded as something else. The message is still delivered, so a caller that
+// holds the codec can read its payload.
+func TestDecodeRefusesAnUnknownCodec(t *testing.T) {
 	body, err := Pack(fakeCodec{}, "msg-1", order{User: "ada"})
 	if err != nil {
 		t.Fatalf("Pack: %v", err)
 	}
 
-	_, err = Unpack(streams.NewRegistry(), "orders.placed", body)
+	msg, err := Unpack(streams.NewRegistry(), "orders.placed", body)
+	if err != nil {
+		t.Fatalf("Unpack: %v", err)
+	}
+	if msg.CodecName() != "madeup" || msg.ID != "msg-1" {
+		t.Errorf("codec %q id %q", msg.CodecName(), msg.ID)
+	}
+	var got order
+	err = msg.Decode(&got)
 	if !errors.Is(err, streams.ErrUnsupported) {
-		t.Fatalf("Unpack error = %v, want ErrUnsupported", err)
+		t.Fatalf("Decode error = %v, want ErrUnsupported", err)
 	}
 	if !strings.Contains(err.Error(), "madeup") {
 		t.Errorf("error %q does not name the codec", err)
+	}
+}
+
+// An Encoded value is framed as it is, under its own codec name.
+func TestPackFramesAnEncodedValueAsItIs(t *testing.T) {
+	body, err := Pack(streams.JSON, "msg-1", streams.Encoded{Codec: "flatbuffers", Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatalf("Pack: %v", err)
+	}
+	msg, err := Unpack(streams.NewRegistry(), "orders.placed", body)
+	if err != nil {
+		t.Fatalf("Unpack: %v", err)
+	}
+	if msg.CodecName() != "flatbuffers" || string(msg.Data) != "\x01\x02\x03" {
+		t.Errorf("codec %q data %v", msg.CodecName(), msg.Data)
+	}
+	if _, err := Pack(streams.JSON, "msg-2", streams.Encoded{Data: []byte{1}}); err == nil {
+		t.Error("an Encoded value without a codec name was framed")
 	}
 }
 

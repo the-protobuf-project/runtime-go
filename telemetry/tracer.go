@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -164,3 +165,21 @@ func (noopSpan) SetOK()                       {}
 func (noopSpan) AddEvent(string)              {}
 func (noopSpan) SetAttribute(string, any)     {}
 func (noopSpan) SetAttributes(map[string]any) {}
+
+// TraceID returns the W3C trace id of the span ctx carries, as t would send
+// it in a traceparent header, or "" when there is none: the id to quote in an
+// error message so an operator can find the request's trace.
+func TraceID(ctx context.Context, t Tracer) string {
+	if t == nil {
+		return ""
+	}
+	h := map[string]string{}
+	t.Inject(ctx, h)
+	// version "-" trace-id "-" parent-id "-" flags, as W3C Trace Context
+	// defines traceparent.
+	parts := strings.Split(h["traceparent"], "-")
+	if len(parts) != 4 || len(parts[1]) != 32 || parts[1] == strings.Repeat("0", 32) {
+		return ""
+	}
+	return parts[1]
+}

@@ -5,7 +5,7 @@
 // or closes a connection:
 //
 //	rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
-//	st := redis.Connect(rdb, redis.WithPrefix("events"))
+//	st := redis.Use(rdb, redis.WithPrefix("events"))
 //
 //	s, _ := st.Create(ctx, streams.Stream{
 //	    Name: "orders", Subjects: []string{"order.placed"},

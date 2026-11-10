@@ -228,6 +228,11 @@ type Batch interface {
 // AsBatch returns m's batch-publishing half, on the same terms as [AsDurable].
 func AsBatch(m Manager) (Batch, error) {
 	b, ok := m.(Batch)
+	if w, wrapped := m.(capabilities); wrapped {
+		var v any
+		v, ok = w.capability(CapabilityBatch)
+		b, _ = v.(Batch)
+	}
 	if !ok {
 		return nil, fmt.Errorf(
 			"%w: this provider publishes one value at a time", ErrUnsupported)
@@ -243,6 +248,11 @@ func AsBatch(m Manager) (Batch, error) {
 // from the wiring that chose the provider.
 func AsDurable(m Manager) (Durable, error) {
 	d, ok := m.(Durable)
+	if w, wrapped := m.(capabilities); wrapped {
+		var v any
+		v, ok = w.capability(CapabilityDurable)
+		d, _ = v.(Durable)
+	}
 	if !ok {
 		return nil, fmt.Errorf(
 			"%w: this provider delivers a message once and does not remember whether it was handled; "+
@@ -254,9 +264,76 @@ func AsDurable(m Manager) (Durable, error) {
 // AsPositioned returns m's replay half, on the same terms as [AsDurable].
 func AsPositioned(m Manager) (Positioned, error) {
 	p, ok := m.(Positioned)
+	if w, wrapped := m.(capabilities); wrapped {
+		var v any
+		v, ok = w.capability(CapabilityPositioned)
+		p, _ = v.(Positioned)
+	}
 	if !ok {
 		return nil, fmt.Errorf(
 			"%w: this provider keeps no log to read from, so there is no position but now", ErrUnsupported)
 	}
 	return p, nil
+}
+
+// Capability names one of the halves past [Publisher] and [Subscriber], for a
+// caller to demand up front with [Require].
+type Capability int
+
+const (
+	// CapabilityDurable is [Durable]: named consumers with ack and nak.
+	CapabilityDurable Capability = iota + 1
+
+	// CapabilityPositioned is [Positioned]: consuming from a chosen position.
+	CapabilityPositioned
+
+	// CapabilityBatch is [Batch]: publishing several values in one go.
+	CapabilityBatch
+)
+
+// String names the capability as streams.yaml's require: list spells it.
+func (c Capability) String() string {
+	switch c {
+	case CapabilityDurable:
+		return "durable"
+	case CapabilityPositioned:
+		return "positioned"
+	case CapabilityBatch:
+		return "batch"
+	default:
+		return fmt.Sprintf("Capability(%d)", int(c))
+	}
+}
+
+// Require checks that m has every capability in caps, failing with the first
+// missing one's [ErrUnsupported].
+//
+// It is the startup half of [AsDurable], [AsPositioned] and [AsBatch], and
+// answers in their sentences: a service that cannot run without redelivery
+// should refuse to start on a provider without it, not serve traffic until the
+// first consumer is opened.
+func Require(m Manager, caps ...Capability) error {
+	for _, c := range caps {
+		var err error
+		switch c {
+		case CapabilityDurable:
+			_, err = AsDurable(m)
+		case CapabilityPositioned:
+			_, err = AsPositioned(m)
+		case CapabilityBatch:
+			_, err = AsBatch(m)
+		default:
+			err = fmt.Errorf("streams: unknown capability %v", c)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// capabilities is a manager that wraps another, [Instrument]'s, and answers
+// for the capabilities of the one it wraps, wrapped in turn.
+type capabilities interface {
+	capability(Capability) (any, bool)
 }

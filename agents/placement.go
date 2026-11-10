@@ -71,7 +71,7 @@ func (r *Runtime) listen(groups []*group) ([]*http.Server, error) {
 		}
 		srv := &http.Server{
 			Addr:              g.addr,
-			Handler:           g.mux,
+			Handler:           observeHTTP(g.mux, r.cfg.Signals),
 			ReadTimeout:       r.cfg.ReadTimeout,
 			WriteTimeout:      r.cfg.WriteTimeout,
 			ReadHeaderTimeout: 10 * time.Second,

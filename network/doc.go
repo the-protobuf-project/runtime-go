@@ -1,6 +1,8 @@
-// Package network provides GraphQL, HTTP, and WebSocket clients behind a single
-// factory (NewConnection) with consistent connection options and optional
-// connectivity verification.
+// Package network provides GraphQL, HTTP and WebSocket clients behind one
+// factory.
+//
+// NewConnection builds each with the same connection options, and optionally
+// verifies the server is reachable before the first call.
 //
 // All three client types are created via NewConnection(clientType) and configured
 // with WithOpts(opts):

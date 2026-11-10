@@ -96,6 +96,14 @@ and A2A on the separate ports it has always used, by giving each service an
 address of its own. Ports default to consecutive: A2A takes MCP's plus one, and
 MCP takes HTTP's plus one.
 
+## Telemetry
+
+`Config.Signals` traces, measures and logs every request the runtime's own
+listeners serve: a server span, `agents.request`, continuing the caller's trace
+from its W3C `traceparent` header, its route as `http.route`, and a share of
+`runtime.operation.count` and `runtime.operation.duration`. A host that owns the
+server through `Config.Mux` instruments it itself.
+
 ## Install
 
 ```bash

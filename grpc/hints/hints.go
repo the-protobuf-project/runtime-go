@@ -9,7 +9,6 @@ import (
 	"sync"
 	"unicode"
 
-	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -18,6 +17,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/reflect/protoregistry"
+
+	"github.com/the-protobuf-project/runtime-go/grpc/shared"
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // DefaultGenericReasons are the reasons that mean nobody described the error
@@ -36,6 +38,10 @@ type Options struct {
 	// Files are the protos read for resources and methods. Default
 	// protoregistry.GlobalFiles.
 	Files *protoregistry.Files
+	// Tracer finds the trace id an internal error quotes. Default the grpc
+	// module's own (shared.Signals), which reads the application's trace once
+	// it adopted its telemetry.
+	Tracer telemetry.Tracer
 }
 
 // Hinter rewrites generic errors. It reads the protos once, on first use.
@@ -57,6 +63,9 @@ func New(opts Options) *Hinter {
 	}
 	if opts.Files == nil {
 		opts.Files = protoregistry.GlobalFiles
+	}
+	if opts.Tracer == nil {
+		opts.Tracer = shared.Signals().Tracer
 	}
 	return &Hinter{opts: opts}
 }
@@ -194,8 +203,8 @@ func (h *Hinter) internal(ctx context.Context, fullMethod string) error {
 		msg += " while handling " + m
 	}
 	msg += ". This is a fault on our side, not in your request: retry it, and if it keeps failing, report"
-	if sc := trace.SpanContextFromContext(ctx); sc.HasTraceID() {
-		msg += " trace " + sc.TraceID().String()
+	if id := telemetry.TraceID(ctx, h.opts.Tracer); id != "" {
+		msg += " trace " + id
 	} else {
 		msg += " the time and the call"
 	}

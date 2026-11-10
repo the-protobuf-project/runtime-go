@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.opentelemetry.io/otel/trace"
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 	"google.golang.org/genproto/googleapis/api/annotations"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
@@ -224,12 +224,22 @@ func TestRewriteKeepsDescribedErrors(t *testing.T) {
 	}
 }
 
+// traceparent is a tracer whose every context carries one W3C traceparent.
+type traceparent string
+
+func (traceparent) Start(ctx context.Context, _ string, _ ...telemetry.SpanOption) (context.Context, telemetry.Span) {
+	return ctx, nil
+}
+func (p traceparent) Inject(_ context.Context, h map[string]string) { h["traceparent"] = string(p) }
+func (traceparent) Extract(ctx context.Context, _ map[string]string) context.Context {
+	return ctx
+}
+
 func TestInternalCarriesTraceID(t *testing.T) {
-	h := New(Options{Files: shop(t)})
-	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: trace.TraceID{1, 2, 3}, SpanID: trace.SpanID{1}})
-	ctx := trace.ContextWithSpanContext(context.Background(), sc)
-	msg := status.Convert(h.Rewrite(ctx, "/x.Y/Z", nil, status.Error(codes.Unknown, "boom"))).Message()
-	if !strings.Contains(msg, "trace "+sc.TraceID().String()) || !strings.HasPrefix(msg, "The service failed") {
+	const id = "0102030000000000000000000000000a"
+	h := New(Options{Files: shop(t), Tracer: traceparent("00-" + id + "-0100000000000000-01")})
+	msg := status.Convert(h.Rewrite(context.Background(), "/x.Y/Z", nil, status.Error(codes.Unknown, "boom"))).Message()
+	if !strings.Contains(msg, "trace "+id) || !strings.HasPrefix(msg, "The service failed") {
 		t.Fatalf("message %q", msg)
 	}
 }

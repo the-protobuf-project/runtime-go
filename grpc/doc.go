@@ -1,7 +1,9 @@
-// Package grpc provides HybridServer — a single server that simultaneously
-// speaks gRPC, HTTP/1.1 JSON gateway (via grpc-gateway), optional HTTP/3
-// (QUIC), an MCP (Model Context Protocol) endpoint, and an A2A (Agent2Agent)
-// endpoint, all sharing the same port and TLS configuration.
+// Package grpc serves one service over gRPC, a REST gateway, MCP and A2A from a
+// single server.
+//
+// [HybridServer] speaks gRPC, the HTTP/1.1 JSON gateway (via grpc-gateway),
+// optional HTTP/3 (QUIC), an MCP (Model Context Protocol) endpoint and an A2A
+// (Agent2Agent) endpoint, all sharing the same port and TLS configuration.
 //
 // # Overview
 //

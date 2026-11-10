@@ -43,9 +43,8 @@ func (s *HybridServer) startGRPCServer() error {
 		shared.Telemetry().Logger.Debugf("gRPC: no certificate — running plaintext (no TLS)")
 	}
 
-	shared.Telemetry().Logger.Debugf("gRPC: setting up OpenTelemetry exporter")
-	otelServerOpts := setupOtelExporter()
-	serverOpts = append(serverOpts, otelServerOpts...)
+	shared.Telemetry().Logger.Debugf("gRPC: instrumenting every call through the module's telemetry")
+	serverOpts = append(serverOpts, telemetryOptions()...)
 	// Resolve WithValidation into the interceptor chain here, before either
 	// consumer reads it: the gRPC server below, and startAgents (which runs
 	// after this) pushing the same chain down to MCP tool dispatch.
@@ -53,7 +52,7 @@ func (s *HybridServer) startGRPCServer() error {
 		return err
 	}
 	serverOpts = append(serverOpts, s.interceptorOptions()...)
-	shared.Telemetry().Logger.Debugf("gRPC: %d server option(s) configured (TLS + OTel)", len(serverOpts))
+	shared.Telemetry().Logger.Debugf("gRPC: %d server option(s) configured (TLS + telemetry)", len(serverOpts))
 
 	s.grpcServer = grpc.NewServer(serverOpts...)
 	shared.Telemetry().Logger.Debugf("gRPC: server instance created")

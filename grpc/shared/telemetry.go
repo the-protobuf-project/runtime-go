@@ -37,3 +37,10 @@ func Meter() telemetry.Meter {
 func Close() error {
 	return obs().Close()
 }
+
+// Signals are the module's telemetry as the contract's three handles: the
+// meter, the tracer and the component-tagged logger.
+func Signals() telemetry.Signals {
+	c := obs()
+	return telemetry.Signals{Meter: c.Meter(), Tracer: c.Tracer(), Logger: Log()}
+}

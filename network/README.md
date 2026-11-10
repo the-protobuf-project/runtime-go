@@ -10,7 +10,7 @@ A comprehensive Go networking package providing unified interfaces for HTTP, Gra
 - **Context Support**: Proper timeout and cancellation handling
 - **Auto-Retry**: Configurable retry logic with exponential backoff
 - **Structured Logging**: Built-in logging via Pulse
-- **Telemetry**: OpenTelemetry integration
+- **Telemetry**: traces, metrics and logs through the runtime-go telemetry contract
 - **Thread-Safe**: Concurrent operations supported
 
 ## Installation
@@ -208,6 +208,9 @@ type ConnectionOptions struct {
     // server is reachable. Empty = use DefaultGraphQLConnectivityQuery.
     // Set for strict servers that limit introspection.
     GraphQLConnectivityQuery string
+
+    // Signals: traces, measures and logs every request (see Telemetry below).
+    Signals telemetry.Signals
 }
 ```
 
@@ -252,13 +255,22 @@ export LOOM_DEBUG_TRACE=development
 - `development` - Info, warnings, and errors
 - `debug` - All logs including debug messages
 
-### Telemetry Configuration
+### Telemetry
 
-```bash
-# Enable OTLP telemetry
-export LOOM_OTLP_ENABLED=true
-export LOOM_OTLP_HOST=localhost
-export LOOM_OTLP_PORT=4317
+Set `ConnectionOptions.Signals` and every HTTP and GraphQL request is a client
+span, `network.request`, and a share of `runtime.operation.count` and
+`runtime.operation.duration`, labeled component `network`, backend `http` or
+`graphql`, operation and outcome (a 404 is `not_found`, a 409 `conflict`, a 5xx
+`error`). The request carries its trace to the server in W3C `traceparent` and
+`tracestate` headers. A WebSocket handshake is one `network.dial` span carrying
+the same headers.
+
+```go
+obs := observability.Lazy("my-service", "1.0.0")()
+client.Connect(network.ConnectionOptions{
+    URL:     url,
+    Signals: telemetry.Signals{Meter: obs.Meter(), Tracer: obs.Tracer(), Logger: obs.Log()},
+})
 ```
 
 ## Error Handling

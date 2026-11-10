@@ -194,6 +194,30 @@ Concurrent misses on one key collapse into a single load, an absence is
 remembered, and every write invalidates what it wrote — including writes
 committed inside a transaction.
 
+## Telemetry
+
+`store.Instrument` traces, measures and logs every operation of a database
+through the [telemetry](../telemetry) contract, the Go twin of runtime-rs's
+`store::instrument`:
+
+```go
+db = store.Instrument(db, store.WithSignals(telemetry.Signals{
+    Meter: obs.Meter(), Tracer: obs.Tracer(), Logger: obs.Log(),
+}))
+```
+
+Every call is a client span named `database.<operation>`: CRUD, `create_many`
+and `get_many`, a watch for its whole life, a transaction (its own `DB` is
+instrumented too), the schema, graph and time-series calls. Each is a share of
+`runtime.operation.count` and `runtime.operation.duration`, labeled `component`,
+`backend`, `operation` and `outcome`, with the rows in `runtime.records.read` and
+`runtime.records.written`. The resource is a span attribute, never a label, and
+a record's key appears nowhere. A missing record is `not_found` and a duplicate
+`conflict`; neither fails the span.
+
+Every capability the backend has survives, instrumented; one it lacks does not
+appear.
+
 ## Adding a backend
 
 Implement [`Driver`](./driver.go) — seven methods over `proto.Message` — plus

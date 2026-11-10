@@ -105,6 +105,26 @@ headers the CloudEvent attributes (`ce-id`, `ce-type`, ...).
 A resource is sent from a feed or an outbox, never both: both would send two
 events, under two ids, for one write.
 
+## Telemetry
+
+Set `Options.Tracer`, `Options.Logger` and `Options.Meter` and a round is one
+trace, every step an operation of component `events`:
+
+```
+events.round
+  events.dispatch_feed   one per feed
+  events.drain           one per outbox shard
+    events.sink          the batch handed to the Sink
+  events.send            the deliveries due
+    events.deliver       one per delivery: the POST, a client span
+```
+
+Each delivery's POST carries its trace in a `traceparent` header, so a receiver
+that continues it sees the delivery as its parent. The status code and the state
+the delivery was left in are span attributes. Every step is a share of
+`runtime.operation.count` and `runtime.operation.duration`, besides the delivery
+metrics under `Options.MetricPrefix`.
+
 ## Guarantees
 
 | | |

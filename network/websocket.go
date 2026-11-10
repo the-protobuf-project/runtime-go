@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // WebSocketClient is a WebSocket connection client. Create via
@@ -62,10 +64,22 @@ func (ws *WebSocketClient) Connect(opts ConnectionOptions) error {
 		return fmt.Errorf("failed to build WebSocket URL: %w", err)
 	}
 
-	conn, resp, err := ws.dialer.Dial(fullURL, convertToHTTPHeader(opts.Headers))
+	// The handshake is one dial operation, carrying its trace to the server.
+	obs := opts.Signals.Observer("network")
+	dctx, op := obs.Start(ws.ctx, "websocket", "dial", telemetry.SpanKindClient,
+		telemetry.WithSpanAttributes(map[string]any{"server.address": opts.URL.Host}))
+	headers := convertToHTTPHeader(opts.Headers)
+	trace := map[string]string{}
+	obs.Tracer().Inject(dctx, trace)
+	for k, v := range trace {
+		headers.Set(k, v)
+	}
+	conn, resp, err := ws.dialer.DialContext(dctx, fullURL, headers)
 	if resp != nil && resp.Body != nil {
+		op.Span().SetAttribute("http.response.status_code", resp.StatusCode)
 		defer func() { _ = resp.Body.Close() }()
 	}
+	op.FinishErr(err)
 	if err != nil {
 		return fmt.Errorf("failed to dial WebSocket at %s: %w", opts.URL.Host, err)
 	}
