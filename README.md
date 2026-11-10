@@ -92,7 +92,28 @@ comes with them. The summaries are the packages' own docs, collected by
 <details>
 <summary><b>agents</b> · 4 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/agents`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/agents
+```
+
+**Usage**
+
+```go
+rt := agents.New(agents.Config{
+    Name:    "my-service",
+    Version: "1.0.0",
+    Port:    9000,
+})
+
+rt.Register(
+    mcp.Service(yourpb.ServeYourServiceMCP),
+    a2a.Service(agent, a2a.Skill{ID: "echo", Name: "Echo"}),
+)
+
+err := rt.Serve(ctx)
+```
 
 | Package | What it does |
 | --- | --- |
@@ -106,7 +127,23 @@ comes with them. The summaries are the packages' own docs, collected by
 <details>
 <summary><b>blockchain</b> · 2 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/blockchain`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/blockchain
+```
+
+**Usage**
+
+```go
+book, _ := evm.NewContract(bookABIJSON, common.HexToAddress("0x…")) // abis/Book.json
+driver := evm.New(evm.Config{
+    Backend:   client, // *ethclient.Client
+    Signer:    txOpts, // *bind.TransactOpts; nil disables writes
+    Resources: map[string]evm.Contract{"Book": book},
+})
+svc := adapter.New(driver, store.NewRegistry(grpcx.Resources...))
+```
 
 | Package | What it does |
 | --- | --- |
@@ -118,7 +155,21 @@ comes with them. The summaries are the packages' own docs, collected by
 <details>
 <summary><b>buffers</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/buffers`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/buffers
+```
+
+**Usage**
+
+```go
+data, err := bridge.Wrap(sensor).FlatBuffers()   // proto  -> flatbuffers
+data, err := bridge.Wrap(sensor).CapnProto()     // proto  -> cap'n proto
+
+sensor, err := bridge.FlatBuffers(data).Sensor() // flatbuffers -> proto
+sensor, err := bridge.CapnProto(data).Sensor()   // cap'n proto -> proto
+```
 
 | Package | What it does |
 | --- | --- |
@@ -129,7 +180,19 @@ comes with them. The summaries are the packages' own docs, collected by
 <details>
 <summary><b>cache</b> · 7 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/cache`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/cache
+```
+
+**Usage**
+
+```go
+client, err := redis.NewClient(ctx, redis.Config{Address: "localhost:6379"})
+c := redis.New(client, cache.Config{Prefix: "example"})
+db, err := c.SetDatabase(ctx, "orders")
+```
 
 | Package | What it does |
 | --- | --- |
@@ -150,7 +213,28 @@ Examples and tools:
 <details>
 <summary><b>database</b> · 9 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/database`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/database
+```
+
+**Usage**
+
+```go
+type Book struct {
+    ID    string `db:"id,pk"`
+    Title string `db:"title,unique"`
+    Year  int32  `db:"published_year"`
+}
+
+db, _ := mongodb.NewProvider(client).SetDatabase(ctx, "shop")
+books, _ := database.Collection[Book](db, "books")
+
+books.EnsureSchema(ctx)
+id, _ := books.Create(ctx, Book{ID: "books/dune", Title: "Dune", Year: 1965})
+b, _ := books.Get(ctx, id)
+```
 
 | Package | What it does |
 | --- | --- |
@@ -181,7 +265,27 @@ Examples and tools:
 <details>
 <summary><b>events</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/events`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/events
+```
+
+**Usage**
+
+```go
+feed := events.NewFeed(events.FeedSpec[*pb.Order]{
+    ID:       "orders",
+    ReadMask: []string{"name", "etag", "create_time", "update_time", "state"},
+    List:     func(ctx context.Context, q events.Query) ([]*pb.Order, string, error) { ... },
+    Change: func(o *pb.Order) events.Change {
+        return events.Change{Type: "shop.order." + strings.ToLower(o.GetState().String()), Time: o.GetUpdateTime().AsTime()}
+    },
+    Data: func(o *pb.Order) ([]byte, error) { return protojson.Marshal(o) },
+})
+d := events.NewDispatcher(store, []events.Feed{feed}, events.Options{Source: "//shop.example.com"})
+d.Start(ctx, 5*time.Second, func(err error) { log.Print(err) })
+```
 
 | Package | What it does |
 | --- | --- |
@@ -192,7 +296,20 @@ Examples and tools:
 <details>
 <summary><b>events/stream</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/events/stream`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/events/stream
+```
+
+**Usage**
+
+```go
+sink, err := stream.NewSink(ctx, provider, streamID, []string{
+    orderv1svc.OrderCreatedEvent, orderv1svc.OrderPaidEvent,
+}, stream.Options{Meter: meter})
+d := events.NewDispatcher(store, feeds, events.Options{Sink: sink, Outboxes: outboxes})
+```
 
 | Package | What it does |
 | --- | --- |
@@ -203,7 +320,31 @@ Examples and tools:
 <details>
 <summary><b>grpc</b> · 6 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/grpc`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/grpc
+```
+
+**Usage**
+
+```go
+srv := grpc.NewHybridServer(options.Options{
+    ServiceName: "my-service",
+    Environment: options.Production,
+    GRPC:        options.Endpoint{Host: "0.0.0.0", Port: 50051},
+    HTTP:        options.Endpoint{Host: "0.0.0.0", Port: 8080},
+})
+
+srv.RegisterGRPC(func(s *grpc.Server) {
+    pb.RegisterGreeterServer(s, &myGreeter{})
+})
+srv.RegisterHTTP(func(mux *runtime.ServeMux, endpoint string, opts []grpc.DialOption) error {
+    return pb.RegisterGreeterHandlerFromEndpoint(ctx, mux, endpoint, opts)
+})
+
+srv.Start() // blocks until signal
+```
 
 | Package | What it does |
 | --- | --- |
@@ -219,7 +360,20 @@ Examples and tools:
 <details>
 <summary><b>interfaces</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/interfaces`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/interfaces
+```
+
+**Usage**
+
+```go
+reg := store.NewRegistry(grpcx.Resources...)
+svc := adapter.New(orm.New(db), reg) // or evm.New(cfg), fabric.New(), ...
+
+book, err := svc.Get(ctx, "Book", "books/dune") // ErrNotFound -> codes.NotFound
+```
 
 | Package | What it does |
 | --- | --- |
@@ -230,7 +384,11 @@ Examples and tools:
 <details>
 <summary><b>network</b> · 3 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/network`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/network
+```
 
 | Package | What it does |
 | --- | --- |
@@ -250,7 +408,18 @@ Examples and tools:
 <details>
 <summary><b>observability</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/observability`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/observability
+```
+
+**Usage**
+
+```go
+observability ──> telemetry-go ──> telemetry
+      └─────────────────────────────>┘
+```
 
 | Package | What it does |
 | --- | --- |
@@ -261,7 +430,22 @@ Examples and tools:
 <details>
 <summary><b>rfc</b> · 3 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/rfc`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/rfc
+```
+
+**Usage**
+
+```go
+card, err    := rfc.VCard(text).Card()        // vCard document  -> JSContact
+text, err    := rfc.Card(card).VCard()        // JSContact       -> vCard document
+contact, err := rfc.JCard(data).Contact()     // jCard document  -> vCard model
+data, err    := rfc.Contact(c).XCard()        // vCard model     -> xCard document
+event, err   := rfc.ICalendar(text).Event()   // iCalendar       -> Event
+data, err    := rfc.Event(e).JCal()           // Event           -> jCal
+```
 
 | Package | What it does |
 | --- | --- |
@@ -274,7 +458,24 @@ Examples and tools:
 <details>
 <summary><b>streams</b> · 13 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/streams`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/streams
+```
+
+**Usage**
+
+```go
+rdb := goredis.NewClient(&goredis.Options{Addr: "localhost:6379"})
+st := redis.Use(rdb, redis.WithPrefix("events"))
+
+s, _ := st.Create(ctx, streams.Stream{
+    Name: "orders", Subjects: []string{"order.placed"},
+})
+mgr, _ := st.Bind(ctx, s.ID)
+mgr.Publish(ctx, "order.placed", order)
+```
 
 | Package | What it does |
 | --- | --- |
@@ -306,20 +507,40 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>telemetry</b> · 1 package</summary>
+<summary><b>telemetry</b> · 2 packages</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/telemetry`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/telemetry
+```
+
+**Usage**
+
+```go
+runtime.operation.count       {operation}  completed operations
+runtime.operation.duration    s            operation duration
+runtime.operation.active      {operation}  operations in flight
+runtime.records.read          {record}     records returned or delivered
+runtime.records.written       {record}     records the backend acknowledged
+runtime.ingestion.queue.depth {record}     admitted records not yet written
+```
 
 | Package | What it does |
 | --- | --- |
 | [`telemetry`](telemetry) | Defines the backend-agnostic contracts generated and hand-written code instruments against: Meter for metrics, Logger for logs and Tracer for spans. |
+| [`telemetry/recorder`](telemetry/recorder) | Records what code reports through the telemetry contracts, for its tests to check: one Recorder is a telemetry.Meter, a telemetry.Tracer and a telemetry.Logger, and keeps every measurement, span and log record in memory. |
 
 </details>
 
 <details>
 <summary><b>ulid</b> · 1 package</summary>
 
-`go get github.com/the-protobuf-project/runtime-go/ulid`
+**Install**
+
+```sh
+go get github.com/the-protobuf-project/runtime-go/ulid
+```
 
 | Package | What it does |
 | --- | --- |

@@ -40,6 +40,7 @@ type pkg struct {
 	module     string // the module it belongs to, relative to the repo root
 	modulePath string // that module's import path
 	command    bool   // a main package: an example or a tool, not a library
+	usage      string // the first code block in the package doc, if any
 }
 
 func main() {
@@ -259,6 +260,7 @@ func describe(root, dir, modDir, modPath string) (pkg, bool, error) {
 		synopsis:   dp.Synopsis(dp.Doc),
 		hasDoc:     hasDoc == nil,
 		command:    astPkg.Name == "main",
+		usage:      firstCode(dp),
 	}, true, nil
 }
 
@@ -298,7 +300,7 @@ func section(pkgs []pkg) string {
 	b.WriteString("`tools/docgen` (`make docs`).\n\n")
 	b.WriteString("| Module | What it is for |\n| --- | --- |\n")
 	for _, m := range modules {
-		fmt.Fprintf(&b, "| [`%s`](%s) | %s |\n", m, m, firstClause(summary(lead(m, byModule[m]))))
+		fmt.Fprintf(&b, "| [`%s`](%s) | %s |\n", m, m, firstClause(summary(lead(m, byModule[m]).synopsis)))
 	}
 
 	b.WriteString("\n## Package index\n")
@@ -316,7 +318,7 @@ func section(pkgs []pkg) string {
 			}
 		}
 		fmt.Fprintf(&b, "\n<details>\n<summary><b>%s</b> · %s</summary>\n\n", m, count(len(libs), "package"))
-		fmt.Fprintf(&b, "`go get %s`\n\n", modulePathOf(byModule[m]))
+		writeStart(&b, modulePathOf(byModule[m]), lead(m, byModule[m]))
 		if len(libs) > 0 {
 			b.WriteString("| Package | What it does |\n| --- | --- |\n")
 			for _, p := range libs {
@@ -335,20 +337,20 @@ func section(pkgs []pkg) string {
 	return b.String()
 }
 
-// lead is the synopsis that describes a module: its root package's, or the
-// first library package's when the module has no root package.
-func lead(module string, pkgs []pkg) string {
+// lead is the package that describes a module: its root package, or the
+// first library package when the module has no root package.
+func lead(module string, pkgs []pkg) pkg {
 	for _, p := range pkgs {
 		if p.rel == module {
-			return p.synopsis
+			return p
 		}
 	}
 	for _, p := range pkgs {
 		if !p.command && !isInternal(p.rel) {
-			return p.synopsis
+			return p
 		}
 	}
-	return ""
+	return pkg{}
 }
 
 // modulePathOf is the import path of the module pkgs belong to.
