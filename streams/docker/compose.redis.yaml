@@ -1,0 +1,27 @@
+# A throwaway Redis for redis/redis_live_test.go (build tag `live`).
+#
+#   docker compose -p tpp-streams-live-redis -f docker/compose.redis.yaml up -d --wait
+#   go test -race -tags live ./redis -run .
+#   docker compose -p tpp-streams-live-redis -f docker/compose.redis.yaml down -v
+#
+# The live tests read REDIS_LIVE_ADDR (default 127.0.0.1:16380) and skip when
+# nothing answers there. The untagged tests keep using REDIS_TEST_HOST and
+# REDIS_TEST_PORT (default 127.0.0.1:6379); set REDIS_TEST_PORT=16380 to run
+# them against this server too.
+#
+# Host port 16380, not 6379, so it can run beside a Redis you already have.
+# Nothing is persisted: the tests make their own data under unique prefixes.
+# Keyspace expiry events are on because scheduled delivery is built on them.
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: tpp-streams-redis
+    ports:
+      - "127.0.0.1:16380:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--notify-keyspace-events", "Ex"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: "no"

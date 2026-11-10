@@ -15,7 +15,8 @@ backend can do and says so where it cannot.
 | MQTT 5 | [`streams/mqtt`](./mqtt) | durable by session, not replayable |
 | RabbitMQ | [`streams/rabbitmq`](./rabbitmq) | durable by queue, true negative acknowledgement |
 | ZeroMQ | [`streams/zeromq`](./zeromq) | brokerless, immediate, nothing kept |
-| OPC UA | [`streams/opcua`](./opcua) | a node's state on attach, then each change |
+| OPC UA | [`streams/opcua`](./opcua) | each change to a node's value |
+| OPC UA PubSub | [`streams/opcua/pubsub`](./opcua/pubsub) | Part 14 JSON over MQTT, nothing kept |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for durable records see
 [`database`](../database).
@@ -74,6 +75,7 @@ has.
 | MQTT | `Connect` | `Use` |
 | ZeroMQ | `Publish`, `Subscribe` | — |
 | OPC UA | `Connect` | `Use` |
+| OPC UA PubSub | `Connect` | — |
 
 MQTT connections reconnect on their own, and take TLS and credentials:
 
@@ -163,6 +165,54 @@ refused by name rather than decoded into a zero value.
 The protobuf codec requires every published value to be a `proto.Message`, and
 says so at the publish that broke it.
 
+### Headers
+
+Headers are a plain string-to-string map that travels beside the payload, for
+anything a deployment wants to say about a message: the language that produced
+it, a trace, a content type, a site. There is no schema and no key this module
+reserves. A stream carries defaults; a publish lays its own on top, and a key
+set there wins.
+
+```go
+s, _ := events.Create(ctx, streams.Stream{
+    Name:     "telemetry",
+    Subjects: []string{"sensor.reading"},
+}.WithHeader("lang", "go").WithHeaders(streams.Headers{"site": "plant-3"}))
+
+m.Publish(ctx, "sensor.reading", reading,
+    streams.Header("site", "plant-4"),
+    streams.Header("traceparent", trace))
+
+msg.Headers.Get("site")   // "plant-4", on the receiving side
+```
+
+```mermaid
+flowchart LR
+    S["Stream headers<br/>Stream.WithHeader"] --> M["merged<br/>a publish key wins"]
+    O["Publish headers<br/>streams.Header"] --> M
+    M --> V{"Validate"}
+    V -->|"invalid"| E["streams.ErrInvalidHeader"]
+    V --> K["Kafka record headers"]
+    V --> N["NATS headers"]
+    V --> A["AMQP headers table"]
+    V --> RS["Redis Streams fields h:key"]
+    V --> F2["frame version 2<br/>Redis pub/sub, ZeroMQ"]
+    V --> U["MQTT 5 user properties<br/>MQTT, OPC UA PubSub"]
+    V --> X["refused<br/>OPC UA client/server"]
+```
+
+Each provider sends them with its broker's own mechanism, so other tools on the
+broker see them too, and a runtime-rs peer reads the same headers.
+
+| Rule | Value |
+| --- | --- |
+| Key | non-empty, visible ASCII, no `:`, at most 256 bytes (`MaxHeaderKey`) |
+| Value | one line of text, no control characters, at most 4,096 bytes (`MaxHeaderValue`) |
+| All headers of one message | at most 16 KiB together (`MaxHeaderTotal`) |
+| Reserved by a broker | `Nats-*` on NATS; `x-*`, `CC`, `BCC` on RabbitMQ |
+| Stored | with the stream's declaration, left out when empty |
+| Checked | at `Create`, `Update`, `Publish` and `PublishBatch`, failing with `ErrInvalidHeader` at the call that set it |
+
 ### Typed views
 
 ```go
@@ -178,6 +228,68 @@ A message that fails to decode as `T` is skipped rather than delivered as a zero
 value. Use the untyped `Manager` when you need to see those.
 
 ## Capabilities
+
+The same stream provider, carried by each transport. A band's width is the
+number of capabilities that transport really has, below.
+
+```mermaid
+sankey-beta
+
+Stream provider,Kafka,5
+Stream provider,NATS core,3
+Stream provider,NATS JetStream,7
+Stream provider,RabbitMQ,5
+Stream provider,Redis pub/sub,3
+Stream provider,Redis Streams,6
+Stream provider,MQTT,6
+Stream provider,ZeroMQ,3
+Stream provider,OPC UA client/server,2
+Stream provider,OPC UA PubSub,4
+Kafka,Publish and subscribe,1
+Kafka,Durable consumers,1
+Kafka,Replay,1
+Kafka,Batch,1
+Kafka,Headers,1
+NATS core,Publish and subscribe,1
+NATS core,Batch,1
+NATS core,Headers,1
+NATS JetStream,Publish and subscribe,1
+NATS JetStream,Durable consumers,1
+NATS JetStream,Replay,1
+NATS JetStream,Batch,1
+NATS JetStream,Headers,1
+NATS JetStream,Expiry,1
+NATS JetStream,Delayed redelivery,1
+RabbitMQ,Publish and subscribe,1
+RabbitMQ,Durable consumers,1
+RabbitMQ,Batch,1
+RabbitMQ,Headers,1
+RabbitMQ,Expiry,1
+Redis pub/sub,Publish and subscribe,1
+Redis pub/sub,Batch,1
+Redis pub/sub,Headers,1
+Redis Streams,Publish and subscribe,1
+Redis Streams,Durable consumers,1
+Redis Streams,Replay,1
+Redis Streams,Batch,1
+Redis Streams,Headers,1
+Redis Streams,Delayed redelivery,1
+MQTT,Publish and subscribe,1
+MQTT,Durable consumers,1
+MQTT,Batch,1
+MQTT,Headers,1
+MQTT,Expiry,1
+MQTT,Retained last value,1
+ZeroMQ,Publish and subscribe,1
+ZeroMQ,Batch,1
+ZeroMQ,Headers,1
+OPC UA client/server,Publish and subscribe,1
+OPC UA client/server,Batch,1
+OPC UA PubSub,Publish and subscribe,1
+OPC UA PubSub,Batch,1
+OPC UA PubSub,Headers,1
+OPC UA PubSub,Expiry,1
+```
 
 `Publisher` and `Subscriber` are the honest intersection — send a value, receive
 it, no promise it survives a restart — because that is what Redis pub/sub and
@@ -226,6 +338,35 @@ Kafka, RabbitMQ and MQTT.
 provider that cannot count: Kafka redelivers the same bytes with no record of
 having done so. Redis and JetStream both count and report a real number.
 
+**Delayed redelivery.** `NakAfter` returns a message no sooner than a delay from
+now, for work that should wait before it is tried again: a device that is busy,
+a dependency that is restarting.
+
+```go
+if msg.CanDelayRedelivery() {
+    msg.NakAfter(ctx, 5*time.Second)
+}
+```
+
+JetStream holds the redelivery back itself, and Redis Streams does it by
+reclaiming the entry, so it waits at most the reclaim interval
+(`MaxRedeliveryDelay`). Elsewhere `NakAfter` returns the message at once, since
+leaving it unsettled would strand it, and reports `ErrUnsupported` so the
+caller knows it did not wait.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Lent: Consume delivers it (Attempt n)
+    Lent --> Settled: Ack
+    Lent --> Returned: Nak
+    Lent --> Waiting: NakAfter(delay)
+    Lent --> Abandoned: never settled, or the process died
+    Returned --> Lent: redelivered (Attempt n+1)
+    Waiting --> Lent: redelivered after the delay
+    Abandoned --> Lent: the broker redelivers after its own timeout
+    Settled --> [*]
+```
+
 ### Flow control
 
 `Subscribe` and `Consume` take options. `Prefetch` sets how many messages a
@@ -242,9 +383,11 @@ process dies. Zero lets the provider choose; a negative value asks for a
 synchronous hand-off, which is what you want when ordering matters more than
 throughput.
 
-`Group` now works on `Subscribe` too, where the provider can share a subject —
-on NATS it becomes a queue group, and a group named at the call wins over one
-named at the constructor.
+`Group` works on `Subscribe` too, where the provider can share a subject: on
+NATS it becomes a queue group (a group named at the call wins over one named at
+the constructor), on Kafka a consumer group, on MQTT and OPC UA PubSub a
+`$share/` subscription. RabbitMQ, Redis, ZeroMQ and OPC UA client/server refuse
+it by name rather than fanning out.
 
 ### Metrics
 
@@ -366,15 +509,41 @@ publishing now and letting you believe it was scheduled.
 Redis delivers these through keyspace notifications, so the server must run with
 `--notify-keyspace-events Ex`. NATS has no scheduled delivery at all and says so.
 
+### Expiry and retain
+
+`streams.Expires` drops a message that has not been delivered within a duration,
+so a reading nobody picked up in time is not acted on late. `streams.Retain`
+keeps a message as its subject's last value, handed to every subscriber that
+attaches later. Both change what a publish means, so a provider that cannot
+honor one refuses it with `ErrUnsupported` before anything is sent.
+
+```go
+m.Publish(ctx, "sensor.reading", reading, streams.Expires(30*time.Second))
+m.Publish(ctx, "device.state", state, streams.Retain())   // MQTT only
+
+mqtt.ClearRetained(ctx, events, s.ID, "device.state")
+```
+
+| Provider | `Expires` | `Retain` |
+| --- | --- | --- |
+| NATS JetStream | `Nats-TTL`, whole seconds rounded up | refused |
+| RabbitMQ | the `expiration` property, applied at the head of the queue | refused |
+| MQTT 5 | Message Expiry Interval, whole seconds rounded up | retain flag, `ClearRetained` |
+| OPC UA PubSub | Message Expiry Interval | refused on data |
+| Kafka, core NATS, Redis, ZeroMQ, OPC UA client/server | refused | refused |
+
 ### OPC UA: state, not events
 
 OPC UA is the one provider here that is not a message broker. A subject is a
-node id (`ns=2;s=Line1.Temperature`), publishing writes the node's value, and
-subscribing monitors it — so a subscriber is handed the node's **current value
-first** and then each change. It sees a series of states rather than a log of
-writes: writing the value a node already holds is not reported, and writes
-faster than the server samples can be coalesced. `Prefetch` sets the monitored
-item's queue, which is how much of that the server holds.
+node id (`ns=2;s=Line1.Temperature`, or the stable `nsu=<uri>;s=...`, resolved
+again after a reconnect), publishing writes the node's value, and subscribing
+monitors it. A subscriber sees a series of states rather than a log of writes:
+each change follows, the node's current value first only with
+`WithInitialValue(true)`, and writes faster than the server samples can be
+coalesced. Writing the value a node already holds is still reported, because
+items trigger on the timestamp as well as the value. `Prefetch` sets the
+monitored item's queue, which is how much of that the server holds. Every
+subscription on one connection shares one OPC UA subscription.
 
 ```go
 s, _ := opcua.Connect(ctx, "opc.tcp://plc:4840",
@@ -391,8 +560,107 @@ m.Publish(ctx, "ns=2;s=Line1.LastBatch", batch)      // framed into a ByteString
 A value OPC UA has a type for is written as itself, so the PLCs and HMIs
 around the server read a number, not this module's frame; anything else goes
 through the codec into a ByteString. Go's `int` is refused — pass the width the
-node holds. Nothing is lent, so `Durable` and `Positioned` both refuse, and so
-do `Group` and `TTL`. `PublishBatch` is a single Write request.
+node holds. A `*ua.DataValue` is written as given, with its status and source
+timestamp. Nothing is lent, so `Durable` and `Positioned` both refuse, and so
+do `Group`, `TTL`, headers, `Expires` and `Retain`. `PublishBatch` writes each
+value in turn, each answered before the next, as Part 4 orders writes.
+
+**OPC UA PubSub** is the other half of the standard: Part 14 JSON
+NetworkMessages over MQTT on `opcua/json/data/<PublisherId>/<WriterGroup>/<DataSetWriter>`,
+the way OPC Publisher and other gateways send them. A stream is a writer group,
+a subject a DataSetWriter (or one field of it), and the messages match what
+runtime-rs sends byte for byte.
+
+```go
+p, _ := pubsub.Connect(ctx, "tcp://broker:1883", pubsub.WithPublisherID("plant-3"))
+p.PublishMetadata(ctx, s.ID, "temperatures", meta)   // retained ua-metadata
+gaps := p.SequenceGaps()                             // missed SequenceNumbers
+```
+
+## Lifecycles and states
+
+```mermaid
+stateDiagram-v2
+    [*] --> Declared: Create
+    Declared --> Declared: Update
+    Declared --> Bound: Bind, any number of managers
+    Bound --> Deleted: Delete
+    Declared --> Deleted: Delete
+    Deleted --> [*]
+    note right of Deleted
+        Get, Bind, Update and Delete
+        return ErrNotFound
+    end note
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: Subscribe returns, the subscription is live
+    Active --> Active: message delivered
+    Active --> Closed: ctx canceled, server-side state removed
+    Active --> Reconnecting: connection lost
+    Reconnecting --> Active: dialed again, subscription restored
+    Closed --> [*]
+```
+
+A plain subscription delivers at most once: a message published while nothing
+listens, or lost with a connection, is gone. Durable consumers exist for the
+cases where that matters.
+
+## Configuration
+
+Every option has a default that is the recommended setting.
+
+| Provider | Option | Default |
+| --- | --- | --- |
+| Kafka | `WithPrefix`, `WithPartitions`, `WithReplicationFactor` | none, 1, 1 |
+| Kafka | `WithProducers`: producers publishes are spread over; a keyed message always uses the same one | 8 |
+| Kafka | `WithClientOptions`: applied after `acks=all` and idempotence, so they win | — |
+| NATS | `WithQueueGroup`, `WithAckWait`, `WithMaxDeliver` | none, server's, server's |
+| NATS | `WithInactiveThreshold`: how long an idle consumer lives on the server | 30 s |
+| RabbitMQ | `WithPrefix`, `WithPrefetch` | none, 32 |
+| RabbitMQ | `WithPublishChannels`: confirm-mode channels publishes are spread over | 4 |
+| RabbitMQ | `WithTLS`, `WithCredentials`, `WithReconnectDelay` | —, —, 2 s |
+| Redis | `WithPrefix`, `WithDatabase`, `WithMaxLen`, `WithAuth` | none, client's, unbounded, — |
+| Redis | `WithReclaimAfter`: how long an entry may sit unacknowledged; also the longest delayed nak | 30 s |
+| Redis | `WithConfirmAcks`: whether `Ack` waits for the XACK | true |
+| Redis | `WithAutoPipeline`: single publishes share pipelines through go-redis's (experimental) auto-pipeliner, as runtime-rs pipelines them | off |
+| MQTT | `WithQoS`, `WithSessionExpiry`, `WithClientID` | 1, 24 h, generated |
+| MQTT | `WithPublishTimeout`, `WithPublishConnections` (by topic, so each keeps its order) | 10 s, 1 |
+| ZeroMQ | `WithSettle`: how long `Subscribe` waits for the subscription to reach the publisher | 250 ms |
+| ZeroMQ | `WithHighWaterMark`: messages queued per subscriber before the publisher drops the next, as runtime-rs | 100,000 |
+| OPC UA | `WithPublishingInterval`, `WithSamplingInterval`, `WithQueueSize`, `WithBuffer` | 100 ms, 0, 64, 4,096 |
+| OPC UA | `WithKeepAliveCount`, `WithLifetimeCount`, `WithMaxNotificationsPerPublish`, `WithInitialValue` | 10, 60, 1,000, false |
+| OPC UA PubSub | `WithPublisherID`, `WithPrefix`, `WithQoS` | `runtime-go-<ULID>`, `opcua`, 1 |
+| OPC UA PubSub | `WithPublishTimeout`, `WithPublishConnections`, `WithMaxDatasetMessages`, `WithMetadataTimeout` | 10 s, 4, 100, 5 s |
+
+Every provider also takes `WithCodec`, `WithLogger` and `WithMeter`.
+
+## Wire format
+
+Every broker provider frames the payload the same way, byte for byte as
+runtime-rs does, so a Go and a Rust service share a broker:
+
+```text
+version 1   0xB7 | 0x01 | uvarint len | codec name | uvarint len | message id | data
+version 2   0xB7 | 0x02 | uvarint len | codec name | uvarint len | message id
+                        | uvarint count | (uvarint len | key | uvarint len | value) * count | data
+```
+
+Version 2 is written only by transports with no header mechanism of their own
+(Redis pub/sub and scheduled, ZeroMQ), and only when there are headers to carry.
+
+## Security
+
+| Provider | Transport | Authentication covered by the Docker suites |
+| --- | --- | --- |
+| Kafka | TLS | mutual TLS; SASL/SCRAM-SHA-512 with ACLs |
+| NATS | TLS | mutual TLS with NKey, password or certificate-mapped users, with permissions |
+| RabbitMQ | TLS | mutual TLS with SASL EXTERNAL: the certificate is the login |
+| Redis | TLS | mutual TLS with an ACL user restricted to the driver's commands and keys |
+| MQTT, OPC UA PubSub | TLS | mutual TLS with certificate identity, or password with per-user ACLs |
+| ZeroMQ | none | the Go library implements neither TLS nor CURVE |
+| OPC UA | Basic256Sha256, Aes128Sha256RsaOaep, SignAndEncrypt | username and password, application certificate trust |
 
 ## Middleware
 
@@ -406,8 +674,8 @@ pub := streams.ChainPublisher(m,
 
 Retrying a publish is safe in a way a store write is not: a redelivered message
 is a duplicate the consumer can dedupe, whereas a dropped one is simply lost.
-`ErrUnknownSubject` and `ErrUnsupported` are never retried — neither answer
-changes on a second attempt.
+`ErrUnknownSubject`, `ErrUnsupported` and `ErrInvalidHeader` are never retried —
+none of those answers changes on a second attempt.
 
 On JetStream the message id is also sent as the JetStream message id, so a retry
 after an ambiguous failure is collapsed by the server rather than appended twice.
@@ -439,6 +707,23 @@ run covered those two:
 ```bash
 go test ./... -v | grep -c -- '--- SKIP'
 ```
+
+Every provider also has suites against real brokers in Docker, behind the
+`live` build tag so `go test ./...` never needs them: `*_live_test.go` against a
+plaintext broker, and `*_e2e_test.go` against a secure one with TLS, the
+broker's own authentication, strict durability and, with
+`STREAMS_E2E_RESTART=1`, a broker restart in the middle. The compose files in
+[`docker`](./docker) say how to run each:
+
+```bash
+docker/tls/generate.sh
+docker compose -p tpp-streams-live-kafka -f docker/compose.kafka.yaml up -d --wait
+docker compose -p tpp-streams-e2e-kafka -f docker/compose.kafka.secure.yaml up -d --wait
+STREAMS_E2E_RESTART=1 go test -race -tags live ./kafka/...
+```
+
+[`benches`](./benches) holds the throughput benchmark, the Go port of
+runtime-rs's, writing the same report so the two compare run for run.
 
 A runnable demonstration of every provider lives in [`examples`](./examples) —
 one directory each, showing what that backend does that the others cannot. The

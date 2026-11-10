@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/the-protobuf-project/runtime-go/streams"
@@ -72,11 +73,12 @@ func newStore(cfg config, owned bool) *store {
 		cfg: cfg, log: cfg.log, owned: owned, name: "runtime-go-" + core.NewID(),
 		codec: codec, registry: registry, metrics: metrics,
 		up: up, done: make(chan struct{}),
+		pubs:     make([]*pubChannel, cfg.channels),
 		declared: map[string]streams.Stream{},
 	}
 }
 
-// store holds the connection, the publishing channel, and the declarations.
+// store holds the connection, the publishing channels, and the declarations.
 //
 // The declarations are kept in this process. The exchange behind them is real
 // and survives, but AMQP has nowhere to hang a description or a user id, so a
@@ -93,9 +95,12 @@ type store struct {
 
 	// mu guards the connection and what hangs off it. up is closed while the
 	// connection is usable and replaced while it is being dialed again.
-	mu      sync.RWMutex
-	conn    *amqp.Connection
-	pub     *pubChannel
+	mu   sync.RWMutex
+	conn *amqp.Connection
+	// pubs are the publishing channels, one per slot, opened on first use;
+	// next picks the slot the next publish takes.
+	pubs    []*pubChannel
+	next    atomic.Uint64
 	up      chan struct{}
 	closing bool
 	done    chan struct{}
@@ -110,14 +115,12 @@ var (
 )
 
 // Close stops reconnecting and closes the connection [Connect] opened. On a
-// store built by [Use] it is a no-op.
+// store built by [Use] it closes only the publishing channels it opened: the
+// connection is the caller's and stays open.
 //
 // Consumers hold channels of their own and end with their contexts, so cancel
 // those first or their deliveries stop mid-flight when this closes.
 func (s *store) Close() error {
-	if !s.owned {
-		return nil
-	}
 	s.mu.Lock()
 	if s.closing {
 		s.mu.Unlock()
@@ -128,6 +131,9 @@ func (s *store) Close() error {
 	conn := s.conn
 	s.mu.Unlock()
 
+	if !s.owned {
+		return s.closePublishers()
+	}
 	if err := conn.Close(); err != nil && !conn.IsClosed() {
 		return fmt.Errorf("rabbitmq: cannot close the connection: %w", err)
 	}

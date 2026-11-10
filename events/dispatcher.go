@@ -68,6 +68,11 @@ type Options struct {
 	Sealer *Sealer
 	// Meter receives the metrics. Nil drops them.
 	Meter telemetry.Meter
+	// Outboxes are drained each round, after the feeds (see [Outbox]).
+	Outboxes []*Outbox
+	// Sink receives every change a feed reads and every outbox event, besides
+	// the webhooks that want them. Nil sends to webhooks only.
+	Sink Sink
 }
 
 // Dispatcher records every new change for the webhooks that want it, and
@@ -85,8 +90,11 @@ type Dispatcher struct {
 	// has been read after it could have committed (see dispatchFeed): rounds
 	// at that position read only what is newer.
 	settled map[string]time.Time
+	// shardRetries is, per outbox shard, its run of failed rounds.
+	shardRetries map[string]shardRetry
 
-	metrics deliveryMetrics
+	metrics       deliveryMetrics
+	outboxMetrics map[*Outbox]outboxMetrics
 }
 
 // NewDispatcher returns a Dispatcher over store and feeds.
@@ -118,10 +126,16 @@ func NewDispatcher(store Store, feeds []Feed, opts Options) *Dispatcher {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	om := make(map[*Outbox]outboxMetrics, len(opts.Outboxes))
+	for _, o := range opts.Outboxes {
+		om[o] = newOutboxMetrics(opts.Meter, o.spec.MetricPrefix, o.spec.Name)
+	}
 	return &Dispatcher{
 		store: store, feeds: feeds, opts: opts,
 		recorded: map[string]time.Time{}, settled: map[string]time.Time{},
-		metrics: newDeliveryMetrics(opts.Meter, opts.MetricPrefix),
+		shardRetries:  map[string]shardRetry{},
+		metrics:       newDeliveryMetrics(opts.Meter, opts.MetricPrefix),
+		outboxMetrics: om,
 	}
 }
 
@@ -144,10 +158,12 @@ func (d *Dispatcher) Start(ctx context.Context, interval time.Duration, logErr f
 	}()
 }
 
-// Round records every new change for the webhooks that want it, sends every
-// delivery that is due, and prunes old finished ones. Safe to run on several
-// servers at once: a change recorded twice collides on its delivery's derived
-// name, and a delivery is claimed before it is sent.
+// Round records every new change for the webhooks that want it (and hands it
+// to the Sink, when there is one), drains the outboxes, sends every delivery
+// that is due, and prunes old finished deliveries and published outbox rows.
+// Safe to run on several servers at once: a change recorded twice collides on
+// its delivery's derived name, a delivery is claimed before it is sent, and an
+// outbox shard is drained by one server at a time.
 func (d *Dispatcher) Round(ctx context.Context) error {
 	if err := d.dispatch(ctx); err != nil {
 		return fmt.Errorf("webhooks: dispatch: %w", err)
@@ -157,6 +173,9 @@ func (d *Dispatcher) Round(ctx context.Context) error {
 	}
 	if err := d.store.PruneDeliveries(ctx, d.opts.Now().Add(-d.opts.Retention), prunePage); err != nil {
 		return fmt.Errorf("webhooks: prune: %w", err)
+	}
+	if err := d.pruneOutboxes(ctx); err != nil {
+		return fmt.Errorf("webhooks: prune outbox: %w", err)
 	}
 	return nil
 }
@@ -174,7 +193,8 @@ func Wants(w *Webhook, c *Change) bool {
 }
 
 // dispatch reads each feed from its cursor, less Lag, and records what it
-// finds for the active webhooks that want it.
+// finds for the active webhooks that want it; then it drains the outboxes up
+// to the same point.
 func (d *Dispatcher) dispatch(ctx context.Context) error {
 	// The webhooks are read once a round, so a change after that read could
 	// meet a webhook the list does not hold yet, be recorded for nobody and
@@ -187,11 +207,9 @@ func (d *Dispatcher) dispatch(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for i := range page {
-			if !page[i].Paused {
-				hooks = append(hooks, page[i])
-			}
-		}
+		// Pausing defers sending, not recording. Otherwise advancing the
+		// shared cursor would permanently discard this webhook's changes.
+		hooks = append(hooks, page...)
 		if token = next; token == "" {
 			break
 		}
@@ -201,7 +219,7 @@ func (d *Dispatcher) dispatch(ctx context.Context) error {
 			return fmt.Errorf("%s: %w", f.id, err)
 		}
 	}
-	return nil
+	return d.drain(ctx, hooks, upTo)
 }
 
 func wantedBy(hooks []Webhook, c *Change) bool {
@@ -231,7 +249,7 @@ func (d *Dispatcher) dispatchFeed(ctx context.Context, f Feed, hooks []Webhook, 
 	}
 	for token := ""; ; {
 		page, next, rerr := f.read(ctx, Query{
-			PageSize: feedPage, PageToken: token, OrderByUpdateTime: true,
+			PageSize: feedPage, PageToken: token, OrderByUpdateTime: true, ShowDeleted: true,
 			Since: since, SinceInclusive: inclusive,
 			// Later changes are the next round's (see dispatch).
 			Until: upTo,
@@ -250,7 +268,7 @@ func (d *Dispatcher) dispatchFeed(ctx context.Context, f Feed, hooks []Webhook, 
 			if c.Type == "" || d.seen(c) {
 				continue
 			}
-			if !wantedBy(hooks, c) {
+			if d.opts.Sink == nil && !wantedBy(hooks, c) {
 				d.remember(c) // recorded for nobody, as before
 				continue
 			}
@@ -310,36 +328,64 @@ func (d *Dispatcher) recordAll(ctx context.Context, f Feed, changes []Change, ho
 	if err != nil {
 		return err
 	}
+	var (
+		batch []Event
+		of    []*Change
+	)
 	for i := range changes {
 		c := &changes[i]
 		r, ok := records[c.Name]
 		if !ok || r.etag != c.Etag {
 			continue
 		}
-		if err := d.record(ctx, c, r, hooks); err != nil {
-			return err
+		e, rerr := d.record(ctx, c, r, hooks)
+		if rerr != nil {
+			return rerr
+		}
+		if d.opts.Sink == nil {
+			d.remember(c)
+			continue
+		}
+		batch, of = append(batch, e), append(of, c)
+	}
+	if len(batch) == 0 {
+		return nil
+	}
+	// A change the sink did not take is not remembered, and the error ends
+	// the round before the cursor moves: the next round reads it again.
+	sent, err := d.deliver(ctx, batch)
+	for i, ok := range sent {
+		if ok {
+			d.remember(of[i])
 		}
 	}
-	return nil
+	return err
 }
 
-// record writes c as a PENDING delivery for every webhook that wants it.
-func (d *Dispatcher) record(ctx context.Context, c *Change, r fetched, hooks []Webhook) error {
+// record writes c as a PENDING delivery for every webhook that wants it, and
+// returns it as an event for the sink. The record is rendered only when
+// someone is sent it.
+func (d *Dispatcher) record(ctx context.Context, c *Change, r fetched, hooks []Webhook) (Event, error) {
 	id := EventID(c.Name, c.Etag)
 	var payload string
+	render := func() error {
+		if payload != "" {
+			return nil
+		}
+		data, err := r.data()
+		if err != nil {
+			return err
+		}
+		payload, err = CloudEvent(id, d.opts.Source, c.Type, c.Name, c.Time, data)
+		return err
+	}
 	for i := range hooks {
 		w := &hooks[i]
 		if !Wants(w, c) {
 			continue
 		}
-		if payload == "" {
-			data, err := r.data()
-			if err != nil {
-				return err
-			}
-			if payload, err = CloudEvent(id, d.opts.Source, c.Type, c.Name, c.Time, data); err != nil {
-				return err
-			}
+		if err := render(); err != nil {
+			return Event{}, err
 		}
 		err := d.store.CreateDelivery(ctx, Delivery{
 			Name:            DeliveryName(w.Name, id),
@@ -352,11 +398,19 @@ func (d *Dispatcher) record(ctx context.Context, c *Change, r fetched, hooks []W
 			NextAttemptTime: d.opts.Now(),
 		})
 		if err != nil && !errors.Is(err, ErrAlreadyExists) {
-			return err
+			return Event{}, err
 		}
 	}
-	d.remember(c)
-	return nil
+	if d.opts.Sink == nil {
+		return Event{}, nil
+	}
+	if err := render(); err != nil {
+		return Event{}, err
+	}
+	return Event{
+		ID: id, Type: c.Type, Subject: c.Name, Time: c.Time, Scope: c.Scope,
+		PartitionKey: c.Name, Body: []byte(payload),
+	}, nil
 }
 
 // remember marks c recorded, so a reread of it within Lag skips it.

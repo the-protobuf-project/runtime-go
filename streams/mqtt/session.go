@@ -2,13 +2,17 @@ package mqtt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"sync/atomic"
 	"time"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/session"
 	"github.com/the-protobuf-project/runtime-go/streams"
+	"github.com/the-protobuf-project/runtime-go/streams/internal/batchconn"
 	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
@@ -21,24 +25,22 @@ import (
 // Kept, a session carries the subscription and every QoS 1 message in either
 // direction that was not yet acknowledged, so a reconnect loses nothing.
 //
-// Every time the connection comes up, the broker says whether it still had the
-// session. When it did, the subscription came back with it and subscribing
-// again is not just redundant — it races the messages the broker is
-// redelivering, and a broker that shares one packet-identifier space across
-// both directions rejects it as an identifier already in use. When it did not
-// — a clean start, an undurable session after a drop, an expired one — the
-// subscription is made again. That is what lets a subscriber survive a broker
-// restart without the caller noticing.
-//
-// This is safe because a client id identifies a consumer *and* a subject (see
-// consumerID): a session that exists is a session already subscribed to
-// exactly this filter.
+// Every time the connection comes up, the filter is subscribed, whether or not
+// the broker kept the session. A client id names a consumer and a subject (see
+// consumerID), not a stream, so a session kept from an earlier stream under the
+// same consumer and subject, by this process, another, or runtime-rs, is
+// subscribed to that stream's topic, not this one; skipping the SUBSCRIBE
+// because a session exists would leave this consumer deaf. Subscribing again to
+// a filter the session already holds replaces it in place and keeps the queued
+// messages. When the broker kept nothing (a clean start, an undurable session
+// after a drop, an expired one) the same SUBSCRIBE is what lets a subscriber
+// survive a broker restart without the caller noticing.
 //
 // The first attempt is not retried: a broker that is unreachable or refuses
 // the credentials is an error now, at the call that asked for it, rather than
 // a connection retrying in the background forever.
 func (s *store) open(ctx context.Context, clientID string, resume bool, expiry uint32, filter string,
-	onPublish func(paho.PublishReceived) (bool, error),
+	onPublish func(paho.PublishReceived) (bool, error), tune tuning,
 ) (*autopaho.ConnectionManager, error) {
 	if s.server == nil {
 		return nil, fmt.Errorf("%w: subscribing needs a connection of its own; pass WithServer to Use", streams.ErrUnsupported)
@@ -53,6 +55,10 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 		}
 	}
 
+	// Set once the broker hands the session to another connection, when
+	// tune.onTakenOver asks for that to end this one.
+	var taken atomic.Bool
+
 	cfg := autopaho.ClientConfig{
 		ServerUrls:                    []*url.URL{s.server},
 		TlsCfg:                        s.cfg.tls,
@@ -65,7 +71,7 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 		ConnectPassword:               s.cfg.password,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, ack *paho.Connack) {
 			// It must not block, and subscribing waits on the broker.
-			go func() { report(s.restore(cm, ack, filter, clientID)) }()
+			go func() { report(s.restore(cm, ack, filter, clientID, tune.retainHandling)) }()
 		},
 		OnConnectError: func(err error) {
 			s.log.Warn(context.Background(), "could not connect", telemetry.Fields{
@@ -79,7 +85,56 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 			// this paho acknowledges on receipt, which would turn at-least-once
 			// into at-most-once behind the caller's back.
 			EnableManualAcknowledgment: true,
+			// The publish timeout bounds how long a QoS 1 publish waits for
+			// its PUBACK once it is on the wire.
+			PacketTimeout: s.cfg.publishTimeout,
 		},
+	}
+	// Writes are gathered across packets, as runtime-rs's client gathers
+	// them: paho writes each packet on its own, which over TLS is two records
+	// and two system calls per packet, PUBACKs included.
+	if dial := batchconn.Dialer(s.server, schemes[s.server.Scheme], s.cfg.tls); dial != nil {
+		cfg.AttemptConnection = dial
+	}
+	if tune.session != nil {
+		cfg.Session = tune.session
+	}
+	if tune.onTakenOver != nil {
+		cfg.OnServerDisconnect = func(d *paho.Disconnect) {
+			if d.ReasonCode != reasonSessionTakenOver {
+				return
+			}
+			taken.Store(true)
+			s.log.Warn(context.Background(), "the broker gave this session to another connection",
+				telemetry.Fields{"client_id": clientID, "server": s.server.Redacted()})
+			tune.onTakenOver()
+		}
+	}
+	receiveMax := tune.receiveMax
+	cfg.ConnectPacketBuilder = func(cp *paho.Connect, _ *url.URL) (*paho.Connect, error) {
+		if taken.Load() {
+			// Dialing again would take the session back from the connection
+			// that took it, and the two would trade it for as long as both
+			// run.
+			return nil, errSessionTakenOver
+		}
+		if receiveMax > 0 {
+			// The broker holds back what the consumer has not caught up
+			// with, in the session's queue, instead of pushing it all down
+			// the socket. That is what makes the prefetch mean something: a
+			// consumer owes at most that many acknowledgements at once.
+			if cp.Properties == nil {
+				cp.Properties = &paho.ConnectProperties{}
+			}
+			cp.Properties.ReceiveMaximum = &receiveMax
+		}
+		if cp.Properties != nil {
+			// Absent, Request Problem Information means yes; paho writes a
+			// properties block with it as no, and a broker may then strip
+			// user properties (mochi does), which is where headers travel.
+			cp.Properties.RequestProblemInfo = true
+		}
+		return cp, nil
 	}
 	if onPublish != nil {
 		cfg.OnPublishReceived = []func(paho.PublishReceived) (bool, error){onPublish}
@@ -106,24 +161,71 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 	return cm, nil
 }
 
-// restore subscribes a connection that has just come up, unless the broker
-// kept its session and so its subscription.
-func (s *store) restore(cm *autopaho.ConnectionManager, ack *paho.Connack, filter, clientID string) error {
+// tuning is what differs between the connections open makes beyond their id
+// and session: the publishing pool's session wrapper, a durable consumer's
+// Receive Maximum, and how its subscription treats retained messages.
+type tuning struct {
+	// session replaces autopaho's in-memory session state when set; the
+	// publishing connections use it to pipeline a batch.
+	session session.SessionManager
+
+	// receiveMax, when non-zero, is the MQTT 5 Receive Maximum sent in
+	// CONNECT: how many unacknowledged messages the broker may have out to
+	// this client at once.
+	receiveMax uint16
+
+	// retainHandling is the subscription's MQTT 5 Retain Handling option: 0
+	// sends retained messages on every SUBSCRIBE, 1 only when the
+	// subscription is new.
+	retainHandling byte
+
+	// onTakenOver, when set, is called when the broker disconnects the
+	// connection because another took its session, and stops it being dialed
+	// again.
+	onTakenOver func()
+}
+
+// reasonSessionTakenOver is the reason code (0x8E) of the DISCONNECT a broker
+// sends a connection whose client id another connection has just claimed.
+const reasonSessionTakenOver = 0x8E
+
+// errSessionTakenOver stops a connection whose session was taken from being
+// dialed again.
+var errSessionTakenOver = errors.New("mqtt: another connection took this session")
+
+// errPacketIDInUse is the reason code (0x91) a broker answers a SUBSCRIBE with
+// when its packet identifier is one the broker is still using.
+const errPacketIDInUse = 0x91
+
+// restore subscribes a connection that has just come up.
+//
+// When the session was resumed the broker is redelivering what it kept as the
+// SUBSCRIBE goes out, and a broker that shares one packet-identifier space
+// across both directions (mochi does) refuses a SUBSCRIBE whose identifier one
+// of those redeliveries holds, with reason 0x91. paho allocates identifiers
+// round the space, so asking again takes the next one; it is asked again until
+// one is free or the dial timeout passes.
+func (s *store) restore(cm *autopaho.ConnectionManager, ack *paho.Connack, filter, clientID string, retainHandling byte) error {
 	if filter == "" {
 		return nil
 	}
 	if ack.SessionPresent {
-		s.log.Debug(context.Background(), "resumed a session; its subscription was restored",
+		s.log.Debug(context.Background(), "resumed a session; subscribing again",
 			telemetry.Fields{"filter": filter, "client_id": clientID})
-		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.dial)
 	defer cancel()
-	suback, err := cm.Subscribe(ctx, &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{{Topic: filter, QoS: s.cfg.qos}},
-	})
-	if err != nil {
+	for {
+		suback, err := cm.Subscribe(ctx, &paho.Subscribe{
+			Subscriptions: []paho.SubscribeOptions{{Topic: filter, QoS: s.cfg.qos, RetainHandling: retainHandling}},
+		})
+		if err == nil {
+			return nil
+		}
+		if suback != nil && len(suback.Reasons) > 0 && suback.Reasons[0] == errPacketIDInUse && ctx.Err() == nil {
+			continue
+		}
 		// The broker's reason code says why, and paho's error text does not
 		// carry it — a refused filter and a quota exceeded look identical
 		// without this.
@@ -133,7 +235,6 @@ func (s *store) restore(cm *autopaho.ConnectionManager, ack *paho.Connack, filte
 		s.log.Error(ctx, "could not subscribe", err, telemetry.Fields{"filter": filter, "client_id": clientID})
 		return fmt.Errorf("cannot subscribe to %q: %w", filter, err)
 	}
-	return nil
 }
 
 // disconnect ends a connection and stops it reconnecting.

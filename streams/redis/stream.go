@@ -23,7 +23,12 @@ import (
 // delivery. They share every other behavior — subject validation, metadata,
 // listing — so they share an implementation and differ only where it matters.
 type streamHandler struct {
-	rdb      goredis.UniversalClient
+	rdb goredis.UniversalClient
+	// pub sends single publishes: ap when auto-pipelining, rdb otherwise.
+	pub goredis.UniversalClient
+	// ap is the auto-pipeliner this package made, closed with the provider.
+	ap *goredis.AutoPipeliner
+
 	codec    streams.Codec
 	registry *streams.Registry
 	metrics  *core.Metrics
@@ -34,6 +39,9 @@ type streamHandler struct {
 	maxLen   int64
 	reclaim  time.Duration
 
+	// confirmAcks says a durable Ack waits for its XACK. See [WithConfirmAcks].
+	confirmAcks bool
+
 	// owned says this package dialed the client and must close it. A client
 	// handed in through Use belongs to the caller, and closing it here would
 	// take down connections this package never made.
@@ -42,9 +50,17 @@ type streamHandler struct {
 
 // Close releases the connection, if this package made it.
 //
-// It is a no-op on a provider built by [Use], which does not own its client —
-// so a caller may close either kind without having to remember which it has.
+// It leaves the client of a provider built by [Use] open, since that belongs
+// to the caller — so a caller may close either kind without having to remember
+// which it has. Either way it closes the auto-pipeliner [WithAutoPipeline]
+// made.
 func (s *streamHandler) Close() error {
+	if s.ap != nil {
+		// Drains what is queued; the client underneath stays open.
+		if err := s.ap.Close(); err != nil {
+			return fmt.Errorf("redis: cannot close the auto-pipeliner: %w", err)
+		}
+	}
 	if !s.owned {
 		return nil
 	}
@@ -82,6 +98,12 @@ func (s *streamHandler) scheduled() bool { return s.kind == kindNotify }
 
 // Create declares a stream, generating an id when one is not supplied.
 func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	// A bad default header fails here, where it was set, rather than on every
+	// publish through the stream.
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
+
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -95,6 +117,7 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	body, err := json.Marshal(out)
@@ -183,6 +206,9 @@ func (s *streamHandler) Bind(ctx context.Context, id string) (streams.Manager, e
 // never an empty stream. Deleting first would destroy the stream whenever the
 // recreate failed.
 func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	if _, err := s.Get(ctx, id); err != nil {
 		return streams.Stream{}, err
 	}
@@ -194,6 +220,7 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	body, err := json.Marshal(out)

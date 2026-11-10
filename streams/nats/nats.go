@@ -3,6 +3,7 @@ package nats
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	gonats "github.com/nats-io/nats.go"
@@ -20,7 +21,20 @@ type config struct {
 	log   telemetry.Logger
 	meter telemetry.Meter
 	queue string
+
+	// Zero leaves each to the server (or, for the inactive threshold, to
+	// defaultInactiveThreshold).
+	ackWait           time.Duration
+	maxDeliver        int
+	inactiveThreshold time.Duration
 }
+
+// defaultInactiveThreshold is how long the server keeps the ordered consumer
+// behind a JetStream Subscribe once nobody pulls from it, when
+// [WithInactiveThreshold] is not given. It is the 30 seconds runtime-rs (and
+// its async-nats client) uses, so a subscription dropped by either runtime is
+// cleaned up on the same schedule.
+const defaultInactiveThreshold = 30 * time.Second
 
 // WithLogger sets where these streams write their own records — which subject a
 // publish went to, which consumer attached where. Defaults to
@@ -61,6 +75,33 @@ func WithCodec(c streams.Codec) Option {
 	return func(cfg *config) { cfg.codec = c }
 }
 
+// WithAckWait sets how long a JetStream durable consumer waits for a delivery
+// to be settled before it sends the message again. Zero, the default, leaves
+// it to the server, whose own default is 30 seconds.
+//
+// Like [WithMaxDeliver], it is written when the consumer is created: a durable
+// consumer that already exists on the server keeps the settings it was
+// created with. Core NATS has no deliveries to settle and ignores it.
+func WithAckWait(d time.Duration) Option {
+	return func(c *config) { c.ackWait = d }
+}
+
+// WithMaxDeliver sets how many times a JetStream durable consumer delivers one
+// message before it gives up on it. Zero, the default, leaves it to the
+// server, whose own default is no limit. It applies at creation; see
+// [WithAckWait].
+func WithMaxDeliver(attempts int) Option {
+	return func(c *config) { c.maxDeliver = attempts }
+}
+
+// WithInactiveThreshold sets how long the server keeps the ordered consumer
+// behind a JetStream Subscribe once nobody pulls from it, which is how a
+// canceled subscription's consumer is cleaned up. Zero, the default, means 30
+// seconds.
+func WithInactiveThreshold(d time.Duration) Option {
+	return func(c *config) { c.inactiveThreshold = d }
+}
+
 func newConfig(opts ...Option) config {
 	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter}
 	for _, opt := range opts {
@@ -71,6 +112,9 @@ func newConfig(opts ...Option) config {
 	}
 	if cfg.meter == nil {
 		cfg.meter = telemetry.NoopMeter
+	}
+	if cfg.inactiveThreshold <= 0 {
+		cfg.inactiveThreshold = defaultInactiveThreshold
 	}
 	return cfg
 }
@@ -123,12 +167,33 @@ func UseJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
 		return nil, fmt.Errorf("%w: a queue group has no meaning on JetStream, where a named consumer already shares a subject; use Durable.Consume", streams.ErrUnsupported)
 	}
 
-	js, err := jetstream.New(nc)
+	// The publish path bounds what is in flight itself (see maxPending), so
+	// the client's own cap is set to the same number and never stalls a
+	// publish; the timeout is what fails a publish whose ack never comes.
+	js, err := jetstream.New(nc,
+		jetstream.WithPublishAsyncMaxPending(maxPending),
+		jetstream.WithPublishAsyncTimeout(ackTimeout),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("nats: cannot reach JetStream: %w", err)
 	}
+
+	// jetstream.New does not talk to the server. Asking for the account's
+	// JetStream status here is what makes a server without JetStream a
+	// misconfiguration heard at startup rather than at the first publish.
+	ctx, cancel := context.WithTimeout(context.Background(), gonats.DefaultTimeout)
+	defer cancel()
+	if _, err := js.AccountInfo(ctx); err != nil {
+		return nil, fmt.Errorf("nats: cannot reach JetStream: %w", err)
+	}
+
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
-	return &jsStreams{js: js, log: cfg.log, codec: codec, registry: registry, metrics: metrics}, nil
+	return &jsStreams{
+		js: js, log: cfg.log, codec: codec, registry: registry, metrics: metrics,
+		ackWait: cfg.ackWait, maxDeliver: cfg.maxDeliver, inactiveThreshold: cfg.inactiveThreshold,
+		budget: newBudget(maxPending),
+		closed: make(chan struct{}),
+	}, nil
 }
 
 // Connect dials url and returns a [streams.Streams] backed by core NATS.
@@ -192,4 +257,66 @@ func dial(ctx context.Context, url string) (*gonats.Conn, error) {
 		return nil, fmt.Errorf("nats: cannot reach %s: %w", url, err)
 	}
 	return nc, nil
+}
+
+// reserved is the header prefix the NATS server keeps for itself: Nats-Msg-Id,
+// Nats-TTL and the Nats-Expected-* family change what it does with a message.
+const reserved = "Nats-"
+
+// checkStreamHeaders refuses stream headers that are invalid or use the
+// server's prefix, so a bad default fails at the call that set it.
+func checkStreamHeaders(s streams.Stream) error {
+	if err := s.Headers.Validate(); err != nil {
+		return err
+	}
+	return s.Headers.RejectReserved("NATS", reserved)
+}
+
+// outgoing returns the headers a publish sends, validated, with the server's
+// prefix refused.
+func outgoing(s streams.Stream, o streams.Options) (streams.Headers, error) {
+	headers, err := core.Outgoing(s, o)
+	if err != nil {
+		return nil, err
+	}
+	if err := headers.RejectReserved("NATS", reserved); err != nil {
+		return nil, err
+	}
+	return headers, nil
+}
+
+// refuseRetain refuses [streams.Options.Retain]: neither form of NATS has a
+// last value that would not change what the stream is.
+func refuseRetain(o streams.Options, why string) error {
+	if o.Retain {
+		return fmt.Errorf("%w: NATS cannot retain a message as its subject's last value: %s", streams.ErrUnsupported, why)
+	}
+	return nil
+}
+
+// toHeader returns headers as a NATS header block. Every key has passed
+// [streams.Headers.Validate], whose rules are the client's own.
+func toHeader(headers streams.Headers) gonats.Header {
+	h := make(gonats.Header, len(headers))
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+	return h
+}
+
+// fromHeader returns the headers a message arrived with, without the server's
+// own Nats- ones, or nil when none are left. A key sent more than once keeps
+// its first value.
+func fromHeader(h gonats.Header) streams.Headers {
+	var out streams.Headers
+	for k, values := range h {
+		if strings.HasPrefix(k, reserved) || len(values) == 0 {
+			continue
+		}
+		if out == nil {
+			out = make(streams.Headers, len(h))
+		}
+		out[k] = values[0]
+	}
+	return out
 }

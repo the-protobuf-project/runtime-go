@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/the-protobuf-project/runtime-go/streams"
@@ -25,8 +27,10 @@ const (
 	// metaSuffix names the compacted topic holding stream declarations.
 	metaSuffix = "_streams_meta"
 
-	// readMeta bounds how long a metadata scan waits for the log's end.
-	readMeta = 5 * time.Second
+	// readMeta bounds how long a metadata scan waits for the log's end. It
+	// matches dialTimeout: a scan that has not reached the end by then is an
+	// error rather than a partial answer.
+	readMeta = dialTimeout
 )
 
 // streamStore manages stream lifecycle and hands out managers.
@@ -39,6 +43,14 @@ type streamStore struct {
 	cl       *kgo.Client
 	admin    *kadm.Client
 	log      telemetry.Logger
+
+	// producers are at least one; see [WithProducers]. cl is producers[0].
+	producers []*kgo.Client
+	// turn picks the producer for a publish with no partition key.
+	turn atomic.Uint64
+	// keys seeds the hash that picks the producer for a partition key, the
+	// same one every time within this process.
+	keys maphash.Seed
 }
 
 var (
@@ -46,14 +58,43 @@ var (
 	_ streams.Closer  = (*streamStore)(nil)
 )
 
-// Close releases the producer and its connections.
+// Close flushes what the producers still hold, then releases them and their
+// connections.
 //
-// Consumers built by Consume are not owned here — they end with the context
-// that started them, so cancel those first or their brokers stay connected
-// until they notice.
+// Every producer is flushed even when an earlier one fails, so one stuck
+// connection does not strand what the others hold; the first failure is the
+// one reported. Consumers built by Consume are not owned here — they end with
+// the context that started them, so cancel those first or their brokers stay
+// connected until they notice.
 func (s *streamStore) Close() error {
-	s.cl.Close()
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	defer cancel()
+	var first error
+	for _, p := range s.producers {
+		if err := p.Flush(ctx); err != nil && first == nil {
+			first = fmt.Errorf("kafka: cannot flush the producer: %w", err)
+		}
+	}
+	s.closeProducers()
+	return first
+}
+
+// closeProducers closes every producer without flushing.
+func (s *streamStore) closeProducers() {
+	for _, p := range s.producers {
+		p.Close()
+	}
+}
+
+// producer is the client a publish goes through: always the same one for a
+// partition key, so records sharing a key keep their order, and otherwise
+// each in turn.
+func (s *streamStore) producer(key string) *kgo.Client {
+	n := uint64(len(s.producers))
+	if key != "" {
+		return s.producers[maphash.String(s.keys, key)%n]
+	}
+	return s.producers[(s.turn.Add(1)-1)%n]
 }
 
 // metaTopic is where stream declarations live.
@@ -99,7 +140,13 @@ func isTopicExists(err error) bool {
 }
 
 // Create declares a stream, generating an id when one is not supplied.
+//
+// Default headers are checked first, so a bad one fails here rather than at
+// every publish. Kafka reserves no header names.
 func (s *streamStore) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -113,6 +160,7 @@ func (s *streamStore) Create(ctx context.Context, in streams.Stream) (streams.St
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	// Topics first: a declaration naming subjects that do not exist would let a
@@ -164,7 +212,9 @@ func (s *streamStore) writeMeta(ctx context.Context, id string, stream *streams.
 	}
 	// A nil value is a tombstone, which compaction eventually removes.
 
-	if err := s.cl.ProduceSync(ctx, rec).FirstErr(); err != nil {
+	// Keyed by the stream id, so declarations of one stream stay in order
+	// whichever producer the pool would otherwise pick.
+	if err := s.producer(id).ProduceSync(ctx, rec).FirstErr(); err != nil {
 		return fmt.Errorf("kafka: cannot record stream %s: %w", id, err)
 	}
 	return nil
@@ -179,41 +229,66 @@ func (s *streamStore) readMetaAll(ctx context.Context) (map[string]streams.Strea
 	ctx, cancel := context.WithTimeout(ctx, readMeta)
 	defer cancel()
 
+	topic := s.metaTopic()
+
+	// Where each partition currently starts and ends. A partition is read
+	// once a record at or past its end has arrived, not after counting
+	// records: compaction leaves gaps, so a log ending at offset 100 may hold
+	// ten records, and a scan waiting for a hundred would sit out its timeout
+	// and then miss declarations.
+	starts, err := s.admin.ListStartOffsets(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("kafka: cannot read stream metadata: %w", err)
+	}
+	ends, err := s.admin.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("kafka: cannot read stream metadata: %w", err)
+	}
+	if eerr := ends.Error(); eerr != nil {
+		return nil, fmt.Errorf("kafka: cannot read stream metadata from %s: %w", topic, eerr)
+	}
+
+	pending := make(map[int32]int64)
+	assign := make(map[int32]kgo.Offset)
+	ends.Each(func(o kadm.ListedOffset) {
+		start, ok := starts.Lookup(topic, o.Partition)
+		if ok && start.Err == nil && start.Offset >= o.Offset {
+			return // empty, or emptied by retention
+		}
+		pending[o.Partition] = o.Offset
+		assign[o.Partition] = kgo.NewOffset().AtStart()
+	})
+
+	out := make(map[string]streams.Stream)
+	if len(pending) == 0 {
+		return out, nil
+	}
+
+	// A plain reader, not a group member: nothing about this read should be
+	// remembered, and joining a group would leave server state behind per call.
 	cl, err := kgo.NewClient(append([]kgo.Opt{
 		kgo.SeedBrokers(s.seeds...),
-		kgo.ConsumeTopics(s.metaTopic()),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtStart()),
+		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{topic: assign}),
 	}, s.cfg.client...)...)
 	if err != nil {
 		return nil, fmt.Errorf("kafka: cannot read stream metadata: %w", err)
 	}
 	defer cl.Close()
 
-	// Where the log currently ends, so the scan stops rather than waiting on a
-	// topic nobody is writing to.
-	ends, err := s.admin.ListEndOffsets(ctx, s.metaTopic())
-	if err != nil {
-		return nil, fmt.Errorf("kafka: cannot read stream metadata: %w", err)
-	}
-
-	remaining := 0
-	ends.Each(func(o kadm.ListedOffset) {
-		if o.Offset > 0 {
-			remaining += int(o.Offset)
-		}
-	})
-
-	out := make(map[string]streams.Stream)
-	for remaining > 0 {
+	for len(pending) > 0 {
 		fetches := cl.PollFetches(ctx)
 		if ctx.Err() != nil {
-			break
+			// Returning what was read so far would turn a stream that exists
+			// into NotFound; an error is more honest.
+			return nil, fmt.Errorf("kafka: stream metadata in %s was not read to its end within %s", topic, readMeta)
 		}
 		if errs := fetches.Errors(); len(errs) > 0 {
 			return nil, fmt.Errorf("kafka: cannot read stream metadata: %w", errs[0].Err)
 		}
 		fetches.EachRecord(func(rec *kgo.Record) {
-			remaining--
+			if end, ok := pending[rec.Partition]; ok && rec.Offset+1 >= end {
+				delete(pending, rec.Partition)
+			}
 			id := string(rec.Key)
 			if rec.Value == nil {
 				delete(out, id) // a tombstone: the stream was deleted
@@ -260,6 +335,9 @@ func (s *streamStore) Bind(ctx context.Context, id string) (streams.Manager, err
 // were dropped are left in place, because deleting them would discard a log the
 // declaration never owned exclusively.
 func (s *streamStore) Update(ctx context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	name := safeName(id)
 	if _, err := s.Get(ctx, name); err != nil {
 		return streams.Stream{}, err
@@ -272,6 +350,7 @@ func (s *streamStore) Update(ctx context.Context, id string, in streams.Stream) 
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 	if err := s.createTopics(ctx, out); err != nil {
 		return streams.Stream{}, err
@@ -298,6 +377,8 @@ func (s *streamStore) Delete(ctx context.Context, id string) error {
 		topics = append(topics, s.topic(name, subject))
 	}
 	if len(topics) > 0 {
+		// Per-topic results are not checked: a topic someone already removed
+		// is the outcome a delete wanted anyway.
 		if _, derr := s.admin.DeleteTopics(ctx, topics...); derr != nil {
 			return fmt.Errorf("kafka: cannot delete topics for stream %s: %w", id, derr)
 		}

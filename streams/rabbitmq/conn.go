@@ -101,7 +101,8 @@ func (s *store) supervise(closed <-chan *amqp.Error) {
 				_ = conn.Close()
 				return
 			}
-			s.conn, s.pub, closed = conn, nil, next
+			s.conn, closed = conn, next
+			clear(s.pubs)
 			close(s.up)
 			s.mu.Unlock()
 

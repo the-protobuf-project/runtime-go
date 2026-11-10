@@ -23,6 +23,16 @@ const metadataField = "meta"
 // the entry's shape depend on the payload's.
 const payloadField = "msg"
 
+// headerFieldPrefix is what a durable entry's header fields start with: header
+// "lang" is stored as the field "h:lang", beside [payloadField].
+//
+// A prefix rather than the bare key because a header may be called "msg", and
+// the colon keeps any header clear of this package's own fields: a header key
+// may not contain ':' (see [streams.Headers.Validate]), so "h:<key>" can never
+// be "msg", "meta", or a second header's field. A reader that knows only "msg"
+// still reads the payload and ignores the rest.
+const headerFieldPrefix = "h:"
+
 // keys builds every Redis key one handler uses. The prefix and kind are baked
 // in at construction, so an operation asks for "the key for this id" and cannot
 // reach another handler's keyspace.

@@ -2,7 +2,9 @@ package zeromq
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strings"
 	"sync"
@@ -22,6 +24,7 @@ type config struct {
 	log    telemetry.Logger
 	meter  telemetry.Meter
 	settle time.Duration
+	hwm    int
 }
 
 // defaultSettle is how long [Subscribe] waits for a subscription to reach the
@@ -30,6 +33,22 @@ type config struct {
 // It is a guess at a round trip, because ZeroMQ gives nothing better to wait
 // on. Long enough for a local socket or a LAN; [WithSettle] raises it.
 const defaultSettle = 250 * time.Millisecond
+
+// defaultHighWaterMark is how many messages the publisher queues for one
+// subscriber before it drops the next, as runtime-rs's ZeroMQ publisher does.
+const defaultHighWaterMark = 100_000
+
+// WithHighWaterMark sets how many messages the publisher queues for one
+// subscriber that is not keeping up before it drops the next. Defaults to
+// [defaultHighWaterMark].
+//
+// Dropping is ZeroMQ PUB/SUB's answer to a slow subscriber: one that falls
+// behind loses messages instead of slowing the publisher and every other
+// subscriber down. A higher mark rides out longer bursts at the cost of
+// memory held per subscriber. It applies to [Publish] only.
+func WithHighWaterMark(n int) Option {
+	return func(c *config) { c.hwm = n }
+}
 
 // WithLogger sets where these streams write their own records. Defaults to
 // [telemetry.NoopLogger].
@@ -64,7 +83,7 @@ func WithCodec(c streams.Codec) Option {
 }
 
 func newConfig(opts ...Option) config {
-	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, settle: defaultSettle}
+	cfg := config{log: telemetry.NoopLogger, meter: telemetry.NoopMeter, settle: defaultSettle, hwm: defaultHighWaterMark}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
@@ -91,14 +110,21 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	cfg := newConfig(opts...)
 
 	sock := zmq4.NewPub(ctx)
+	// Set before Listen: each subscriber's queue is sized as it connects.
+	if err := sock.SetOption(zmq4.OptionHWM, cfg.hwm); err != nil {
+		_ = sock.Close()
+		return nil, fmt.Errorf("zeromq: cannot set the high-water mark to %d: %w", cfg.hwm, err)
+	}
 	if err := sock.Listen(endpoint); err != nil {
 		return nil, fmt.Errorf("zeromq: cannot bind %s: %w", endpoint, err)
 	}
+	endpoint = bound(endpoint, sock.Addr())
 
 	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
-		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
+		done: make(chan struct{})}, nil
 }
 
 // Subscribe returns a [streams.Streams] that connects to endpoint and receives
@@ -115,7 +141,28 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
-		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{}}, nil
+		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
+		done: make(chan struct{})}, nil
+}
+
+// bound is the endpoint a publisher actually listens on: a TCP port of 0 is
+// resolved to the one the system chose, so [Endpoint] can hand it to a
+// subscriber and a subscribe through the publisher's own store dials it.
+func bound(endpoint string, addr net.Addr) string {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok || !strings.HasPrefix(endpoint, "tcp://") || !strings.HasSuffix(endpoint, ":0") {
+		return endpoint
+	}
+	return "tcp://" + tcp.String()
+}
+
+// Endpoint returns the endpoint s binds or connects to, with a bound TCP port
+// of 0 resolved to the real one. s must come from [Publish] or [Subscribe].
+func Endpoint(s streams.Streams) string {
+	if st, ok := s.(*store); ok {
+		return st.endpoint
+	}
+	return ""
 }
 
 // store holds the declarations and, for a publisher, the bound socket.
@@ -140,6 +187,11 @@ type store struct {
 
 	closeOnce sync.Once
 	subs      []zmq4.Socket
+
+	// done is closed by Close. Every subscription watches it, which is how
+	// Close reaches subscriptions whose contexts are still live, and a
+	// publish or subscribe after it fails rather than using a closed socket.
+	done chan struct{}
 }
 
 var (
@@ -152,6 +204,7 @@ var (
 func (s *store) Close() error {
 	var err error
 	s.closeOnce.Do(func() {
+		close(s.done)
 		s.mu.Lock()
 		subs := s.subs
 		s.subs = nil
@@ -174,15 +227,40 @@ func (s *store) Close() error {
 	return nil
 }
 
-// track records a socket so Close releases it.
-func (s *store) track(sock zmq4.Socket) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.subs = append(s.subs, sock)
+// closed reports whether Close has run.
+func (s *store) closed() bool {
+	select {
+	case <-s.done:
+		return true
+	default:
+		return false
+	}
 }
 
+// track records a socket so Close releases it, and refuses it once Close has
+// run, closing it, so a subscribe racing Close cannot leak a socket.
+func (s *store) track(sock zmq4.Socket) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed() {
+		_ = sock.Close()
+		return false
+	}
+	s.subs = append(s.subs, sock)
+	return true
+}
+
+// errClosed is what every publish and subscribe after Close reports.
+var errClosed = errors.New("zeromq: the provider is closed")
+
 // Create declares a stream, generating an id when one is not supplied.
+//
+// The stream's default headers live in this declaration, so each side stamps
+// the defaults it declared; invalid ones are refused here.
 func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	id := in.ID
 	if id == "" {
 		id = core.NewStreamID(in.Name)
@@ -195,6 +273,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 
 	s.mu.Lock()
@@ -230,6 +309,9 @@ func (s *store) Bind(ctx context.Context, id string) (streams.Manager, error) {
 
 // Update replaces a stream's configuration, preserving its id.
 func (s *store) Update(_ context.Context, id string, in streams.Stream) (streams.Stream, error) {
+	if err := in.Headers.Validate(); err != nil {
+		return streams.Stream{}, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -244,6 +326,7 @@ func (s *store) Update(_ context.Context, id string, in streams.Stream) (streams
 		Subjects:    slices.Clone(in.Subjects),
 		UserID:      in.UserID,
 		Active:      true,
+		Headers:     in.Headers.Clone(),
 	}
 	s.declared[id] = out
 	return out, nil

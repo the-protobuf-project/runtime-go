@@ -40,6 +40,21 @@
 //     follows no redirects and uses no proxy; [CheckEndpoint] refuses unsafe
 //     endpoints when a webhook is created.
 //
+// # Outboxes and brokers
+//
+// A record written with a transactional outbox (protoc-gen-store's
+// <table>_outbox) is sent from its outbox instead: [AppendOutbox] writes the
+// event in the writer's transaction, and an [Outbox] the dispatcher drains
+// claims each shard of the table on one server at a time, records the events
+// for the webhooks that want them, hands them to the [Sink], and marks them
+// published once every one has them. A rolled-back write sends nothing, and a
+// committed one is sent, under the row's id, at least once.
+//
+// [Options.Sink] sends every change -- a feed's and an outbox's -- to a
+// broker as well; runtime-go's events/stream package is a Sink over any
+// streams provider. One id runs from end to end: the outbox row's id is the
+// CloudEvent id, the broker message id and the webhook-id header.
+//
 // # Example
 //
 //	feed := events.NewFeed(events.FeedSpec[*pb.Order]{

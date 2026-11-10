@@ -43,6 +43,27 @@ type Stream struct {
 	Subjects    []string `json:"subjects"`
 	UserID      string   `json:"user_id"`
 	Active      bool     `json:"active"`
+
+	// Headers are stamped on every message published through the stream, under
+	// any a publish sets itself. See [Headers].
+	Headers Headers `json:"headers,omitempty"`
+}
+
+// WithHeader returns s with key set to value among its default headers, so a
+// stream is declared in one expression:
+//
+//	streams.Stream{Name: "telemetry", Subjects: []string{"sensor.reading"}}.
+//		WithHeader("lang", "go").
+//		WithHeader("site", "plant-3")
+func (s Stream) WithHeader(key, value string) Stream {
+	s.Headers = s.Headers.Merged(Headers{key: value})
+	return s
+}
+
+// WithHeaders returns s with h laid over its default headers.
+func (s Stream) WithHeaders(h Headers) Stream {
+	s.Headers = s.Headers.Merged(h)
+	return s
 }
 
 // Message is one delivered payload.
@@ -58,6 +79,10 @@ type Message struct {
 
 	// Data is the encoded payload. Prefer [Message.Decode] over reading it.
 	Data []byte
+
+	// Headers are the ones the message was published with: the stream's
+	// defaults with the publish's own laid on top. Nil when there were none.
+	Headers Headers
 
 	// codec is the one the publisher encoded with, read off the wire. It is
 	// unexported because a caller decodes through [Message.Decode] and should
@@ -125,6 +150,19 @@ type Options struct {
 	// and is safe here: a backend that orders everything loses nothing by being
 	// told what could have shared an order.
 	PartitionKey string
+
+	// Headers are this publish's own, laid over the stream's. See [Headers].
+	Headers Headers
+
+	// Expires drops the message if it has not been delivered within this long.
+	// Zero keeps it until it is delivered. A provider whose broker cannot
+	// expire a message refuses it rather than delivering stale data.
+	Expires time.Duration
+
+	// Retain keeps the message as its subject's last value, handed to every
+	// subscriber that attaches later (MQTT's retained message). A provider
+	// without retained values refuses it.
+	Retain bool
 }
 
 // Option configures one operation.
@@ -158,6 +196,28 @@ func Prefetch(n int) Option {
 // [Options.PartitionKey].
 func PartitionKey(key string) Option {
 	return func(o *Options) { o.PartitionKey = key }
+}
+
+// Header sets one header on this publish, over the stream's own. See
+// [Headers].
+func Header(key, value string) Option {
+	return func(o *Options) { o.Headers = o.Headers.Merged(Headers{key: value}) }
+}
+
+// WithHeaders lays h over this publish's headers. See [Headers].
+func WithHeaders(h Headers) Option {
+	return func(o *Options) { o.Headers = o.Headers.Merged(h) }
+}
+
+// Expires drops the message if it has not been delivered within d. See
+// [Options.Expires].
+func Expires(d time.Duration) Option {
+	return func(o *Options) { o.Expires = d }
+}
+
+// Retain keeps the message as its subject's last value. See [Options.Retain].
+func Retain() Option {
+	return func(o *Options) { o.Retain = true }
 }
 
 // NewOptions folds opts into a single Options. Providers call this rather than

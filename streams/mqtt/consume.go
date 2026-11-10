@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"math"
+	"strings"
+	"sync"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
@@ -18,17 +21,21 @@ import (
 // published while nobody is attached — including while the connection is being
 // dialed again after a drop — is gone. Reach for [manager.Consume] when that
 // matters.
+//
+// [streams.Group] subscribes through a shared subscription, so the members
+// split the subject rather than each receiving all of it.
 func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams.Option) (<-chan streams.Message, error) {
 	if err := m.checkSubject(ctx, subject); err != nil {
 		return nil, err
 	}
 
-	raw, cm, err := m.attach(ctx, subject, "", "runtime-go-sub-"+core.NewID(), 0)
+	o := streams.NewOptions(opts...)
+	raw, cm, err := m.attach(ctx, subject, o.Group, "runtime-go-sub-"+core.NewID(), 0, 0, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
+	out := make(chan streams.Message, core.Prefetch(o))
 	go func() {
 		defer close(out)
 		defer func() { _ = m.store.disconnect(cm) }()
@@ -57,10 +64,13 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 // the thing with a position.
 //
 // Two processes cannot share one name — MQTT gives a client id to one session,
-// and a second connection under it takes the first one's place. Pass
-// [streams.Group] to split work instead: that subscribes through a shared
-// subscription, where the broker distributes messages among the members and
-// each keeps a session of its own.
+// and a second connection under it takes the first one's place. The consumer
+// it replaced is told so by the broker (reason 0x8E), and its channel closes
+// rather than dialing again: dialing again would take the session back, and the
+// two would trade it between them for as long as both run, each redelivered
+// what the other never acknowledged. Pass [streams.Group] to split work
+// instead: that subscribes through a shared subscription, where the broker
+// distributes messages among the members and each keeps a session of its own.
 //
 // # Acknowledging is a packet on the wire
 //
@@ -94,7 +104,10 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		clientID += "-" + core.NewID()
 	}
 
-	raw, cm, err := m.attach(ctx, subject, o.Group, clientID, m.store.cfg.expiry)
+	takenOver := make(chan struct{})
+	var once sync.Once
+	raw, cm, err := m.attach(ctx, subject, o.Group, clientID, m.store.cfg.expiry, core.Prefetch(o),
+		func() { once.Do(func() { close(takenOver) }) })
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +128,10 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		for {
 			select {
 			case <-ctx.Done():
+				return
+			case <-takenOver:
+				m.store.log.Warn(ctx, "another connection took this consumer's session; ending the stream",
+					telemetry.Fields{"subject": subject, "consumer": consumer, "client_id": clientID})
 				return
 			case d := <-raw:
 				delivered++
@@ -140,7 +157,22 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 //
 // A non-zero expiry makes the session durable: the broker keeps it across a
 // drop and a restart, and the first connection resumes one it already holds.
-func (m *manager) attach(ctx context.Context, subject, group, clientID string, expiry uint32) (<-chan received, *autopaho.ConnectionManager, error) {
+// A durable session also tells the broker prefetch as its Receive Maximum, and
+// is handed a retained value only when its subscription is new, not again on
+// every resume. An undurable one acknowledges each message on receipt, since
+// nothing would ever acknowledge it otherwise and the broker would stop
+// sending once its in-flight window filled.
+//
+// A message's headers are its MQTT 5 user properties, and on a wildcard
+// subscription its subject is the topic it arrived on below the stream's
+// prefix, so a subscription to "user/+" reports "user/created".
+//
+// onTakenOver, when set, is called once the broker hands this connection's
+// session to another under the same client id, after which the connection is
+// not dialed again.
+func (m *manager) attach(ctx context.Context, subject, group, clientID string, expiry uint32, prefetch int,
+	onTakenOver func(),
+) (<-chan received, *autopaho.ConnectionManager, error) {
 	filter := m.store.topic(m.stream.ID, subject)
 	if group != "" {
 		// A shared subscription: the broker gives each message to one member
@@ -152,27 +184,56 @@ func (m *manager) attach(ctx context.Context, subject, group, clientID string, e
 	// would block every other subscription on this connection.
 	raw := make(chan received, 64)
 
-	cm, err := m.store.open(ctx, clientID, expiry > 0, expiry, filter, func(pr paho.PublishReceived) (bool, error) {
-		msg, derr := core.Unpack(m.store.registry, subject, pr.Packet.Payload)
+	durable := expiry > 0
+	tune := tuning{onTakenOver: onTakenOver}
+	if durable {
+		tune.receiveMax = uint16(min(max(prefetch, 1), math.MaxUint16))
+		tune.retainHandling = 1
+	}
+	prefix := m.store.topic(m.stream.ID, "")
+	wildcard := hasWildcard(subject)
+
+	cm, err := m.store.open(ctx, clientID, durable, expiry, filter, func(pr paho.PublishReceived) (bool, error) {
+		if len(pr.Packet.Payload) == 0 {
+			// A retained value being cleared: no frame, nothing to deliver.
+			// Settled at once, or a durable session would be handed it again
+			// forever.
+			m.store.log.Debug(ctx, "skipping an empty message (a retained value cleared)", telemetry.Fields{"subject": subject})
+			_ = pr.Client.Ack(pr.Packet)
+			return true, nil
+		}
+		if !durable {
+			_ = pr.Client.Ack(pr.Packet)
+		}
+		on := subject
+		if wildcard && strings.HasPrefix(pr.Packet.Topic, prefix) {
+			on = strings.TrimPrefix(pr.Packet.Topic, prefix)
+		}
+		msg, derr := core.Unpack(m.store.registry, on, pr.Packet.Payload)
 		if derr != nil {
 			// One bad message is not a reason to tear down a healthy
 			// subscription, but it must be acknowledged or a durable session
 			// would be handed it again forever.
 			m.store.log.Warn(ctx, "acknowledging a malformed message",
 				telemetry.Fields{"subject": subject, "error": derr.Error()})
-			_ = pr.Client.Ack(pr.Packet)
+			if durable {
+				_ = pr.Client.Ack(pr.Packet)
+			}
 			// Reporting the decode failure back to paho would be reporting it
 			// to the wrong place: this is one bad payload, not a fault in the
 			// connection, and returning it here is what would tear the
 			// subscription down.
-			return true, nil //nolint:nilerr // handled by acknowledging it
+			return true, nil
+		}
+		if headers := headersOf(pr.Packet); headers != nil {
+			msg.Headers = msg.Headers.Merged(headers)
 		}
 		select {
 		case raw <- received{Message: msg, client: pr.Client, packet: pr.Packet}:
 		case <-ctx.Done():
 		}
 		return true, nil
-	})
+	}, tune)
 	if err != nil {
 		return nil, nil, err
 	}

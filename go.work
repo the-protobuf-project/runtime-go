@@ -8,6 +8,7 @@ use (
 	./database
 	./database/examples
 	./events
+	./events/stream
 	./grpc
 	./interfaces
 	./network

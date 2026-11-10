@@ -3,6 +3,7 @@ package streams
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // Providers are not equally capable, and pretending otherwise is how a contract
@@ -112,6 +113,61 @@ func (d Delivery) Nak(ctx context.Context) error {
 		return nil
 	}
 	return d.acker.Nak(ctx)
+}
+
+// DelayedAcker is implemented by an [Acker] whose broker can hold a
+// redelivery back: NATS JetStream's delayed nak, Redis Streams' idle reclaim.
+// Callers reach it through [Delivery.NakAfter].
+type DelayedAcker interface {
+	Acker
+
+	// NakAfter returns the message for redelivery no sooner than delay from
+	// now.
+	NakAfter(ctx context.Context, delay time.Duration) error
+
+	// MaxNakDelay is the longest delay NakAfter honors, where the broker caps
+	// it; zero when there is no cap.
+	MaxNakDelay() time.Duration
+}
+
+// CanDelayRedelivery reports whether [Delivery.NakAfter] really waits on this
+// delivery's provider. Where it does not, NakAfter returns the message for
+// redelivery at once and reports [ErrUnsupported].
+func (d Delivery) CanDelayRedelivery() bool {
+	_, ok := d.acker.(DelayedAcker)
+	return ok
+}
+
+// MaxRedeliveryDelay is the longest delay [Delivery.NakAfter] waits on this
+// delivery's provider, where the broker caps it (Redis Streams waits at most
+// its reclaim interval); zero when there is no cap or no delay at all.
+func (d Delivery) MaxRedeliveryDelay() time.Duration {
+	if da, ok := d.acker.(DelayedAcker); ok {
+		return da.MaxNakDelay()
+	}
+	return 0
+}
+
+// NakAfter returns the message for redelivery no sooner than delay from now,
+// for work that should wait before it is tried again (a device that is busy, a
+// dependency that is restarting).
+//
+// Where the broker cannot hold a redelivery back, the message is returned for
+// redelivery at once, since leaving it unsettled would strand it, holding a
+// prefetch slot until the broker gives up on the consumer; the call then
+// reports [ErrUnsupported] so the caller knows it did not wait. See
+// [Delivery.CanDelayRedelivery].
+func (d Delivery) NakAfter(ctx context.Context, delay time.Duration) error {
+	if d.acker == nil {
+		return nil
+	}
+	if da, ok := d.acker.(DelayedAcker); ok {
+		return da.NakAfter(ctx, delay)
+	}
+	if err := d.acker.Nak(ctx); err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: this provider cannot hold a redelivery back, so the message was returned for redelivery at once", ErrUnsupported)
 }
 
 // Positioned is implemented by a provider whose stored log can be read from

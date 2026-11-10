@@ -4,12 +4,16 @@ package mqtt_test
 // need no broker installed and no container.
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/eclipse/paho.golang/autopaho"
+	"github.com/eclipse/paho.golang/paho"
 	mochi "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
 	"github.com/mochi-mqtt/server/v2/listeners"
@@ -131,5 +135,85 @@ func recv[T any](t *testing.T, ch <-chan T, within time.Duration) T {
 		t.Fatalf("nothing arrived within %s", within)
 		var zero T
 		return zero
+	}
+}
+
+// declareWith creates stream as given and binds a manager to it.
+func declareWith(t *testing.T, s streams.Streams, stream streams.Stream) (streams.Stream, streams.Manager) {
+	t.Helper()
+
+	created, err := s.Create(t.Context(), stream)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	m, err := s.Bind(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	return created, m
+}
+
+// raw is a plain MQTT 5 client on the broker at addr, reading and writing the
+// wire as another tool on the broker would, subscribed to filter when it is
+// not empty.
+func raw(t *testing.T, addr, filter string) (*autopaho.ConnectionManager, <-chan *paho.Publish) {
+	t.Helper()
+
+	server, err := url.Parse("mqtt://" + addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan *paho.Publish, 64)
+	up := make(chan error, 1)
+	cm, err := autopaho.NewConnection(t.Context(), autopaho.ClientConfig{
+		ServerUrls: []*url.URL{server}, KeepAlive: 30, CleanStartOnInitialConnection: true,
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
+			if filter == "" {
+				up <- nil
+				return
+			}
+			go func() {
+				_, serr := cm.Subscribe(t.Context(), &paho.Subscribe{
+					Subscriptions: []paho.SubscribeOptions{{Topic: filter, QoS: 1}},
+				})
+				up <- serr
+			}()
+		},
+		ClientConfig: paho.ClientConfig{
+			ClientID: "raw-" + time.Now().Format("150405.000000000"),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){func(pr paho.PublishReceived) (bool, error) {
+				select {
+				case got <- pr.Packet:
+				default:
+				}
+				return true, nil
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("raw client: %v", err)
+	}
+	t.Cleanup(func() { _ = cm.Disconnect(context.Background()) })
+	select {
+	case err := <-up:
+		if err != nil {
+			t.Fatalf("raw subscribe: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the raw client did not connect")
+	}
+	return cm, got
+}
+
+// quiet asserts nothing arrives on ch within window.
+func quiet[T any](t *testing.T, ch <-chan T, window time.Duration, what string) {
+	t.Helper()
+
+	select {
+	case v, ok := <-ch:
+		if ok {
+			t.Errorf("%s received %+v", what, v)
+		}
+	case <-time.After(window):
 	}
 }
