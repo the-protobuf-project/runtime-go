@@ -1013,7 +1013,12 @@ func TestJetStreamALargeBatchLandsInOrder(t *testing.T) {
 	p, _ := streams.AsPositioned(m)
 	ch, _ := p.ConsumeFrom(ctx, subject, "in-order", streams.FromEarliest)
 	for i, id := range ids {
-		d := recvDelivery(t, ch, 10*time.Second)
+		// This checks order, not latency. On a loaded runner a pull request
+		// whose response is lost stalls the iterator until nats.go's missed
+		// heartbeat recovery pulls again (up to its 30s pull expiry), so one
+		// gap can pass 10s without anything being wrong; 45s still catches a
+		// consumer that has stopped.
+		d := recvDelivery(t, ch, 45*time.Second)
 		if d.ID != id {
 			t.Fatalf("entry %d arrived as %q, want %q", i, d.ID, id)
 		}
