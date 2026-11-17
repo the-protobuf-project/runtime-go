@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	mochi "github.com/mochi-mqtt/server/v2"
 	"github.com/the-protobuf-project/runtime-go/streams"
 	streamsmqtt "github.com/the-protobuf-project/runtime-go/streams/mqtt"
 )
@@ -346,7 +347,8 @@ func TestAResumedSessionGetsItsBacklogWhileSubscribingAgain(t *testing.T) {
 // A durable consumer is handed a retained value when its subscription is new,
 // not again every time it resumes.
 func TestARetainedValueReachesADurableConsumerOnce(t *testing.T) {
-	_, m := declare(t, testStreams(t), subject)
+	addr, srv := testBroker(t, broker{})
+	_, m := declare(t, connect(t, addr), subject)
 	d := mustDurable(t, m)
 	sent, err := m.Publish(t.Context(), subject, event{User: "last"}, streams.Retain())
 	if err != nil {
@@ -362,8 +364,15 @@ func TestARetainedValueReachesADurableConsumerOnce(t *testing.T) {
 	if got.ID != sent {
 		t.Errorf("delivered %q, want the retained %q", got.ID, sent)
 	}
-	_ = got.Ack(ctx)
-	time.Sleep(300 * time.Millisecond)
+	if err = got.Ack(ctx); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
+	// Wait for the broker to have the PUBACK before going away. An ack still
+	// queued at the disconnect leaves the message in flight against the
+	// session, and MQTT then rightly delivers it again on resume -- which is a
+	// redelivery, not the retained value coming back, and is what a fixed
+	// sleep here raced against on a loaded runner.
+	settled(t, srv, 10*time.Second)
 	cancel()
 	time.Sleep(500 * time.Millisecond)
 
@@ -382,4 +391,25 @@ func mustDurable(t *testing.T, m streams.Manager) streams.Durable {
 		t.Fatalf("AsDurable: %v", err)
 	}
 	return d
+}
+
+// settled waits until no client of srv has a QoS message in flight: every
+// delivery the broker sent has been acknowledged back to it.
+func settled(t *testing.T, srv *mochi.Server, within time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(within)
+	for {
+		inflight := 0
+		for _, cl := range srv.Clients.GetAll() {
+			inflight += cl.State.Inflight.Len()
+		}
+		if inflight == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d messages still in flight at the broker after %s", inflight, within)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
