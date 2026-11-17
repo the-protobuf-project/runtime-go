@@ -136,7 +136,19 @@ func (r *Runtime) Start(ctx context.Context) error {
 			}(s, p)
 
 			select {
-			case eps := <-readyCh:
+			case eps, ok := <-readyCh:
+				if !ok {
+					// Serve returned without reporting ready. Its goroutine
+					// closes readyCh and only then sends the error, so wait for
+					// it: a non-blocking read here could miss it and report a
+					// failed service as started.
+					cancel()
+					err := <-errCh
+					if err == nil {
+						err = fmt.Errorf("agents: %s stopped before it mounted", s.Protocol())
+					}
+					return fmt.Errorf("agents: %s failed to start: %w", s.Protocol(), err)
+				}
 				endpoints = append(endpoints, eps...)
 			case <-time.After(r.cfg.ReadyTimeout):
 				cancel()
@@ -146,8 +158,9 @@ func (r *Runtime) Start(ctx context.Context) error {
 				return ctx.Err()
 			}
 
-			// The goroutine closes readyCh when Serve returns without ever
-			// reporting ready, which lands here as a zero-length read.
+			// A service that reported ready and then failed at once is caught
+			// here if its error has already landed; one that fails later is
+			// reported by Wait.
 			select {
 			case err := <-errCh:
 				cancel()
