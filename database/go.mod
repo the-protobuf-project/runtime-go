@@ -11,10 +11,18 @@ require (
 	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261118052056-98385b147b4d
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
 	go.mongodb.org/mongo-driver/v2 v2.10.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
+)
+
+require (
+	github.com/coder/websocket v1.8.15 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/hasura/go-graphql-client v0.16.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c // indirect
 )
 
 require (

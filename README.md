@@ -211,7 +211,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>database</b> · 11 packages</summary>
+<summary><b>database</b> · 12 packages</summary>
 
 **Install**
 
@@ -246,6 +246,7 @@ b, _ := books.Get(ctx, id)
 | [`database/mongodb`](database/mongodb) | Implements the backend-agnostic store.Driver over MongoDB. |
 | [`database/orm`](database/orm) | Implements the backend-agnostic store.Driver over GORM. |
 | [`database/redis`](database/redis) | Implements the backend-agnostic store.Driver over Redis: durable records addressed by a store.Resource's primary key, stored as proto wire format, with a set of keys alongside so they can be listed. |
+| [`database/repox`](database/repox) | The shared runtime of the generated repositories: the error vocabulary adapters map their backend errors onto, the connection bundle the per-schema factories pick an adapter from, the list-request shape every repository List takes, the Unit every schema's Batch queues into, and the small helpers (resource-name splitting, ULID minting, mask matching) the generated method bodies share. |
 | [`database/store`](database/store) | The backend-agnostic core of the runtime data layer: a single CRUD Driver contract that operates on proto messages, a Resource descriptor that mirrors protorm's IR at runtime, and a reflection bridge every driver reuses to move values between a proto message and a backend column map. |
 | [`database/storex`](database/storex) | The shared runtime the generated GORM stores build on: the ListOptions every List/Count call takes, a generic Store interface every generated store satisfies, a GenericStore that implements it for any model, EnsureSchemas for schema-qualified tables, and the Telemetry seam the instrumented stores observe through. |
 | [`database/timescale`](database/timescale) | Implements the time-series half of the database contract over TimescaleDB. |
