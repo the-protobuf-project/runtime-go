@@ -3,14 +3,14 @@ module github.com/the-protobuf-project/runtime-go/events/stream
 go 1.26.4
 
 require (
-	github.com/the-protobuf-project/runtime-go/events v0.0.0-00010101000000-000000000000
-	github.com/the-protobuf-project/runtime-go/streams v0.0.0-00010101000000-000000000000
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
+	github.com/the-protobuf-project/runtime-go/events v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/streams v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
 )
 
 require (
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261021171349-70cd275896ec // indirect
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261117164019-f74fddf59d0a // indirect
 )
 
 // events, streams and the modules they share are versioned alongside this one

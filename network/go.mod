@@ -15,6 +15,6 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 )
 
-require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
+require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
 
 replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
