@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.17.10
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
-	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261118033015-9cd74ccf52a8
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -36,7 +36,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/supranational/blst v0.3.17 // indirect
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a // indirect
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect

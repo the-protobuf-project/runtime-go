@@ -12,8 +12,8 @@ go 1.26.4
 
 require (
 	github.com/gopcua/opcua v0.9.1
-	github.com/the-protobuf-project/runtime-go/streams v0.0.0-20261117164019-f74fddf59d0a
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/streams v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/rabbitmq/amqp091-go v1.16.0 // indirect
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261117164019-f74fddf59d0a // indirect
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118033015-9cd74ccf52a8 // indirect
 	github.com/twmb/franz-go v1.22.2 // indirect
 	github.com/twmb/franz-go/pkg/kadm v1.19.0 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect

@@ -11,9 +11,9 @@ require (
 	github.com/nats-io/nats.go v1.55.0
 	github.com/rabbitmq/amqp091-go v1.16.0
 	github.com/redis/go-redis/v9 v9.23.0
-	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261117164019-f74fddf59d0a
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118033015-9cd74ccf52a8
 	github.com/twmb/franz-go v1.22.3
 	github.com/twmb/franz-go/pkg/kadm v1.20.0
 	github.com/twmb/franz-go/pkg/kfake v0.0.0-20260811033724-b8e7523ac75a
