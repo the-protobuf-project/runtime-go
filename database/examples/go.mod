@@ -13,8 +13,8 @@ go 1.26.4
 require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/redis/go-redis/v9 v9.23.0
-	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261118033015-9cd74ccf52a8
-	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261118052056-98385b147b4d
+	github.com/the-protobuf-project/runtime-go/database v0.0.0-20261118052056-98385b147b4d
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2
@@ -43,8 +43,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8 // indirect
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118033015-9cd74ccf52a8 // indirect
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d // indirect
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118052056-98385b147b4d // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

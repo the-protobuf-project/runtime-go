@@ -5,9 +5,9 @@ go 1.26.4
 require (
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
 	github.com/redis/go-redis/v9 v9.23.0
-	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261118033015-9cd74ccf52a8
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261118052056-98385b147b4d
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118052056-98385b147b4d
 )
 
 require (

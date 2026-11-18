@@ -26,6 +26,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20261019180522-ce908d29299b // indirect
 )
 
-require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8
+require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
 
 replace github.com/the-protobuf-project/runtime-go/telemetry => ../telemetry
