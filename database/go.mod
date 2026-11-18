@@ -8,8 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/oklog/ulid/v2 v2.1.2
 	github.com/redis/go-redis/v9 v9.23.0
-	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261023180446-a76d56a9756b
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261024035205-2d2b451ed122
+	github.com/the-protobuf-project/runtime-go/cache v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
 	go.mongodb.org/mongo-driver/v2 v2.10.0
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/mysql v1.6.0
@@ -40,7 +40,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261021141431-6d4588022f2b // indirect
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261117164019-f74fddf59d0a // indirect
 	github.com/xdg-go/scram v1.4.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect

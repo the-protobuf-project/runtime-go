@@ -2,7 +2,7 @@ module github.com/the-protobuf-project/runtime-go/observability
 
 go 1.26.4
 
-require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
+require github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect

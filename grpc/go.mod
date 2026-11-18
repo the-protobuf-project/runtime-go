@@ -10,9 +10,9 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/olekukonko/tablewriter v1.1.5
 	github.com/quic-go/quic-go v0.65.0
-	github.com/the-protobuf-project/runtime-go/agents v0.0.0-20261021141431-6d4588022f2b
-	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261021171349-70cd275896ec
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261021141431-6d4588022f2b
+	github.com/the-protobuf-project/runtime-go/agents v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261117164019-f74fddf59d0a
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261117164019-f74fddf59d0a
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
