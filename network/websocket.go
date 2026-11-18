@@ -65,7 +65,7 @@ func (ws *WebSocketClient) Connect(opts ConnectionOptions) error {
 	}
 
 	// The handshake is one dial operation, carrying its trace to the server.
-	obs := opts.Signals.Observer("network")
+	obs := opts.Signals.Or().Observer("network")
 	dctx, op := obs.Start(ws.ctx, "websocket", "dial", telemetry.SpanKindClient,
 		telemetry.WithSpanAttributes(map[string]any{"server.address": opts.URL.Host}))
 	headers := convertToHTTPHeader(opts.Headers)

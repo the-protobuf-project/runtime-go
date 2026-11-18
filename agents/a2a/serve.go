@@ -24,7 +24,7 @@ func NewRequestHandler(cfg *ServerConfig, executor a2asrv.AgentExecutor) a2asrv.
 	opts := make([]a2asrv.RequestHandlerOption, 0, len(cfg.HandlerOptions)+1)
 	opts = append(opts, a2asrv.WithExtendedAgentCard(BuildCard(cfg)))
 	opts = append(opts, cfg.HandlerOptions...)
-	return a2asrv.NewHandler(executor, opts...)
+	return a2asrv.NewHandler(observeExecutor(executor, cfg.Signals.Or()), opts...)
 }
 
 // AgentCardHandler serves cfg's public card. A host sharing one mux across

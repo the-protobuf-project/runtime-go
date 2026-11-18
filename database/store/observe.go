@@ -63,6 +63,25 @@ func Instrument(db *DB, opts ...ObserveOption) *DB {
 	return out
 }
 
+// InstrumentDriverDefault returns d observed through the process's default
+// signals, for code that holds a bare [Driver] rather than a [DB] (an
+// adapter serving a driver directly). A driver that is already observed is
+// returned as it is, so one taken from an instrumented DB is not reported
+// twice; so is d when the process has no default signals.
+func InstrumentDriverDefault(d Driver, backend string) Driver {
+	if d == nil {
+		return nil
+	}
+	if _, ok := d.(interface{ observedByStore() }); ok {
+		return d
+	}
+	return InstrumentDefault(Build(d, backend, "", nil)).Driver
+}
+
+// observedByStore marks a driver this package observes; every observed
+// variant embeds observedDriver.
+func (*observedDriver) observedByStore() {}
+
 // InstrumentDefault is [Instrument] with the process's default signals
 // ([telemetry.Default], which runtime-go/observability's Adopt sets): what
 // every provider's SetDatabase returns, so a database selected after the
