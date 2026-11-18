@@ -528,7 +528,7 @@ runtime.ingestion.queue.depth {record}     admitted records not yet written
 
 | Package | What it does |
 | --- | --- |
-| [`telemetry`](telemetry) | Defines the backend-agnostic contracts generated and hand-written code instruments against: Meter for metrics, Logger for logs and Tracer for spans. |
+| [`telemetry`](telemetry) | Defines the backend-agnostic contracts generated and hand-written code instruments against: Meter for metrics, Logger for logs, Tracer for spans, Profiler for attributing continuous-profile samples, and Baggage for the W3C baggage that travels with a trace. |
 | [`telemetry/recorder`](telemetry/recorder) | Records what code reports through the telemetry contracts, for its tests to check: one Recorder is a telemetry.Meter, a telemetry.Tracer and a telemetry.Logger, and keeps every measurement, span and log record in memory. |
 
 </details>
