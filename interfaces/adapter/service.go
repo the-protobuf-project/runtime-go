@@ -3,6 +3,8 @@ package adapter
 import (
 	"context"
 	"errors"
+	"path"
+	"reflect"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,8 +23,24 @@ type Service struct {
 }
 
 // New returns a Service backed by driver, resolving resources through registry.
+// The driver is observed through the process's default signals
+// (telemetry.Default, which runtime-go/observability's Adopt sets) unless it
+// already is, under the name of the package that implements it ("evm",
+// "fabric", "orm").
 func New(driver store.Driver, registry *store.Registry) *Service {
-	return &Service{driver: driver, registry: registry}
+	return &Service{driver: store.InstrumentDriverDefault(driver, backendOf(driver)), registry: registry}
+}
+
+// backendOf names a driver by the package that implements it.
+func backendOf(d store.Driver) string {
+	t := reflect.TypeOf(d)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t == nil || t.PkgPath() == "" {
+		return "store"
+	}
+	return path.Base(t.PkgPath())
 }
 
 // Driver returns the underlying driver (handy for advanced shims, e.g. the LRO

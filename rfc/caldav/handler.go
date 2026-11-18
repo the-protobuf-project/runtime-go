@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/the-protobuf-project/runtime-go/telemetry"
 )
 
 // DefaultPrefix is where the CalDAV tree is mounted unless [WithPrefix] says
@@ -24,6 +26,8 @@ type Handler struct {
 	maxWindow   time.Duration
 	now         func() time.Time
 	errorStatus func(error) int
+	signals     telemetry.Signals
+	obs         *telemetry.Observer
 }
 
 // Option configures a [Handler].
@@ -67,6 +71,9 @@ func New(store Store, opts ...Option) *Handler {
 	for _, o := range opts {
 		o(h)
 	}
+	if s := h.signals.Or(); s.Enabled() {
+		h.obs = s.Observer("caldav")
+	}
 	return h
 }
 
@@ -96,6 +103,11 @@ func (h *Handler) WellKnown() http.Handler {
 // ServeHTTP dispatches one CalDAV request. Requests outside the prefix are
 // 404s.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.observe(w, r, h.serve)
+}
+
+// serve dispatches one request; ServeHTTP observes it.
+func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
 	t, ok := h.parsePath(r.URL.EscapedPath())
 	if !ok {
 		http.NotFound(w, r)
