@@ -60,5 +60,5 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, err
 		return nil, fmt.Errorf("gorm: database %q is not reachable: %w", name, err)
 	}
 
-	return store.Build(&Driver{db: p.db, schema: name}, "gorm", name, nil), nil
+	return store.InstrumentDefault(store.Build(&Driver{db: p.db, schema: name}, "gorm", name, nil)), nil
 }

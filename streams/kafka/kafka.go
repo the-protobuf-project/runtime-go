@@ -205,7 +205,7 @@ func Connect(ctx context.Context, seeds []string, opts ...Option) (streams.Strea
 		s.closeProducers()
 		return nil, err
 	}
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "kafka"), nil
 }
 
 // buildProducers builds cfg.producers clients without touching the network:

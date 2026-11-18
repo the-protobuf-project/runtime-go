@@ -84,7 +84,7 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, err
 	}
 
 	d := &Driver{Driver: relational, db: p.db, schema: name}
-	return store.Build(d, "timescaledb", name, inner.Release), nil
+	return store.InstrumentDefault(store.Build(d, "timescaledb", name, inner.Release)), nil
 }
 
 // verifyExtension reports whether the TimescaleDB extension is installed.

@@ -122,9 +122,9 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 
 	cfg.log.Debug(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
-	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
+	return streams.Instrument(&store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
-		done: make(chan struct{})}, nil
+		done: make(chan struct{})}, telemetry.Default(), "zeromq"), nil
 }
 
 // Subscribe returns a [streams.Streams] that connects to endpoint and receives
@@ -140,9 +140,9 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 
 	cfg.log.Debug(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
-	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
+	return streams.Instrument(&store{endpoint: endpoint, cfg: cfg, log: cfg.log,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
-		done: make(chan struct{})}, nil
+		done: make(chan struct{})}, telemetry.Default(), "zeromq"), nil
 }
 
 // bound is the endpoint a publisher actually listens on: a TCP port of 0 is

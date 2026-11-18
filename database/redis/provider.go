@@ -57,5 +57,5 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, err
 	}
 
 	d := &Driver{rdb: p.rdb, keys: newKeys(p.cfg.prefix, name)}
-	return store.Build(d, "redis", name, nil), nil
+	return store.InstrumentDefault(store.Build(d, "redis", name, nil)), nil
 }

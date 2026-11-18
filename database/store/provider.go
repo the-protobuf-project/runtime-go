@@ -70,6 +70,11 @@ type DB struct {
 	// was taken.
 	Name string
 
+	// raw is the uninstrumented DB this one wraps, or nil when it wraps none,
+	// so instrumenting again replaces the instrumentation rather than adding
+	// a second layer of it.
+	raw *DB
+
 	// Release frees whatever selecting this database allocated, and is nil when
 	// selecting it allocated nothing. Call [DB.Close] rather than this.
 	Release func() error

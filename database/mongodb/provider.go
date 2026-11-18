@@ -50,7 +50,7 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, err
 	}
 
 	d := &Driver{client: p.client.inner, db: name}
-	return store.Build(d, "mongodb", name, nil), nil
+	return store.InstrumentDefault(store.Build(d, "mongodb", name, nil)), nil
 }
 
 // DropDatabase removes a database and everything in it.

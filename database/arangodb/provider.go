@@ -77,7 +77,7 @@ func (p *Provider) SetDatabase(ctx context.Context, name string) (*store.DB, err
 	}
 
 	d := &Driver{client: p.client.inner, dbName: name, registry: p.registry}
-	return store.Build(d, "arangodb", name, nil), nil
+	return store.InstrumentDefault(store.Build(d, "arangodb", name, nil)), nil
 }
 
 // EnsureDatabase creates a database if it is not already there, and is safe to

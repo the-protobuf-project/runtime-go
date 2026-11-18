@@ -44,7 +44,7 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 	// The supervisor outlives this call by design: it runs until Close, not
 	// until ctx ends.
 	go s.supervise(closed) //nolint:gosec // see above
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "rabbitmq"), nil
 }
 
 // Use returns a [streams.Streams] over a connection you dialed — usually one

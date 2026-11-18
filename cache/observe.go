@@ -27,7 +27,11 @@ func WithObservability(next Document, signals telemetry.Signals) Document {
 	if !signals.Enabled() {
 		return next
 	}
-	o := &observed{obs: signals.Observer("cache")}
+	return observeDocument(next, &observed{obs: signals.Observer("cache"), backend: "cache"})
+}
+
+// observeDocument wraps next, keeping an Indexed cache Indexed.
+func observeDocument(next Document, o *observed) Document {
 	doc := &observedDocument{o: o, next: next}
 	if ix, ok := next.(Indexed); ok {
 		return &observedIndexed{observedDocument: doc, ix: ix}
@@ -46,7 +50,7 @@ func WithVolatileObservability(next Volatile, signals telemetry.Signals) Volatil
 	if !signals.Enabled() {
 		return next
 	}
-	return &observedVolatile{o: &observed{obs: signals.Observer("cache")}, next: next}
+	return &observedVolatile{o: &observed{obs: signals.Observer("cache"), backend: "cache"}, next: next}
 }
 
 // WithAsideObservability is [WithObservability] for an [Aside] cache:
@@ -56,17 +60,65 @@ func WithAsideObservability(next Aside, signals telemetry.Signals) Aside {
 	if !signals.Enabled() {
 		return next
 	}
-	return &observedAside{o: &observed{obs: signals.Observer("cache")}, next: next}
+	return &observedAside{o: &observed{obs: signals.Observer("cache"), backend: "cache"}, next: next}
+}
+
+// Instrument returns db with every strategy observed through signals: its
+// Document, Indexed and Volatile caches, and every Aside view it builds. It
+// is [WithObservability] and its siblings for a whole database, with one
+// difference: operations are labeled with the database's backend ("redis",
+// "memcached") rather than "cache". Without signals it returns db as it was
+// built. Instrumenting an instrumented db replaces its signals rather than
+// adding a second layer.
+func Instrument(db *DB, signals telemetry.Signals) *DB {
+	if db == nil {
+		return nil
+	}
+	if db.raw != nil {
+		db = db.raw
+	}
+	if !signals.Enabled() {
+		return db
+	}
+	backend := db.Backend
+	if backend == "" {
+		backend = "cache"
+	}
+	o := &observed{obs: signals.Observer("cache"), backend: backend}
+	out := *db
+	out.raw = db
+	out.Document = observeDocument(db.Document, o)
+	if db.Indexed != nil {
+		if ix, ok := observeDocument(db.Indexed, o).(Indexed); ok {
+			out.Indexed = ix
+		}
+	}
+	if db.Volatile != nil {
+		out.Volatile = &observedVolatile{o: o, next: db.Volatile}
+	}
+	if aside := db.Aside; aside != nil {
+		out.Aside = func(load Loader) Aside { return &observedAside{o: o, next: aside(load)} }
+	}
+	return &out
+}
+
+// InstrumentDefault is [Instrument] with the process's default signals
+// ([telemetry.Default], which runtime-go/observability's Adopt sets): what
+// every provider's SetDatabase returns, so a cache selected after the
+// application adopted its SDK is observed without being handed signals.
+func InstrumentDefault(db *DB) *DB {
+	return Instrument(db, telemetry.Default())
 }
 
 // observed starts the operations of one cache.
 type observed struct {
-	obs *telemetry.Observer
+	obs     *telemetry.Observer
+	backend string
 }
 
 // run reports fn as one operation.
 func (o *observed) run(ctx context.Context, operation string, written int, fn func(ctx context.Context) (read int, err error)) error {
-	ctx, op := o.obs.Start(ctx, "cache", operation, telemetry.SpanKindClient)
+	ctx, op := o.obs.Start(ctx, o.backend, operation, telemetry.SpanKindClient)
 	read, err := fn(ctx)
 	if err == nil {
 		op.ReadRecords(read)

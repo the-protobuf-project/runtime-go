@@ -46,3 +46,38 @@ func TestATraceCrossesJetStream(t *testing.T) {
 		t.Error("the send time did not cross the broker")
 	}
 }
+
+// A provider built after the application set the process's signals reports
+// through them without being handed any, and signals passed explicitly later
+// replace the default rather than stacking a second layer.
+func TestAProviderIsInstrumentedWithTheDefaultAndReplaceable(t *testing.T) {
+	def := recorder.New()
+	telemetry.SetDefault(def.Signals())
+	t.Cleanup(func() { telemetry.SetDefault(telemetry.Signals{}) })
+
+	s := jetStream(t)
+	stream, m := declare(t, s, subject)
+	if _, err := m.Publish(t.Context(), subject, map[string]string{"id": "u-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if def.Span("streams.publish") == nil {
+		t.Fatalf("the default signals saw no publish: %v", def.Spans())
+	}
+
+	mine := recorder.New()
+	s = streams.Instrument(s, mine.Signals(), "nats")
+	before := len(def.Spans())
+	m, err := s.Bind(t.Context(), stream.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Publish(t.Context(), subject, map[string]string{"id": "u-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if mine.Span("streams.publish") == nil {
+		t.Error("the caller's signals saw no publish")
+	}
+	if n := len(def.Spans()); n != before {
+		t.Errorf("the replaced default still saw %d more spans", n-before)
+	}
+}
