@@ -4,8 +4,8 @@ go 1.26.4
 
 require (
 	github.com/lib/pq v1.12.3
-	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118033015-9cd74ccf52a8
-	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118033015-9cd74ccf52a8
+	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
+	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118052056-98385b147b4d
 )
 
 require github.com/oklog/ulid/v2 v2.1.2 // indirect
