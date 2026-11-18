@@ -51,6 +51,14 @@ type Options struct {
 	// Tracing enables the tracing pipeline.
 	Tracing bool
 
+	// LogLevel is the most detailed level written: telemetry.ModuleLevel_3
+	// for debug, _2 for info, _1 for errors only. Zero leaves it to the SDK's
+	// own chain: a per-module level in its config file, then its global
+	// logging.level, then the environment (debug in development, info in
+	// production). The runtime logs nearly everything at debug, so a process
+	// that wants to see it says so here or in that config.
+	LogLevel telemetry.LogLevel
+
 	// ProfilingServer is a Pyroscope server address. Set, the SDK profiles
 	// continuously and [Client.Profiler] labels every runtime operation's
 	// samples with its component, backend and operation. Empty leaves
@@ -94,8 +102,10 @@ func Setup(opts Options) (*Client, error) {
 
 	build := func(withExporters bool) (*telemetry.Telemetry, error) {
 		b := telemetry.New().
-			WithService(opts.Service, opts.Version).
-			WithLogLevel(telemetry.ModuleLevel_2)
+			WithService(opts.Service, opts.Version)
+		if opts.LogLevel != 0 { // zero is the SDK's unset level
+			b = b.WithLogLevel(opts.LogLevel)
+		}
 		if withExporters {
 			if opts.OTLPHost != "" {
 				b = b.WithOTLP(opts.OTLPHost, opts.OTLPPort)

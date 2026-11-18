@@ -138,7 +138,7 @@ func (s *streamHandler) Create(ctx context.Context, in streams.Stream) (streams.
 		return streams.Stream{}, fmt.Errorf("redis: cannot create stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
+	s.log.Debug(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
 	return out, nil
 }
 
@@ -239,7 +239,7 @@ func (s *streamHandler) Update(ctx context.Context, id string, in streams.Stream
 		return streams.Stream{}, fmt.Errorf("redis: cannot update stream %s: %w", id, err)
 	}
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": id})
+	s.log.Debug(ctx, "stream updated", telemetry.Fields{"id": id})
 	return out, nil
 }
 
@@ -260,7 +260,7 @@ func (s *streamHandler) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("%w: stream %s", streams.ErrNotFound, id)
 	}
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	s.log.Debug(ctx, "stream deleted", telemetry.Fields{"id": id})
 	return nil
 }
 

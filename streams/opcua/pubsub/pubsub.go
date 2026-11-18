@@ -182,7 +182,7 @@ func (p *Provider) PublishMetadata(ctx context.Context, stream, writer string, m
 	p.counters.Lock()
 	p.versions[writerKey{g.name, writer}] = version
 	p.counters.Unlock()
-	p.log.Info(ctx, "opcua pubsub: metadata published", telemetry.Fields{"stream": stream, "writer": writer, "topic": topic})
+	p.log.Debug(ctx, "opcua pubsub: metadata published", telemetry.Fields{"stream": stream, "writer": writer, "topic": topic})
 	return version, nil
 }
 
@@ -384,7 +384,7 @@ func (p *Provider) Create(ctx context.Context, s streams.Stream) (streams.Stream
 	p.mu.Lock()
 	p.declared[id] = out
 	p.mu.Unlock()
-	p.log.Info(ctx, "opcua pubsub: stream declared", telemetry.Fields{"stream": id, "subjects": out.Subjects})
+	p.log.Debug(ctx, "opcua pubsub: stream declared", telemetry.Fields{"stream": id, "subjects": out.Subjects})
 	return out, nil
 }
 

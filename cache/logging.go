@@ -40,8 +40,8 @@ func WithLoggingMiddleware(log telemetry.Logger) Middleware {
 
 // record writes the outcome of one operation.
 //
-// A miss is logged at warn rather than error: an absent key is a normal cache
-// result, and logging it as a failure would bury real errors in noise. The
+// A miss is logged at debug, like a hit: an absent key is a normal cache
+// result, and logging it any louder would bury real problems in noise. The
 // duration is always included — a slow cache is the usual thing you are looking
 // for when you turn these on.
 func (l *loggingCache) record(ctx context.Context, op, id string, start time.Time, err error) {
@@ -57,7 +57,7 @@ func (l *loggingCache) record(ctx context.Context, op, id string, start time.Tim
 	case err == nil:
 		l.log.Debug(ctx, "cache "+op, fields)
 	case errors.Is(err, ErrNotFound):
-		l.log.Warn(ctx, "cache miss", fields)
+		l.log.Debug(ctx, "cache miss", fields)
 	default:
 		l.log.Error(ctx, "cache "+op+" failed", err, fields)
 	}

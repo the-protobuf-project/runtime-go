@@ -120,7 +120,7 @@ func Publish(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 	}
 	endpoint = bound(endpoint, sock.Addr())
 
-	cfg.log.Info(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
+	cfg.log.Debug(ctx, "publishing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log, pub: sock,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
@@ -138,7 +138,7 @@ func Subscribe(ctx context.Context, endpoint string, opts ...Option) (streams.St
 	}
 	cfg := newConfig(opts...)
 
-	cfg.log.Info(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
+	cfg.log.Debug(ctx, "subscribing", telemetry.Fields{"endpoint": endpoint})
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &store{endpoint: endpoint, cfg: cfg, log: cfg.log,
 		codec: codec, registry: registry, metrics: metrics, declared: map[string]streams.Stream{},
@@ -280,7 +280,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.declared[id] = out
 	s.mu.Unlock()
 
-	s.log.Info(ctx, "stream declared", telemetry.Fields{
+	s.log.Debug(ctx, "stream declared", telemetry.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil

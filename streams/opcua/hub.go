@@ -491,7 +491,7 @@ func (h *hub) check() {
 	// subscription's id read after it is the recreated one.
 	if !slices.Contains(h.s.client.SubscriptionIDs(), h.subID) {
 		h.subID = h.sub.SubscriptionID
-		h.s.log.Info(ctx, "the subscription was recreated", telemetry.Fields{"subscription": h.subID})
+		h.s.log.Debug(ctx, "the subscription was recreated", telemetry.Fields{"subscription": h.subID})
 		h.relearn(ctx)
 	}
 	if session := h.s.client.Session(); session != h.session {
@@ -563,7 +563,7 @@ func (h *hub) rebind(ctx context.Context) bool {
 		if node.Namespace() == m.r.node.Namespace() {
 			continue
 		}
-		h.s.log.Info(ctx, "the server renumbered a namespace; moving the monitored item", telemetry.Fields{
+		h.s.log.Debug(ctx, "the server renumbered a namespace; moving the monitored item", telemetry.Fields{
 			"subject": m.r.subject, "from": m.r.node.Namespace(), "to": node.Namespace(),
 		})
 		h.unmonitor(ctx, m.r)

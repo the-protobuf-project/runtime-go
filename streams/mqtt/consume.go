@@ -112,7 +112,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{
+	m.store.log.Debug(ctx, "consuming", telemetry.Fields{
 		"subject": subject, "consumer": consumer, "group": o.Group, "client_id": clientID,
 	})
 
@@ -123,7 +123,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{"subject": subject, "consumer": consumer, "delivered": delivered})
+			m.store.log.Debug(ctx, "consumer stopped", telemetry.Fields{"subject": subject, "consumer": consumer, "delivered": delivered})
 		}()
 		for {
 			select {

@@ -53,8 +53,9 @@ func TestAMissingRecordDoesNotFailTheSpan(t *testing.T) {
 	if got := rec.Outcomes()["get"]; got != "not_found" {
 		t.Errorf("outcome %q", got)
 	}
+	// Started and completed, both at debug: a miss is a routine result.
 	logs := rec.Logs()
-	if len(logs) != 1 || logs[0].Level != telemetry.LevelInfo || logs[0].Msg != "runtime.operation.completed" {
+	if len(logs) != 2 || logs[1].Level != telemetry.LevelDebug || logs[1].Msg != "runtime.operation.completed" {
 		t.Errorf("logs %+v", logs)
 	}
 }
@@ -67,7 +68,7 @@ func TestAFailureFailsTheSpanAndLogsAnError(t *testing.T) {
 	if s == nil || !errors.Is(s.Err(), boom) {
 		t.Fatalf("span %+v", s)
 	}
-	if logs := rec.Logs(); len(logs) != 1 || logs[0].Level != telemetry.LevelError || logs[0].SpanID != s.ID {
+	if logs := rec.Logs(); len(logs) != 2 || logs[1].Level != telemetry.LevelError || logs[1].SpanID != s.ID {
 		t.Errorf("logs %+v", logs)
 	}
 }

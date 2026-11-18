@@ -31,8 +31,13 @@ func TestAnOperationReportsEverySignal(t *testing.T) {
 		t.Errorf("tracing: span baggage.tenant = %v, want acme", got)
 	}
 	logs := r.Logs()
-	if len(logs) != 1 || logs[0].Fields["baggage.tenant"] != "acme" {
-		t.Errorf("logging: want one completion log carrying baggage.tenant, got %+v", logs)
+	if len(logs) != 2 {
+		t.Fatalf("logging: want a start and a completion log, got %+v", logs)
+	}
+	for i, msg := range []string{"runtime.operation.started", "runtime.operation.completed"} {
+		if logs[i].Msg != msg || logs[i].Level != telemetry.LevelDebug || logs[i].Fields["baggage.tenant"] != "acme" {
+			t.Errorf("logging: log %d = %+v, want %s at debug carrying baggage.tenant", i, logs[i], msg)
+		}
 	}
 	profiles := r.Profiles()
 	want := telemetry.Labels{"component": "streams", "backend": "nats", "operation": "publish"}

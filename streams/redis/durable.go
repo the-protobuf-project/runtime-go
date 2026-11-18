@@ -201,7 +201,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 		return nil, err
 	}
 
-	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.handler.log.Debug(ctx, "subscribed", telemetry.Fields{
 		"subject": subject, "key": key, "from": last,
 	})
 
@@ -211,7 +211,7 @@ func (m *durableManager) Subscribe(ctx context.Context, subject string, opts ...
 
 		delivered := 0
 		defer func() {
-			m.handler.log.Info(ctx, "subscription closed",
+			m.handler.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 
@@ -308,7 +308,7 @@ func (m *durableManager) ConsumeFrom(ctx context.Context, subject, consumer stri
 	}
 
 	name := consumerName()
-	m.handler.log.Info(ctx, "consuming", telemetry.Fields{
+	m.handler.log.Debug(ctx, "consuming", telemetry.Fields{
 		"subject": subject, "consumer": consumer, "identity": name, "from": start,
 	})
 
@@ -353,7 +353,7 @@ func (m *durableManager) consume(ctx context.Context, c *consumerLoop) {
 
 	delivered := 0
 	defer func() {
-		m.handler.log.Info(ctx, "consumer stopped", telemetry.Fields{
+		m.handler.log.Debug(ctx, "consumer stopped", telemetry.Fields{
 			"subject": c.subject, "consumer": c.group, "delivered": delivered,
 		})
 		m.leave(ctx, c)
@@ -396,7 +396,7 @@ func (m *durableManager) consume(ctx context.Context, c *consumerLoop) {
 		switch {
 		case err == nil:
 			if lost {
-				m.handler.log.Info(ctx, "consumer reconnected",
+				m.handler.log.Debug(ctx, "consumer reconnected",
 					telemetry.Fields{"subject": c.subject, "consumer": c.group})
 				lost, wait = false, reconnectFrom
 			}

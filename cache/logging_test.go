@@ -92,9 +92,9 @@ func TestLoggingRecordsSuccessAtDebug(t *testing.T) {
 	}
 }
 
-// A miss is a normal cache outcome. Logging it at error would bury real
-// failures in noise.
-func TestLoggingRecordsMissAtWarnNotError(t *testing.T) {
+// A miss is a normal cache outcome, logged at debug like a hit. Logging it any
+// louder would bury real failures in noise.
+func TestLoggingRecordsMissAtDebug(t *testing.T) {
 	log, recs := newCaptureLogger()
 	c := WithLogging(&fakeCache{errs: []error{ErrNotFound}}, log)
 
@@ -102,7 +102,7 @@ func TestLoggingRecordsMissAtWarnNotError(t *testing.T) {
 		t.Fatalf("Get error = %v", err)
 	}
 
-	rec := only(t, *recs, telemetry.LevelWarn)
+	rec := only(t, *recs, telemetry.LevelDebug)
 	if rec.msg != "cache miss" {
 		t.Errorf("msg = %q, want %q", rec.msg, "cache miss")
 	}

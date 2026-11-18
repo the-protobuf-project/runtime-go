@@ -169,7 +169,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, errClosed
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.store.log.Debug(ctx, "subscribed", telemetry.Fields{
 		"subject": subject, "endpoint": m.store.endpoint, "topic": topic,
 	})
 
@@ -184,7 +184,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "subscription closed",
+			m.store.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 

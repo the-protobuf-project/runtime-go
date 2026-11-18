@@ -455,7 +455,7 @@ func (r *reader) convert(pub *paho.Publish) []streams.Message {
 				})
 				r.p.recordGap(publisher, r.writer, missed)
 			case restart:
-				r.p.log.Info(r.ctx, "opcua pubsub: the writer's sequence started again", telemetry.Fields{
+				r.p.log.Debug(r.ctx, "opcua pubsub: the writer's sequence started again", telemetry.Fields{
 					"publisher": publisher, "writer": r.writer, "sequence": seq,
 				})
 			}
