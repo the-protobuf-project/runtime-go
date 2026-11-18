@@ -162,7 +162,7 @@ func Connect(ctx context.Context, endpoint string, opts ...Option) (streams.Stre
 
 	s := newStore(c, cfg)
 	s.owned = true
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "opcua"), nil
 }
 
 // MonitoredItems returns how many monitored items the streams of s, which must
@@ -178,7 +178,7 @@ func MonitoredItems(s streams.Streams) int {
 // usually because it carries security configuration worth sharing with the rest
 // of a program. It does not close what it did not open.
 func Use(c *gopcua.Client, opts ...Option) streams.Streams {
-	return newStore(c, newConfig(opts...))
+	return streams.Instrument(newStore(c, newConfig(opts...)), telemetry.Default(), "opcua")
 }
 
 // newConfig applies opts over the defaults.

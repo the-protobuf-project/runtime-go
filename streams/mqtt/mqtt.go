@@ -62,7 +62,7 @@ func Connect(ctx context.Context, address string, opts ...Option) (streams.Strea
 		s.pipes = append(s.pipes, pipe)
 	}
 	s.pub, s.owned = s.pool[0], true
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "mqtt"), nil
 }
 
 // Use returns a [streams.Streams] that publishes through a connection you built

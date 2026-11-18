@@ -76,3 +76,7 @@ func (c *Client) Signals() telemetry.Signals {
 		Baggage:  c.Baggage(),
 	}
 }
+
+// makeDefault makes c's signals runtime-go/telemetry's default, which every
+// module built without signals of its own reports through.
+func (c *Client) makeDefault() { telemetry.SetDefault(c.Signals()) }

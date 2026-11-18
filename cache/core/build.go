@@ -105,7 +105,8 @@ func Build(driver Driver, spec Spec) *cache.DB {
 		}
 	}
 
-	return &cache.DB{
+	// Observed through the process's default signals, when it has any.
+	return cache.InstrumentDefault(&cache.DB{
 		Document: entries("doc"),
 		Volatile: &volatile{
 			driver: driver, leases: leases, scanner: scanner,
@@ -130,7 +131,7 @@ func Build(driver Driver, spec Spec) *cache.DB {
 				lease:   lockLease,
 			}
 		},
-	}
+	})
 }
 
 // release drains background work before freeing what it was running against.

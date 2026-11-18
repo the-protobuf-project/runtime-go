@@ -52,16 +52,30 @@ func Instrument(db *DB, opts ...ObserveOption) *DB {
 			opt(&cfg)
 		}
 	}
+	if db.raw != nil {
+		db = db.raw
+	}
 	if !cfg.Enabled() {
 		return db
 	}
-	return instrumentDB(db, &observer{obs: cfg.Observer("database"), backend: db.Backend, name: db.Name})
+	out := instrumentDB(db, &observer{obs: cfg.Observer("database"), backend: db.Backend, name: db.Name})
+	out.raw = db
+	return out
+}
+
+// InstrumentDefault is [Instrument] with the process's default signals
+// ([telemetry.Default], which runtime-go/observability's Adopt sets): what
+// every provider's SetDatabase returns, so a database selected after the
+// application adopted its SDK is observed without being handed signals.
+// Instrumenting the result again with signals of your own replaces these.
+func InstrumentDefault(db *DB) *DB {
+	return Instrument(db, WithSignals(telemetry.Default()))
 }
 
 // ObserveOption configures [Instrument].
 type ObserveOption func(*telemetry.Signals)
 
-// WithSignals reports through all three of signals' handles.
+// WithSignals reports through every handle signals carries.
 func WithSignals(s telemetry.Signals) ObserveOption {
 	return func(c *telemetry.Signals) {
 		if s.Meter != nil {
@@ -73,6 +87,12 @@ func WithSignals(s telemetry.Signals) ObserveOption {
 		if s.Logger != nil {
 			c.Logger = s.Logger
 		}
+		if s.Profiler != nil {
+			c.Profiler = s.Profiler
+		}
+		if s.Baggage != nil {
+			c.Baggage = s.Baggage
+		}
 	}
 }
 
@@ -81,8 +101,8 @@ func WithMeter(m telemetry.Meter) ObserveOption {
 	return WithSignals(telemetry.Signals{Meter: m})
 }
 
-// WithLogger logs every operation's completion through l: debug on success,
-// info on a missing record or a conflict, error on a failure.
+// WithLogger logs every operation's start and completion through l: debug,
+// a missing record and a conflict included, and error on a failure.
 func WithLogger(l telemetry.Logger) ObserveOption {
 	return WithSignals(telemetry.Signals{Logger: l})
 }

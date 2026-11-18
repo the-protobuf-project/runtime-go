@@ -38,6 +38,12 @@ const SentAtHeader = "sent-at"
 // The bound managers keep every capability the provider's have: [AsDurable],
 // [AsPositioned] and [AsBatch] find them through the wrapper, instrumented.
 func Instrument(provider Streams, signals telemetry.Signals, backend string) Streams {
+	// Instrumenting an instrumented provider replaces its signals: every
+	// driver's constructor instruments with telemetry.Default, and signals a
+	// caller passes afterwards win rather than adding a second layer.
+	if in, ok := provider.(*instrumented); ok {
+		provider = in.next
+	}
 	if !signals.Enabled() {
 		return provider
 	}

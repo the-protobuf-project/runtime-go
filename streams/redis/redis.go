@@ -230,7 +230,7 @@ func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) st
 		}
 	}
 
-	return &streamHandler{
+	return streams.Instrument(&streamHandler{
 		rdb:      rdb,
 		pub:      pub,
 		ap:       ap,
@@ -246,7 +246,7 @@ func connect(rdb goredis.UniversalClient, k kind, owned bool, opts ...Option) st
 		owned:    owned,
 
 		confirmAcks: cfg.confirmAcks,
-	}
+	}, telemetry.Default(), "redis")
 }
 
 // dial builds a client for address and hands it to connect, which then owns it.

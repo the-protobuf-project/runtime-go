@@ -251,14 +251,20 @@ var adopted atomic.Pointer[Client]
 // recorded through the globals land under the wrong one.
 //
 // Call it once, in main, right after building the application's instance and
-// before serving. A module that already built its own Client keeps it for
+// before building any runtime-go provider, manager or client: it also makes
+// the application's signals runtime-go/telemetry's default
+// ([telemetry.SetDefault]), so every module built after it is instrumented
+// without being handed signals. A module that already built its own Client keeps it for
 // anything it holds, but every later accessor call returns this one. Close on
 // the adopted Client does nothing: the application closes what it built.
 func Adopt(sdk *telemetry.Telemetry) {
 	if sdk == nil {
 		return
 	}
-	adopted.Store(&Client{otel: sdk, adopted: true, profiling: sdk.Profiler != nil})
+	c := &Client{otel: sdk, adopted: true, profiling: sdk.Profiler != nil}
+	adopted.Store(c)
+	// Every module built without signals of its own reports through these.
+	c.makeDefault()
 }
 
 // bindLogger returns the SDK logger bound to ctx, for the contract adapter in

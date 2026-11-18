@@ -135,6 +135,11 @@ func newConfig(opts ...Option) config {
 // The connection is yours: this package does not dial it, does not close it,
 // and does not drain it.
 func Use(nc *gonats.Conn, opts ...Option) streams.Streams {
+	return streams.Instrument(use(nc, opts...), telemetry.Default(), "nats")
+}
+
+// use is [Use] before instrumentation, for Connect to take ownership of.
+func use(nc *gonats.Conn, opts ...Option) *plainStreams {
 	cfg := newConfig(opts...)
 	codec, registry, metrics := core.ResolveAll(cfg.codec, cfg.meter)
 	return &plainStreams{
@@ -161,6 +166,16 @@ func Use(nc *gonats.Conn, opts ...Option) streams.Streams {
 // The connection is yours: this package does not dial it, does not close it,
 // and does not drain it.
 func UseJetStream(nc *gonats.Conn, opts ...Option) (streams.Streams, error) {
+	s, err := useJetStream(nc, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return streams.Instrument(s, telemetry.Default(), "nats"), nil
+}
+
+// useJetStream is [UseJetStream] before instrumentation, for ConnectJetStream
+// to take ownership of.
+func useJetStream(nc *gonats.Conn, opts ...Option) (*jsStreams, error) {
 	cfg := newConfig(opts...)
 
 	if cfg.queue != "" {
@@ -209,13 +224,9 @@ func Connect(ctx context.Context, url string, opts ...Option) (streams.Streams, 
 	if err != nil {
 		return nil, err
 	}
-	s, ok := Use(nc, opts...).(*plainStreams)
-	if !ok {
-		nc.Close()
-		return nil, fmt.Errorf("nats: unexpected provider type")
-	}
+	s := use(nc, opts...)
 	s.owned = true
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "nats"), nil
 }
 
 // ConnectJetStream dials url and returns a [streams.Streams] backed by
@@ -225,18 +236,13 @@ func ConnectJetStream(ctx context.Context, url string, opts ...Option) (streams.
 	if err != nil {
 		return nil, err
 	}
-	provider, err := UseJetStream(nc, opts...)
+	s, err := useJetStream(nc, opts...)
 	if err != nil {
 		nc.Close()
 		return nil, err
 	}
-	s, ok := provider.(*jsStreams)
-	if !ok {
-		nc.Close()
-		return nil, fmt.Errorf("nats: unexpected provider type")
-	}
 	s.owned = nc
-	return s, nil
+	return streams.Instrument(s, telemetry.Default(), "nats"), nil
 }
 
 // dial opens a connection, honoring ctx as a deadline for doing so.
