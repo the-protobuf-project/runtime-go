@@ -21,6 +21,9 @@ import (
 type Client struct {
 	otel         *telemetry.Telemetry
 	closeTimeout time.Duration
+	// profiling marks a client whose SDK profiles. The SDK builds a Profiler
+	// either way and says nothing about whether it runs.
+	profiling bool
 	// adopted marks a Client over the host application's SDK instance (see
 	// [Adopt]). The application owns that instance, so Close leaves it alone.
 	adopted bool
@@ -47,6 +50,17 @@ type Options struct {
 
 	// Tracing enables the tracing pipeline.
 	Tracing bool
+
+	// ProfilingServer is a Pyroscope server address. Set, the SDK profiles
+	// continuously and [Client.Profiler] labels every runtime operation's
+	// samples with its component, backend and operation. Empty leaves
+	// profiling off.
+	ProfilingServer string
+
+	// Export tunes the log and span export pipeline: queue and batch sizes,
+	// and Lossless, which makes producers wait for a slow collector rather
+	// than drop records. Nil keeps the SDK's defaults.
+	Export *telemetry.ExportOptions
 
 	// CloseTimeout bounds how long [Client.Close] waits for the backend to
 	// flush. Zero means [DefaultCloseTimeout].
@@ -89,6 +103,12 @@ func Setup(opts Options) (*Client, error) {
 			if opts.Tracing {
 				b = b.WithTracing()
 			}
+			if opts.ProfilingServer != "" {
+				b = b.WithProfiling(opts.ProfilingServer)
+			}
+			if opts.Export != nil {
+				b = b.WithExport(*opts.Export)
+			}
 		}
 		return b.Build()
 	}
@@ -100,7 +120,7 @@ func Setup(opts Options) (*Client, error) {
 
 	o, err := build(true)
 	if err == nil {
-		return &Client{otel: o, closeTimeout: timeout}, nil
+		return &Client{otel: o, closeTimeout: timeout, profiling: opts.ProfilingServer != ""}, nil
 	}
 
 	// The exporters are what usually fail — no collector, a bad endpoint — and
@@ -165,7 +185,7 @@ func Lazy(service, version string) func() *Client {
 }
 
 // Otel exposes the underlying SDK client for the parts of it this package does
-// not front — tracing and profiling.
+// not front.
 //
 // It returns nil for a zero Client, so check before use.
 func (c *Client) Otel() *telemetry.Telemetry {
@@ -228,7 +248,7 @@ func Adopt(sdk *telemetry.Telemetry) {
 	if sdk == nil {
 		return
 	}
-	adopted.Store(&Client{otel: sdk, adopted: true})
+	adopted.Store(&Client{otel: sdk, adopted: true, profiling: sdk.Profiler != nil})
 }
 
 // bindLogger returns the SDK logger bound to ctx, for the contract adapter in

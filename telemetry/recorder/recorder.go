@@ -3,6 +3,8 @@ package recorder
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ type Recorder struct {
 	spans        []*Span
 	measurements []Measurement
 	logs         []Log
+	profiles     []telemetry.Labels
 	bound        telemetry.Fields
 	root         *Recorder
 }
@@ -22,9 +25,9 @@ type Recorder struct {
 // New returns an empty recorder.
 func New() *Recorder { return &Recorder{} }
 
-// Signals is the recorder as all three handles.
+// Signals is the recorder as every handle.
 func (r *Recorder) Signals() telemetry.Signals {
-	return telemetry.Signals{Meter: r, Tracer: r, Logger: r}
+	return telemetry.Signals{Meter: r, Tracer: r, Logger: r, Profiler: r, Baggage: r}
 }
 
 func (r *Recorder) owner() *Recorder {
@@ -149,20 +152,85 @@ func (r *Recorder) Start(ctx context.Context, name string, opts ...telemetry.Spa
 	return context.WithValue(ctx, spanKey{}, s.ID), s
 }
 
-// Inject writes the id of the span in ctx as headers["traceparent"].
+// Inject writes the id of the span in ctx as headers["traceparent"], and the
+// baggage ctx carries as headers["baggage"] (k=v pairs, sorted).
 func (r *Recorder) Inject(ctx context.Context, headers map[string]string) {
-	if id, ok := ctx.Value(spanKey{}).(string); ok && headers != nil {
+	if headers == nil {
+		return
+	}
+	if id, ok := ctx.Value(spanKey{}).(string); ok {
 		headers["traceparent"] = id
+	}
+	if b := r.Members(ctx); len(b) > 0 {
+		pairs := make([]string, 0, len(b))
+		for k, v := range b {
+			pairs = append(pairs, k+"="+v)
+		}
+		sort.Strings(pairs)
+		headers["baggage"] = strings.Join(pairs, ",")
 	}
 }
 
 // Extract makes headers["traceparent"] the parent of spans started from the
-// returned context.
+// returned context, and carries headers["baggage"] as its baggage.
 func (r *Recorder) Extract(ctx context.Context, headers map[string]string) context.Context {
 	if id := headers["traceparent"]; id != "" {
-		return context.WithValue(ctx, spanKey{}, id)
+		ctx = context.WithValue(ctx, spanKey{}, id)
+	}
+	if b := headers["baggage"]; b != "" {
+		members := map[string]string{}
+		for _, pair := range strings.Split(b, ",") {
+			if k, v, ok := strings.Cut(pair, "="); ok {
+				members[k] = v
+			}
+		}
+		ctx = context.WithValue(ctx, baggageKey{}, members)
 	}
 	return ctx
+}
+
+// --- baggage -------------------------------------------------------------------
+
+type baggageKey struct{}
+
+// Set returns ctx carrying key=value beside the baggage it already has.
+func (r *Recorder) Set(ctx context.Context, key, value string) (context.Context, error) {
+	members := map[string]string{key: value}
+	for k, v := range r.Members(ctx) {
+		if k != key {
+			members[k] = v
+		}
+	}
+	return context.WithValue(ctx, baggageKey{}, members), nil
+}
+
+// Members returns the baggage ctx carries.
+func (r *Recorder) Members(ctx context.Context) map[string]string {
+	m, _ := ctx.Value(baggageKey{}).(map[string]string)
+	return m
+}
+
+// --- profiling -----------------------------------------------------------------
+
+// Label records labels as one profiled section and returns ctx unchanged.
+func (r *Recorder) Label(ctx context.Context, labels telemetry.Labels) (context.Context, func()) {
+	o := r.owner()
+	copied := make(telemetry.Labels, len(labels))
+	for k, v := range labels {
+		copied[k] = v
+	}
+	o.mu.Lock()
+	o.profiles = append(o.profiles, copied)
+	o.mu.Unlock()
+	return ctx, func() {}
+}
+
+// Profiles are the labels of every profiled section, in order.
+func (r *Recorder) Profiles() []telemetry.Labels {
+	o := r.owner()
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]telemetry.Labels(nil), o.profiles...)
 }
 
 // SpanID is the id of the span ctx carries, or "".
@@ -339,8 +407,10 @@ func (r *Recorder) Logs() []Log {
 }
 
 var (
-	_ telemetry.Meter  = (*Recorder)(nil)
-	_ telemetry.Tracer = (*Recorder)(nil)
-	_ telemetry.Logger = (*Recorder)(nil)
-	_ telemetry.Span   = (*Span)(nil)
+	_ telemetry.Meter    = (*Recorder)(nil)
+	_ telemetry.Tracer   = (*Recorder)(nil)
+	_ telemetry.Logger   = (*Recorder)(nil)
+	_ telemetry.Profiler = (*Recorder)(nil)
+	_ telemetry.Baggage  = (*Recorder)(nil)
+	_ telemetry.Span     = (*Span)(nil)
 )

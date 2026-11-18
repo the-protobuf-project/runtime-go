@@ -73,6 +73,12 @@ type Options struct {
 	Tracer telemetry.Tracer
 	// Logger logs every step's completion. Nil logs nothing.
 	Logger telemetry.Logger
+	// Profiler labels each round's and step's profile samples. Nil labels
+	// nothing.
+	Profiler telemetry.Profiler
+	// Baggage is copied onto each step's span and log, and travels to the
+	// webhook receiver with the trace. Nil carries none.
+	Baggage telemetry.Baggage
 	// Outboxes are drained each round, after the feeds (see [Outbox]).
 	Outboxes []*Outbox
 	// Sink receives every change a feed reads and every outbox event, besides
@@ -145,7 +151,7 @@ func NewDispatcher(store Store, feeds []Feed, opts Options) *Dispatcher {
 		shardRetries:  map[string]shardRetry{},
 		metrics:       newDeliveryMetrics(opts.Meter, opts.MetricPrefix),
 		outboxMetrics: om,
-		obs:           telemetry.Signals{Meter: opts.Meter, Tracer: opts.Tracer, Logger: opts.Logger}.Observer("events"),
+		obs:           telemetry.Signals{Meter: opts.Meter, Tracer: opts.Tracer, Logger: opts.Logger, Profiler: opts.Profiler, Baggage: opts.Baggage}.Observer("events"),
 	}
 }
 
