@@ -45,7 +45,7 @@ type GraphQLClient struct {
 // ...), so its span is a child of the context passed to Query, Mutate, List
 // or Get.
 func newGraphQLClient(fullURL string, opts ConnectionOptions) *graphql.Client {
-	client := graphql.NewClient(fullURL, newPooledClient(opts.Timeout, opts.Signals, "graphql"))
+	client := graphql.NewClient(fullURL, newPooledClient(opts.Timeout, opts.Signals.Or(), "graphql"))
 	if len(opts.Headers) > 0 {
 		headers := opts.Headers
 		client = client.WithRequestModifier(func(r *http.Request) {
