@@ -76,6 +76,13 @@ func jetStream(t *testing.T) streams.Streams {
 	return s
 }
 
+// deliveryWithin bounds the wait for a message a test expects. A lost pull
+// response stalls nats.go's iterator until its missed-heartbeat recovery
+// pulls again, so on a loaded runner one delivery can take well past 10s with
+// nothing wrong; the bound only has to catch a consumer that has stopped, and
+// costs nothing when the message comes.
+const deliveryWithin = 45 * time.Second
+
 func recvDelivery(t *testing.T, ch <-chan streams.Delivery, within time.Duration) streams.Delivery {
 	t.Helper()
 
@@ -418,7 +425,7 @@ func TestConsumeDeliversAndAcknowledges(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 
-	got := recvDelivery(t, ch, 10*time.Second)
+	got := recvDelivery(t, ch, deliveryWithin)
 	if got.Attempt != 1 {
 		t.Errorf("Attempt = %d on a first delivery, want 1", got.Attempt)
 	}
@@ -453,7 +460,7 @@ func TestNakRedeliversWithAHigherAttempt(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 
-	first := recvDelivery(t, ch, 10*time.Second)
+	first := recvDelivery(t, ch, deliveryWithin)
 	if first.Attempt != 1 {
 		t.Errorf("first Attempt = %d, want 1", first.Attempt)
 	}
@@ -461,7 +468,7 @@ func TestNakRedeliversWithAHigherAttempt(t *testing.T) {
 		t.Fatalf("Nak: %v", err)
 	}
 
-	second := recvDelivery(t, ch, 10*time.Second)
+	second := recvDelivery(t, ch, deliveryWithin)
 	if second.Attempt < 2 {
 		t.Errorf("Attempt after a Nak = %d, want at least 2", second.Attempt)
 	}
@@ -487,7 +494,7 @@ func TestAConsumerResumesWhereTheNameLeftOff(t *testing.T) {
 	if _, perr := m.Publish(first, subject, event{User: "first"}); perr != nil {
 		t.Fatalf("Publish: %v", perr)
 	}
-	got := recvDelivery(t, ch, 10*time.Second)
+	got := recvDelivery(t, ch, deliveryWithin)
 	if aerr := got.Ack(first); aerr != nil {
 		t.Fatalf("Ack: %v", aerr)
 	}
@@ -505,7 +512,7 @@ func TestAConsumerResumesWhereTheNameLeftOff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Consume (second): %v", err)
 	}
-	resumed := recvDelivery(t, again, 10*time.Second)
+	resumed := recvDelivery(t, again, deliveryWithin)
 
 	var decoded event
 	if err := resumed.Decode(&decoded); err != nil {
@@ -535,7 +542,7 @@ func TestConsumeFromEarliestReplaysHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConsumeFrom: %v", err)
 	}
-	got := recvDelivery(t, ch, 10*time.Second)
+	got := recvDelivery(t, ch, deliveryWithin)
 
 	var decoded event
 	if err := got.Decode(&decoded); err != nil {
@@ -590,7 +597,7 @@ func TestPublishingTheSameIDTwiceDeliversOnce(t *testing.T) {
 		}
 	}
 
-	got := recvDelivery(t, ch, 10*time.Second)
+	got := recvDelivery(t, ch, deliveryWithin)
 	if err := got.Ack(ctx); err != nil {
 		t.Fatalf("Ack: %v", err)
 	}
@@ -815,7 +822,7 @@ func TestJetStreamHeadersAreStoredAndRedelivered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
-	first := recvDelivery(t, ch, 10*time.Second)
+	first := recvDelivery(t, ch, deliveryWithin)
 	if first.Headers.Get("lang") != "go" || first.Headers.Get("site") != "plant-4" {
 		t.Errorf("headers = %v", first.Headers)
 	}
@@ -825,7 +832,7 @@ func TestJetStreamHeadersAreStoredAndRedelivered(t *testing.T) {
 	if perr := first.Nak(ctx); perr != nil {
 		t.Fatalf("Nak: %v", perr)
 	}
-	second := recvDelivery(t, ch, 10*time.Second)
+	second := recvDelivery(t, ch, deliveryWithin)
 	if second.ID != id || second.Attempt != 2 || second.Headers.Get("site") != "plant-4" {
 		t.Errorf("redelivery %q attempt %d headers %v", second.ID, second.Attempt, second.Headers)
 	}
@@ -837,7 +844,7 @@ func TestJetStreamHeadersAreStoredAndRedelivered(t *testing.T) {
 		t.Fatalf("PublishBatch: %v", err)
 	}
 	for _, id := range ids {
-		got := recvDelivery(t, ch, 10*time.Second)
+		got := recvDelivery(t, ch, deliveryWithin)
 		if got.ID != id || got.Headers.Get("site") != "plant-4" {
 			t.Errorf("batch entry %q arrived as %q with %v", id, got.ID, got.Headers)
 		}
@@ -931,7 +938,7 @@ func TestJetStreamExpiryRemovesTheMessage(t *testing.T) {
 	}
 	p, _ := streams.AsPositioned(m)
 	ch, _ := p.ConsumeFrom(ctx, subject, "late", streams.FromEarliest)
-	d := recvDelivery(t, ch, 10*time.Second)
+	d := recvDelivery(t, ch, deliveryWithin)
 	if d.ID == gone || d.ID != kept {
 		t.Errorf("delivered %q, want only %q", d.ID, kept)
 	}
@@ -972,7 +979,7 @@ func TestJetStreamNakAfterHoldsTheRedeliveryBack(t *testing.T) {
 
 	ch, _ := d.Consume(ctx, subject, "patient")
 	id, _ := m.Publish(ctx, subject, event{User: "ada"})
-	first := recvDelivery(t, ch, 10*time.Second)
+	first := recvDelivery(t, ch, deliveryWithin)
 	if !first.CanDelayRedelivery() || first.MaxRedeliveryDelay() != 0 {
 		t.Errorf("CanDelayRedelivery %v, MaxRedeliveryDelay %s", first.CanDelayRedelivery(), first.MaxRedeliveryDelay())
 	}
@@ -985,7 +992,7 @@ func TestJetStreamNakAfterHoldsTheRedeliveryBack(t *testing.T) {
 		t.Fatalf("redelivered after %s, before the delay: %+v", time.Since(naked), early.Message)
 	case <-time.After(1500 * time.Millisecond):
 	}
-	second := recvDelivery(t, ch, 10*time.Second)
+	second := recvDelivery(t, ch, deliveryWithin)
 	if time.Since(naked) < 2*time.Second || second.ID != id || second.Attempt != 2 {
 		t.Errorf("redelivered %q attempt %d after %s", second.ID, second.Attempt, time.Since(naked))
 	}
@@ -1013,12 +1020,7 @@ func TestJetStreamALargeBatchLandsInOrder(t *testing.T) {
 	p, _ := streams.AsPositioned(m)
 	ch, _ := p.ConsumeFrom(ctx, subject, "in-order", streams.FromEarliest)
 	for i, id := range ids {
-		// This checks order, not latency. On a loaded runner a pull request
-		// whose response is lost stalls the iterator until nats.go's missed
-		// heartbeat recovery pulls again (up to its 30s pull expiry), so one
-		// gap can pass 10s without anything being wrong; 45s still catches a
-		// consumer that has stopped.
-		d := recvDelivery(t, ch, 45*time.Second)
+		d := recvDelivery(t, ch, deliveryWithin)
 		if d.ID != id {
 			t.Fatalf("entry %d arrived as %q, want %q", i, d.ID, id)
 		}
