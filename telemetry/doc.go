@@ -1,17 +1,21 @@
 // Package telemetry defines the backend-agnostic contracts generated and
 // hand-written code instruments against: [Meter] for metrics, [Logger] for
-// logs and [Tracer] for spans. It has no dependency on any specific telemetry
+// logs, [Tracer] for spans, [Profiler] for attributing continuous-profile
+// samples, and [Baggage] for the W3C baggage that travels with a trace. It has no dependency on any specific telemetry
 // SDK — OTel, Prometheus, or otherwise — so core runtime-go packages and
 // generated ORM code can hold them without pulling in a concrete backend. A
 // concrete implementation (runtime-go/observability over the telemetry-go SDK)
-// is wired in by the caller; when none is wired in, [NoopMeter], [NoopLogger]
-// and [NoopTracer] keep every call a safe, zero-cost no-op.
+// is wired in by the caller; when none is wired in, [NoopMeter], [NoopLogger],
+// [NoopTracer], [NoopProfiler] and [NoopBaggage] keep every call a safe,
+// zero-cost no-op.
 //
 // # Operations
 //
-// [Signals] holds the three handles, and [Signals.Observer] gives one runtime
+// [Signals] holds the handles, and [Signals.Observer] gives one runtime
 // component its instruments, built once. Every unit of work is an
-// [Operation]: a span named component.operation, and a share of the same
+// [Operation]: a span named component.operation carrying the baggage it runs
+// under (baggage.<key>), profile labels component, backend and operation on
+// its goroutine while it runs, a completion log, and a share of the same
 // metrics across every component, labeled component, backend, operation and
 // outcome:
 //
@@ -25,7 +29,7 @@
 // It is the Go half of runtime-rs's tpp-telemetry: the same names, the same
 // [Outcome] labels, the same no-op default.
 //
-//	obs := telemetry.Signals{Meter: m, Tracer: tr, Logger: log}.Observer("streams")
+//	obs := client.Signals().Observer("streams") // runtime-go/observability's Client
 //	ctx, op := obs.Start(ctx, "nats", "send", telemetry.SpanKindProducer)
 //	err := send(ctx)
 //	op.FinishErr(err)

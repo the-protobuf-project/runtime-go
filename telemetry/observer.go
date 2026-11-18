@@ -7,32 +7,41 @@ import (
 	"time"
 )
 
-// Signals are the three handles a runtime package reports through. Every one
-// is optional; a nil handle is the matching no-op, so the zero Signals emits
-// nothing. The application owns the backend behind them: nothing here starts
+// Signals are the handles a runtime package reports through: metrics, traces
+// and logs, the profiler that attributes samples to operations, and the
+// baggage that travels with a trace. Every one is optional; a nil handle is
+// the matching no-op, so the zero Signals emits nothing. The application owns the backend behind them: nothing here starts
 // an exporter, installs a global or shuts a provider down.
 //
 // It is runtime-rs's telemetry::Telemetry under a name that does not stutter.
 type Signals struct {
-	Meter  Meter
-	Tracer Tracer
-	Logger Logger
+	Meter    Meter
+	Tracer   Tracer
+	Logger   Logger
+	Profiler Profiler
+	Baggage  Baggage
 }
 
 // Enabled reports whether any signal was supplied.
 func (s Signals) Enabled() bool {
-	return s.Meter != nil || s.Tracer != nil || s.Logger != nil
+	return s.Meter != nil || s.Tracer != nil || s.Logger != nil || s.Profiler != nil || s.Baggage != nil
 }
 
 // Observer returns the observer for one runtime component ("streams",
 // "database", "cache"), building its instruments once.
 func (s Signals) Observer(component string) *Observer {
-	o := &Observer{component: component, tracer: s.Tracer, log: s.Logger}
+	o := &Observer{component: component, tracer: s.Tracer, log: s.Logger, profiler: s.Profiler, baggage: s.Baggage}
 	if o.tracer == nil {
 		o.tracer = NoopTracer
 	}
 	if o.log == nil {
 		o.log = NoopLogger
+	}
+	if o.profiler == nil {
+		o.profiler = NoopProfiler
+	}
+	if o.baggage == nil {
+		o.baggage = NoopBaggage
 	}
 	if s.Meter != nil {
 		m := s.Meter
@@ -61,6 +70,8 @@ type Observer struct {
 	component string
 	tracer    Tracer
 	log       Logger
+	profiler  Profiler
+	baggage   Baggage
 	metrics   *operationMetrics
 }
 
@@ -72,17 +83,36 @@ func (o *Observer) Tracer() Tracer { return o.tracer }
 // meter still traces and logs.
 func (o *Observer) MetricsEnabled() bool { return o.metrics != nil }
 
+// SetBaggage returns ctx carrying key=value as W3C baggage, which the tracer's
+// Inject sends on to every service downstream. Without a [Signals.Baggage] it
+// returns ctx unchanged.
+func (o *Observer) SetBaggage(ctx context.Context, key, value string) (context.Context, error) {
+	return o.baggage.Set(ctx, key, value)
+}
+
+// Baggage returns the W3C baggage ctx carries.
+func (o *Observer) Baggage(ctx context.Context) map[string]string { return o.baggage.Members(ctx) }
+
 // maxLinks bounds the producer contexts one operation links to.
 const maxLinks = 32
 
 // Start begins one operation of backend ("nats", "postgres") named operation
 // ("publish", "get"), as a span named component.operation under the span in
 // ctx. The returned context carries the span; pass it to the work the
-// operation does. Finish the operation exactly once, on every path; a defer
-// is the usual way.
+// operation does. Finish the operation exactly once, on every path, on the
+// goroutine that started it (its profile labels are that goroutine's); a
+// defer is the usual way.
+//
+// While it runs, the goroutine carries profile labels component, backend and
+// operation, and the baggage ctx carries is set on the span as baggage.<key>.
 func (o *Observer) Start(ctx context.Context, backend, operation string, kind SpanKind, opts ...SpanOption) (context.Context, *Operation) {
 	labels := Labels{"component": o.component, "backend": backend, "operation": operation}
 	attrs := map[string]any{"component": o.component, "backend": backend, "operation": operation}
+	baggage := o.baggage.Members(ctx)
+	for k, v := range baggage {
+		attrs["baggage."+k] = v
+	}
+	ctx, restore := o.profiler.Label(ctx, labels)
 	all := make([]SpanOption, 0, len(opts)+2)
 	all = append(all, WithSpanKind(kind), WithSpanAttributes(attrs))
 	all = append(all, opts...)
@@ -90,7 +120,7 @@ func (o *Observer) Start(ctx context.Context, backend, operation string, kind Sp
 	if o.metrics != nil {
 		o.metrics.active.Add(ctx, 1, labels)
 	}
-	return ctx, &Operation{observer: o, ctx: ctx, span: span, labels: labels, started: time.Now()}
+	return ctx, &Operation{observer: o, ctx: ctx, span: span, labels: labels, baggage: baggage, restore: restore, started: time.Now()}
 }
 
 // StartLinked is [Observer.Start] for work done on behalf of several callers,
@@ -118,6 +148,8 @@ type Operation struct {
 	ctx           context.Context
 	span          Span
 	labels        Labels
+	baggage       map[string]string
+	restore       func()
 	started       time.Time
 	read, written int64
 	once          sync.Once
@@ -183,6 +215,9 @@ func (op *Operation) finish(outcome Outcome) {
 		"outcome": outcome.String(), "duration_seconds": elapsed,
 		"records_read": op.read, "records_written": op.written,
 	}
+	for k, v := range op.baggage {
+		fields["baggage."+k] = v
+	}
 	switch {
 	case outcome.IsError():
 		o.log.Error(op.ctx, "runtime.operation.completed", nil, fields)
@@ -192,6 +227,7 @@ func (op *Operation) finish(outcome Outcome) {
 		o.log.Debug(op.ctx, "runtime.operation.completed", fields)
 	}
 	op.span.End()
+	op.restore()
 }
 
 // OutcomeOf classifies err: nil is [OutcomeOK], a cancelled context
