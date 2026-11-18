@@ -26,7 +26,7 @@ func (m *manager) follow(ctx context.Context, subject string, a attachment,
 ) {
 	delivered := 0
 	defer func() {
-		m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{"subject": subject, "delivered": delivered})
+		m.store.log.Debug(ctx, "consumer stopped", telemetry.Fields{"subject": subject, "delivered": delivered})
 	}()
 
 	for {

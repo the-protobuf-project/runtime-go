@@ -172,7 +172,7 @@ func (s *streamStore) Create(ctx context.Context, in streams.Stream) (streams.St
 		return streams.Stream{}, err
 	}
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
+	s.log.Debug(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
 	return out, nil
 }
 
@@ -359,7 +359,7 @@ func (s *streamStore) Update(ctx context.Context, id string, in streams.Stream) 
 		return streams.Stream{}, err
 	}
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": name})
+	s.log.Debug(ctx, "stream updated", telemetry.Fields{"id": name})
 	return out, nil
 }
 
@@ -387,7 +387,7 @@ func (s *streamStore) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": name})
+	s.log.Debug(ctx, "stream deleted", telemetry.Fields{"id": name})
 	return nil
 }
 

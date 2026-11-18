@@ -30,7 +30,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.declared[id] = out
 	s.mu.Unlock()
 
-	s.log.Info(ctx, "stream declared", telemetry.Fields{
+	s.log.Debug(ctx, "stream declared", telemetry.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil

@@ -183,7 +183,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...s
 		return nil, fmt.Errorf("redis: cannot subscribe to %q: %w", subject, err)
 	}
 
-	m.handler.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject, "channel": channel})
+	m.handler.log.Debug(ctx, "subscribed", telemetry.Fields{"subject": subject, "channel": channel})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -192,7 +192,7 @@ func (m *streamManager) Subscribe(ctx context.Context, subject string, opts ...s
 
 		delivered := 0
 		defer func() {
-			m.handler.log.Info(ctx, "subscription closed",
+			m.handler.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 
@@ -243,7 +243,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, 
 	}
 
 	want := m.handler.keys.pendingPrefix(m.stream.ID, subject)
-	m.handler.log.Info(ctx, "subscribed to scheduled deliveries", telemetry.Fields{
+	m.handler.log.Debug(ctx, "subscribed to scheduled deliveries", telemetry.Fields{
 		"subject": subject, "channel": channel, "prefix": want,
 	})
 
@@ -254,7 +254,7 @@ func (m *streamManager) subscribeScheduled(ctx context.Context, subject string, 
 
 		delivered := 0
 		defer func() {
-			m.handler.log.Info(ctx, "subscription closed",
+			m.handler.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 

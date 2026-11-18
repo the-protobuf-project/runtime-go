@@ -142,9 +142,9 @@ func (s *HybridServer) printStartupBanner(endpoints []agents.Endpoint) {
 		shared.Telemetry().Logger.Warn("gRPC: running without TLS (plaintext)")
 	}
 	if s.opts.EnableHealth {
-		shared.Telemetry().Logger.Warn("Health check service enabled")
+		shared.Telemetry().Logger.Debug("Health check service enabled")
 	}
 	if isReflection {
-		shared.Telemetry().Logger.Warn("Reflection service enabled (dev/debug only)")
+		shared.Telemetry().Logger.Debug("Reflection service enabled (dev/debug only)")
 	}
 }

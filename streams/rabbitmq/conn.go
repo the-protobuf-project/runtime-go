@@ -106,7 +106,7 @@ func (s *store) supervise(closed <-chan *amqp.Error) {
 			close(s.up)
 			s.mu.Unlock()
 
-			s.log.Info(context.Background(), "reconnected", nil)
+			s.log.Debug(context.Background(), "reconnected", nil)
 			break
 		}
 	}

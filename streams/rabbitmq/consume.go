@@ -36,7 +36,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	m.store.log.Debug(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
 	out := make(chan streams.Message, core.Prefetch(o))
 	go func() {
@@ -117,7 +117,7 @@ func (m *manager) Consume(ctx context.Context, subject, consumer string, opts ..
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{"subject": subject, "consumer": consumer})
+	m.store.log.Debug(ctx, "consuming", telemetry.Fields{"subject": subject, "consumer": consumer})
 
 	out := make(chan streams.Delivery, core.Prefetch(o))
 	go func() {

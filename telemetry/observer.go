@@ -120,6 +120,13 @@ func (o *Observer) Start(ctx context.Context, backend, operation string, kind Sp
 	if o.metrics != nil {
 		o.metrics.active.Add(ctx, 1, labels)
 	}
+	if o.log.Enabled(ctx, LevelDebug) {
+		fields := Fields{"component": o.component, "backend": backend, "operation": operation}
+		for k, v := range baggage {
+			fields["baggage."+k] = v
+		}
+		o.log.Debug(ctx, "runtime.operation.started", fields)
+	}
 	return ctx, &Operation{observer: o, ctx: ctx, span: span, labels: labels, baggage: baggage, restore: restore, started: time.Now()}
 }
 
@@ -218,12 +225,11 @@ func (op *Operation) finish(outcome Outcome) {
 	for k, v := range op.baggage {
 		fields["baggage."+k] = v
 	}
-	switch {
-	case outcome.IsError():
+	// Errors are errors; everything else, a conflict and a miss included, is
+	// a routine result and logs at debug.
+	if outcome.IsError() {
 		o.log.Error(op.ctx, "runtime.operation.completed", nil, fields)
-	case outcome == OutcomeConflict || outcome == OutcomeNotFound:
-		o.log.Info(op.ctx, "runtime.operation.completed", fields)
-	default:
+	} else {
 		o.log.Debug(op.ctx, "runtime.operation.completed", fields)
 	}
 	op.span.End()

@@ -79,7 +79,7 @@ func (p *plainStreams) Create(ctx context.Context, in streams.Stream) (streams.S
 	p.declared[id] = out
 	p.mu.Unlock()
 
-	p.log.Info(ctx, "stream declared", telemetry.Fields{
+	p.log.Debug(ctx, "stream declared", telemetry.Fields{
 		"id": id, "name": in.Name, "subjects": out.Subjects,
 	})
 	return out, nil
@@ -300,7 +300,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 		return nil, fmt.Errorf("nats: cannot establish the subscription to %q: %w", subject, err)
 	}
 
-	m.p.log.Info(ctx, "subscribed", telemetry.Fields{
+	m.p.log.Debug(ctx, "subscribed", telemetry.Fields{
 		"subject": subject, "queue": queue,
 	})
 
@@ -311,7 +311,7 @@ func (m *plainManager) Subscribe(ctx context.Context, subject string, opts ...st
 
 		delivered := 0
 		defer func() {
-			m.p.log.Info(ctx, "subscription closed",
+			m.p.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 

@@ -40,12 +40,12 @@ func (c *captureLogger) add(level telemetry.Level, msg string, err error, fields
 
 func (c *captureLogger) Debug(_ context.Context, msg string, f telemetry.Fields) {
 	c.add(telemetry.LevelDebug, msg, nil, f)
-}
-func (c *captureLogger) Info(_ context.Context, msg string, f telemetry.Fields) {
-	c.add(telemetry.LevelInfo, msg, nil, f)
 	if msg == "subscription closed" {
 		close(c.done)
 	}
+}
+func (c *captureLogger) Info(_ context.Context, msg string, f telemetry.Fields) {
+	c.add(telemetry.LevelInfo, msg, nil, f)
 }
 func (c *captureLogger) Warn(_ context.Context, msg string, f telemetry.Fields) {
 	c.add(telemetry.LevelWarn, msg, nil, f)

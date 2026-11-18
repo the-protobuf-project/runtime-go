@@ -91,7 +91,7 @@ func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts 
 		l.log.Error(ctx, "subscribe failed", err, telemetry.Fields{"subject": subject})
 		return nil, err
 	}
-	l.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	l.log.Debug(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
 	// The messages are relayed through a goroutine so delivery can be counted
 	// and the close observed. It inherits the caller's cancellation: when the
@@ -103,7 +103,7 @@ func (l *loggingSubscriber) Subscribe(ctx context.Context, subject string, opts 
 
 		delivered := 0
 		defer func() {
-			l.log.Info(ctx, "subscription closed", telemetry.Fields{
+			l.log.Debug(ctx, "subscription closed", telemetry.Fields{
 				"subject":   subject,
 				"delivered": delivered,
 			})

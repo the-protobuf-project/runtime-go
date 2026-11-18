@@ -134,7 +134,7 @@ func (p *jsStreams) Create(ctx context.Context, in streams.Stream) (streams.Stre
 		return streams.Stream{}, fmt.Errorf("nats: cannot create stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
+	p.log.Debug(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name})
 	return p.streamFrom(id, in), nil
 }
 
@@ -205,7 +205,7 @@ func (p *jsStreams) Update(ctx context.Context, id string, in streams.Stream) (s
 		return streams.Stream{}, fmt.Errorf("nats: cannot update stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream updated", telemetry.Fields{"id": name})
+	p.log.Debug(ctx, "stream updated", telemetry.Fields{"id": name})
 	return p.streamFrom(name, in), nil
 }
 
@@ -218,7 +218,7 @@ func (p *jsStreams) Delete(ctx context.Context, id string) error {
 		return fmt.Errorf("nats: cannot delete stream %s: %w", id, err)
 	}
 
-	p.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	p.log.Debug(ctx, "stream deleted", telemetry.Fields{"id": id})
 	return nil
 }
 
@@ -699,7 +699,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 		return nil, fmt.Errorf("nats: cannot subscribe to %q: %w", subject, err)
 	}
 
-	m.p.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject})
+	m.p.log.Debug(ctx, "subscribed", telemetry.Fields{"subject": subject})
 
 	out := make(chan streams.Message, core.Prefetch(streams.NewOptions(opts...)))
 	go func() {
@@ -711,7 +711,7 @@ func (m *jsManager) Subscribe(ctx context.Context, subject string, opts ...strea
 
 		delivered := 0
 		defer func() {
-			m.p.log.Info(ctx, "subscription closed",
+			m.p.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 
@@ -807,7 +807,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 		return nil, fmt.Errorf("nats: cannot consume %q as %q: %w", subject, consumer, err)
 	}
 
-	m.p.log.Info(ctx, "consuming", telemetry.Fields{
+	m.p.log.Debug(ctx, "consuming", telemetry.Fields{
 		"subject": subject, "consumer": name, "from": policy,
 	})
 
@@ -819,7 +819,7 @@ func (m *jsManager) ConsumeFrom(ctx context.Context, subject, consumer string, a
 
 		delivered := 0
 		defer func() {
-			m.p.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.p.log.Debug(ctx, "consumer stopped", telemetry.Fields{
 				"subject": subject, "consumer": name, "delivered": delivered,
 			})
 		}()

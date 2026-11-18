@@ -266,7 +266,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "subscribed", telemetry.Fields{"subject": subject, "group": o.Group})
+	m.store.log.Debug(ctx, "subscribed", telemetry.Fields{"subject": subject, "group": o.Group})
 
 	out := make(chan streams.Message, core.Prefetch(o))
 	go func() {
@@ -275,7 +275,7 @@ func (m *manager) Subscribe(ctx context.Context, subject string, opts ...streams
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "subscription closed",
+			m.store.log.Debug(ctx, "subscription closed",
 				telemetry.Fields{"subject": subject, "delivered": delivered})
 		}()
 
@@ -528,7 +528,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 		return nil, err
 	}
 
-	m.store.log.Info(ctx, "consuming", telemetry.Fields{
+	m.store.log.Debug(ctx, "consuming", telemetry.Fields{
 		"subject": subject, "consumer": consumer, "from": at,
 	})
 
@@ -552,7 +552,7 @@ func (m *manager) ConsumeFrom(ctx context.Context, subject, consumer string, at 
 
 		delivered := 0
 		defer func() {
-			m.store.log.Info(ctx, "consumer stopped", telemetry.Fields{
+			m.store.log.Debug(ctx, "consumer stopped", telemetry.Fields{
 				"subject": subject, "consumer": consumer, "delivered": delivered,
 			})
 		}()

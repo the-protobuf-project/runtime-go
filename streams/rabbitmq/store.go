@@ -47,7 +47,7 @@ func (s *store) Create(ctx context.Context, in streams.Stream) (streams.Stream, 
 	s.declared[id] = out
 	s.declMu.Unlock()
 
-	s.log.Info(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
+	s.log.Debug(ctx, "stream created", telemetry.Fields{"id": id, "name": in.Name, "subjects": out.Subjects})
 	return out, nil
 }
 
@@ -88,7 +88,7 @@ func (s *store) Update(ctx context.Context, id string, in streams.Stream) (strea
 	out := declaration(id, in)
 	s.declared[id] = out
 
-	s.log.Info(ctx, "stream updated", telemetry.Fields{"id": id})
+	s.log.Debug(ctx, "stream updated", telemetry.Fields{"id": id})
 	return out, nil
 }
 
@@ -114,7 +114,7 @@ func (s *store) Delete(ctx context.Context, id string) error {
 	delete(s.declared, id)
 	s.declMu.Unlock()
 
-	s.log.Info(ctx, "stream deleted", telemetry.Fields{"id": id})
+	s.log.Debug(ctx, "stream deleted", telemetry.Fields{"id": id})
 	return nil
 }
 
