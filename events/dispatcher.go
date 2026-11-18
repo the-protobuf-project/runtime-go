@@ -141,6 +141,12 @@ func NewDispatcher(store Store, feeds []Feed, opts Options) *Dispatcher {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
+	// Without signals of its own the dispatcher reports through the
+	// process's default (telemetry.Default), as every runtime module does.
+	if opts.Meter == nil && opts.Tracer == nil && opts.Logger == nil && opts.Profiler == nil && opts.Baggage == nil {
+		def := telemetry.Default()
+		opts.Meter, opts.Tracer, opts.Logger, opts.Profiler, opts.Baggage = def.Meter, def.Tracer, def.Logger, def.Profiler, def.Baggage
+	}
 	om := make(map[*Outbox]outboxMetrics, len(opts.Outboxes))
 	for _, o := range opts.Outboxes {
 		om[o] = newOutboxMetrics(opts.Meter, o.spec.MetricPrefix, o.spec.Name)

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/the-protobuf-project/runtime-go/telemetry"
+
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 	"github.com/the-protobuf-project/runtime-go/agents/shared"
@@ -116,6 +118,11 @@ type ServerConfig struct {
 	// mounted and before the listener opens, so a host can log or record where
 	// the agent ended up.
 	OnReady func(resolved *ServerConfig)
+
+	// Signals observe every task execution and cancellation, one operation
+	// each. Zero reports through telemetry.Default, which
+	// runtime-go/observability's Adopt sets.
+	Signals telemetry.Signals
 }
 
 // resolvedTransports is the transport set this config asks for, in the order

@@ -48,7 +48,8 @@ type Options struct {
 	// MetricPrefix names the metrics: <prefix>.attempts and
 	// <prefix>.delivery_lag. Default "stream".
 	MetricPrefix string
-	// Meter receives the metrics. Nil drops them.
+	// Meter receives the metrics. Nil reports through telemetry.Default's
+	// meter, and drops them when the process set none.
 	Meter telemetry.Meter
 	// Now is the clock. Default time.Now.
 	Now func() time.Time
@@ -114,6 +115,9 @@ func newSink(pub streams.Publisher, st streams.Stream, opts Options) *Sink {
 		opts.Now = time.Now
 	}
 	m := opts.Meter
+	if m == nil {
+		m = telemetry.Default().Meter // the process's, when it set one
+	}
 	if m == nil {
 		m = telemetry.NoopMeter
 	}

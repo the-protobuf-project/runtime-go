@@ -5,6 +5,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/the-protobuf-project/runtime-go/telemetry"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/grpc"
 )
@@ -53,6 +55,10 @@ type MCPServerConfig struct {
 	// handlers (and so for UnaryInterceptor), and outgoing metadata for
 	// ForwardTo clients. Use DefaultHeaderMappings() for common headers.
 	HeaderMappings []HeaderMapping
+	// Signals observe every MCP method the server receives, one operation
+	// each (see the package's observeMethods). Zero reports through
+	// telemetry.Default, which runtime-go/observability's Adopt sets.
+	Signals telemetry.Signals
 	// OnReady is called after BasePath is resolved, just before the server starts listening.
 	// Use this to log or inspect the final endpoint.
 	OnReady func(cfg *MCPServerConfig)
@@ -102,6 +108,9 @@ func NewMCPServer(cfg *MCPServerConfig) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: cfg.Name, Version: cfg.Version}, opts)
 	if len(cfg.HeaderMappings) > 0 {
 		s.AddReceivingMiddleware(IncomingHeadersMiddleware(cfg.HeaderMappings))
+	}
+	if signals := cfg.Signals.Or(); signals.Enabled() {
+		s.AddReceivingMiddleware(observeMethods(signals))
 	}
 	return s
 }
