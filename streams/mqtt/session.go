@@ -71,7 +71,22 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 		ConnectPassword:               s.cfg.password,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, ack *paho.Connack) {
 			// It must not block, and subscribing waits on the broker.
-			go func() { report(s.restore(cm, ack, filter, clientID, tune.retainHandling)) }()
+			go func() {
+				err := s.restore(cm, ack, filter, clientID, tune.retainHandling)
+				if connectionDown(err) {
+					// The connection the broker accepted dropped before the
+					// SUBSCRIBE was answered: another connection claimed the
+					// session (one whose takeover notice it never read, so it
+					// dialed again), or the network blinked. That is neither
+					// an unreachable broker nor a refusal; autopaho dials
+					// again, and the next connection's result decides,
+					// within the dial timeout open waits.
+					s.log.Debug(context.Background(), "the connection dropped before subscribing; waiting for the next one",
+						telemetry.Fields{"client_id": clientID, "filter": filter})
+					return
+				}
+				report(err)
+			}()
 		},
 		OnConnectError: func(err error) {
 			s.log.Warn(context.Background(), "could not connect", telemetry.Fields{
@@ -193,6 +208,12 @@ const reasonSessionTakenOver = 0x8E
 // dialed again.
 var errSessionTakenOver = errors.New("mqtt: another connection took this session")
 
+// connectionDown reports whether err says only that the connection went away
+// under a request: paho's session has no connection, or autopaho's is down.
+func connectionDown(err error) bool {
+	return errors.Is(err, session.ErrNoConnection) || errors.Is(err, autopaho.ConnectionDownError)
+}
+
 // errPacketIDInUse is the reason code (0x91) a broker answers a SUBSCRIBE with
 // when its packet identifier is one the broker is still using.
 const errPacketIDInUse = 0x91
@@ -232,7 +253,10 @@ func (s *store) restore(cm *autopaho.ConnectionManager, ack *paho.Connack, filte
 		if suback != nil && len(suback.Reasons) > 0 {
 			err = fmt.Errorf("broker reason %d: %w", suback.Reasons[0], err)
 		}
-		s.log.Error(ctx, "could not subscribe", err, telemetry.Fields{"filter": filter, "client_id": clientID})
+		if !connectionDown(err) {
+			// A dropped connection is waited out, not an error (see open).
+			s.log.Error(ctx, "could not subscribe", err, telemetry.Fields{"filter": filter, "client_id": clientID})
+		}
 		return fmt.Errorf("cannot subscribe to %q: %w", filter, err)
 	}
 }
