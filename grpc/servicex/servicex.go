@@ -109,7 +109,7 @@ func Reasons() []problem.Reason {
 // NewTranslator is the problem.Translator the generated servers use when
 // given none: kinds first (a consumer's own sentinels), then Kinds(), with
 // Reasons() declared. A store-backed server adds the repositories' reference
-// errors: NewTranslator(domain).Handle(ReferenceStatus).
+// errors: NewTranslator(domain).Handle(repox.ReferenceStatus).
 func NewTranslator(domain string, kinds ...problem.Kind) *problem.Translator {
 	return problem.New(domain, append(kinds, Kinds()...)...).
 		Declare(Reasons()...)
@@ -131,7 +131,7 @@ type Options struct {
 type Option func(*Options)
 
 // WithTranslator sets Options.Translator. Build it with NewTranslator (or
-// register Kinds() and ReferenceStatus on your own) so the repository errors
+// register Kinds() and repox.ReferenceStatus on your own) so the repository errors
 // keep their codes.
 func WithTranslator(t *problem.Translator) Option { return func(o *Options) { o.Translator = t } }
 
