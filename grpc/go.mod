@@ -3,7 +3,7 @@ module github.com/the-protobuf-project/runtime-go/grpc
 go 1.26.4
 
 require (
-	buf.build/go/protovalidate v1.4.0
+	buf.build/go/protovalidate v1.4.1
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/fatih/color v1.19.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0
@@ -34,7 +34,7 @@ require (
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect
-	cel.dev/cel-go v0.32.0 // indirect
+	cel.dev/cel-go v0.33.2 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	github.com/a2aproject/a2a-go/v2 v2.8.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
