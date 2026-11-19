@@ -211,7 +211,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>database</b> · 12 packages</summary>
+<summary><b>database</b> · 13 packages</summary>
 
 **Install**
 
@@ -245,6 +245,7 @@ b, _ := books.Get(ctx, id)
 | [`database/filterx`](database/filterx) | The filter/order/list SDK the generated specs build on: the Condition vocabulary an AIP-160 filter parses into, the Spec data model the per-schema filters.go files instantiate, the shared semantics (enum normalization, date/number validation, ILIKE escaping, sort allowlists, page math), and the chainable engines built from a Spec — Gorm[M] for SQL, Hasura[M] for GraphQL, and OpenSearch for the query DSL. |
 | [`database/mongodb`](database/mongodb) | Implements the backend-agnostic store.Driver over MongoDB. |
 | [`database/orm`](database/orm) | Implements the backend-agnostic store.Driver over GORM. |
+| [`database/osx`](database/osx) | The runtime the generated OpenSearch indices build on: a (store.v1.projection) copied from its Postgres table into OpenSearch and searched there. |
 | [`database/redis`](database/redis) | Implements the backend-agnostic store.Driver over Redis: durable records addressed by a store.Resource's primary key, stored as proto wire format, with a set of keys alongside so they can be listed. |
 | [`database/repox`](database/repox) | The shared runtime of the generated repositories: the error vocabulary adapters map their backend errors onto, the connection bundle the per-schema factories pick an adapter from, the list-request shape every repository List takes, the Unit every schema's Batch queues into, and the small helpers (resource-name splitting, ULID minting, mask matching) the generated method bodies share. |
 | [`database/store`](database/store) | The backend-agnostic core of the runtime data layer: a single CRUD Driver contract that operates on proto messages, a Resource descriptor that mirrors protorm's IR at runtime, and a reflection bridge every driver reuses to move values between a proto message and a backend column map. |
