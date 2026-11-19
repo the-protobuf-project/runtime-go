@@ -686,12 +686,17 @@ func (ix *Index[T]) Reindex(ctx context.Context, c *opensearch.Client, source fu
 	if res.CaughtUp, err = load(source(since), res.Index); err != nil {
 		return res, err
 	}
-	if err := c.Refresh(ctx, res.Index); err != nil {
+	err = c.Refresh(ctx, res.Index)
+	if err != nil {
 		return res, err
 	}
 	var gone []bulkOp
 	now := time.Now().UnixMicro()
-	for hit, err := range c.Iterate(ctx, &opensearch.PageOptions{Source: false, Size: 5000}, res.Index) {
+	sort, err := ix.keySort()
+	if err != nil {
+		return res, err
+	}
+	for hit, err := range c.Iterate(ctx, &opensearch.PageOptions{Source: false, Sort: sort, Size: 5000}, res.Index) {
 		if err != nil {
 			return res, pitErr(err)
 		}
@@ -909,9 +914,9 @@ func (ix *Index[T]) Iterate(ctx context.Context, c *opensearch.Client, in repox.
 			yield(zero, err)
 			return
 		}
-		sort, _, err := filterx.OpenSearch(ix.Projection.Spec.Filter).Sort("")
+		sort, err := ix.keySort()
 		if err != nil {
-			yield(zero, repox.MapFilterxErr(err))
+			yield(zero, err)
 			return
 		}
 		// c.Iterate deletes its point in time however the loop ends: done,
@@ -931,6 +936,17 @@ func (ix *Index[T]) Iterate(ctx context.Context, c *opensearch.Client, in repox.
 			}
 		}
 	}
+}
+
+// keySort is the key order every point-in-time scan pages in. The SDK's
+// default tiebreaker, _shard_doc, is Elasticsearch's and OpenSearch rejects
+// it, so a scan always names its sort.
+func (ix *Index[T]) keySort() ([]any, error) {
+	sort, _, err := filterx.OpenSearch(ix.Projection.Spec.Filter).Sort("")
+	if err != nil {
+		return nil, repox.MapFilterxErr(err)
+	}
+	return sort, nil
 }
 
 // Count returns how many documents match in (its page fields ignored).
@@ -1054,9 +1070,13 @@ var FacetScanLimit = 10000
 func (ix *Index[T]) scanFacet(ctx context.Context, c *opensearch.Client, q map[string]any, p filterx.JSONPath, limit int) ([]repox.Bucket, error) {
 	field := p.Field.Column + "." + p.Key()
 	query := map[string]any{"bool": map[string]any{"filter": []any{q, map[string]any{"exists": map[string]any{"field": field}}}}}
+	sort, err := ix.keySort()
+	if err != nil {
+		return nil, err
+	}
 	counts := map[string]int64{}
 	read := 0
-	for hit, err := range c.Iterate(ctx, &opensearch.PageOptions{Query: query, Source: []string{p.Field.Column}, Size: 1000}, ix.Spec.Alias) {
+	for hit, err := range c.Iterate(ctx, &opensearch.PageOptions{Query: query, Source: []string{p.Field.Column}, Sort: sort, Size: 1000}, ix.Spec.Alias) {
 		if err != nil {
 			return nil, pitErr(err)
 		}

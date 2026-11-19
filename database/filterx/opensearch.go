@@ -106,6 +106,17 @@ func osExists(field string) map[string]any {
 	return map[string]any{"exists": map[string]any{"field": field}}
 }
 
+// osFlatPresent matches documents holding a path under a flat_object field.
+// exists sees only the field's first-level keys (of any type) and a wildcard
+// sees only leaf values (at any depth), so a path is present when either
+// matches.
+func osFlatPresent(field string) map[string]any {
+	return map[string]any{"bool": map[string]any{"should": []any{
+		osExists(field),
+		map[string]any{"wildcard": map[string]any{field: map[string]any{"value": "*"}}},
+	}, "minimum_should_match": 1}}
+}
+
 // osContains is a case-insensitive contains over a keyword field, the twin of
 // the SQL engine's ILIKE '%v%'.
 func osContains(field, v string) map[string]any {
@@ -337,6 +348,12 @@ func osJSONCondition(p JSONPath, c Condition) (map[string]any, error) {
 		}
 		return fmt.Sprint(v)
 	}
+	present := func() map[string]any {
+		if typed {
+			return osExists(field)
+		}
+		return osFlatPresent(field)
+	}
 	switch c.Op {
 	case OpNull:
 		null, err := ParseBool(c.Value)
@@ -344,12 +361,12 @@ func osJSONCondition(p JSONPath, c Condition) (map[string]any, error) {
 			return nil, err
 		}
 		if null {
-			return osNot(osExists(field)), nil
+			return osNot(present()), nil
 		}
-		return osExists(field), nil
+		return present(), nil
 	case OpHas:
 		if IsPresenceTest(c) {
-			return osExists(field), nil
+			return present(), nil
 		}
 		v, err := JSONValue(p, c)
 		if err != nil {
@@ -365,9 +382,9 @@ func osJSONCondition(p JSONPath, c Condition) (map[string]any, error) {
 		}
 		if v == nil {
 			if c.Op == OpEq {
-				return osNot(osExists(field)), nil
+				return osNot(present()), nil
 			}
-			return osExists(field), nil
+			return present(), nil
 		}
 		if c.Op == OpNeq {
 			return osNot(osTerm(field, value(v))), nil
