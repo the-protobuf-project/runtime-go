@@ -321,7 +321,7 @@ d := events.NewDispatcher(store, feeds, events.Options{Sink: sink, Outboxes: out
 </details>
 
 <details>
-<summary><b>grpc</b> · 6 packages</summary>
+<summary><b>grpc</b> · 7 packages</summary>
 
 **Install**
 
@@ -356,6 +356,7 @@ srv.Start() // blocks until signal
 | [`grpc/idempotency`](grpc/idempotency) | Makes an API's request_id field mean what AIP-155 promises: reusing an id returns what the first call returned, instead of attempting the write a second time. |
 | [`grpc/options`](grpc/options) | Holds the configuration for the grpc HybridServer: service identity (name, description, version), the gRPC/HTTP/MCP endpoints, the environment mode, the health/HTTP-3 toggles, and the OpenTelemetry metric selection. |
 | [`grpc/problem`](grpc/problem) | Turns a service's typed errors into google.rpc.Status errors a developer can act on (AIP-193): a status code, a message that says what is wrong and what to do, an ErrorInfo with a stable reason, and the detail the error calls for -- BadRequest for a field, PreconditionFailure for a blocked call, ResourceInfo for a missing resource. |
+| [`grpc/servicex`](grpc/servicex) | The shared runtime of the generated servers: the options every server takes, the error vocabulary they speak (AIP-193 google.rpc.Status with an ErrorInfo reason), the request checks the standard methods share, and the change-event boundary a dispatcher implements. |
 | [`grpc/shared`](grpc/shared) | Holds the process-wide singletons the grpc server initializes once and tears down on exit — currently the Pulse observability client ([Pulse]), constructed in an init with the service identity, log level, and tracing enabled. |
 
 </details>
