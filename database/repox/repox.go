@@ -17,6 +17,7 @@ import (
 
 	"github.com/the-protobuf-project/runtime-go/database/filterx"
 	"github.com/the-protobuf-project/runtime-go/database/storex"
+	"github.com/the-protobuf-project/runtime-go/grpc/problem"
 	"github.com/the-protobuf-project/runtime-go/network/graphql"
 	"github.com/the-protobuf-project/runtime-go/network/runtime"
 )
@@ -28,11 +29,14 @@ import (
 // The three reference errors are FAILED_PRECONDITION, each with its own
 // google.rpc.ErrorInfo reason (ReferenceError.Reason, in ErrorDomain); see
 // references.go.
+//
+// The first four are runtime-go/grpc/problem's, so that the generated
+// servers (grpc/servicex) and these repositories agree on each outcome.
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrAlreadyExists   = errors.New("already exists")
-	ErrConflict        = errors.New("conflict")
-	ErrInvalidArgument = errors.New("invalid argument")
+	ErrNotFound        = problem.ErrNotFound
+	ErrAlreadyExists   = problem.ErrAlreadyExists
+	ErrConflict        = problem.ErrConflict
+	ErrInvalidArgument = problem.ErrInvalidArgument
 
 	// ErrForeignKey is a database foreign key refusing a write: a row naming a
 	// target that does not exist, or a delete of a row still named
