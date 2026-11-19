@@ -28,10 +28,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /agents
     schedule:
       interval: weekly
@@ -45,10 +41,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /blockchain
     schedule:
       interval: weekly
@@ -62,10 +54,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /buffers
     schedule:
       interval: weekly
@@ -79,10 +67,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /cache
     schedule:
       interval: weekly
@@ -96,10 +80,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /database
     schedule:
       interval: weekly
@@ -113,10 +93,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /database/examples
     schedule:
       interval: weekly
@@ -130,10 +106,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /grpc
     schedule:
       interval: weekly
@@ -147,10 +119,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /interfaces
     schedule:
       interval: weekly
@@ -164,10 +132,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /network
     schedule:
       interval: weekly
@@ -181,10 +145,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /observability
     schedule:
       interval: weekly
@@ -198,10 +158,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /rfc
     schedule:
       interval: weekly
@@ -215,13 +171,13 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /streams
     schedule:
       interval: weekly
+    # kfake is its own module inside franz-go; Dependabot resolves it against
+    # franz-go's tags and fails the run. Bump it by hand with franz-go.
+    ignore:
+      - dependency-name: "github.com/twmb/franz-go/pkg/kfake"
     commit-message:
       prefix: "chore(deps/streams)"
     labels:
@@ -232,10 +188,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /streams/examples
     schedule:
       interval: weekly
@@ -249,10 +201,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /telemetry
     schedule:
       interval: weekly
@@ -266,10 +214,6 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
-
-    assignees:
-
-      - "ParthuReddy31"
     directory: /ulid
     schedule:
       interval: weekly
