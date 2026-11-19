@@ -28,6 +28,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /agents
     schedule:
       interval: weekly
@@ -41,6 +45,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /blockchain
     schedule:
       interval: weekly
@@ -54,6 +62,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /buffers
     schedule:
       interval: weekly
@@ -67,6 +79,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /cache
     schedule:
       interval: weekly
@@ -80,6 +96,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /database
     schedule:
       interval: weekly
@@ -93,6 +113,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /database/examples
     schedule:
       interval: weekly
@@ -106,6 +130,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /grpc
     schedule:
       interval: weekly
@@ -119,6 +147,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /interfaces
     schedule:
       interval: weekly
@@ -132,6 +164,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /network
     schedule:
       interval: weekly
@@ -145,6 +181,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /observability
     schedule:
       interval: weekly
@@ -158,6 +198,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /rfc
     schedule:
       interval: weekly
@@ -171,6 +215,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /streams
     schedule:
       interval: weekly
@@ -184,6 +232,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /streams/examples
     schedule:
       interval: weekly
@@ -197,6 +249,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /telemetry
     schedule:
       interval: weekly
@@ -210,6 +266,10 @@ updates:
           - "*"
 
   - package-ecosystem: gomod
+
+    assignees:
+
+      - "ParthuReddy31"
     directory: /ulid
     schedule:
       interval: weekly
