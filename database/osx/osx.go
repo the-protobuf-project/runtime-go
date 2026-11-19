@@ -822,9 +822,7 @@ func (ix *Index[T]) Search(ctx context.Context, c *opensearch.Client, in repox.S
 	if tok.After != nil {
 		body["search_after"] = tok.After
 	}
-	if src := ix.sourceFilter(in.ReadMask); src != nil {
-		body["_source"] = src
-	}
+	body["_source"] = ix.sourceFilter(in.ReadMask)
 	path := "/" + url.PathEscape(ix.Spec.Alias) + "/_search"
 	// Only a page after the first reads a point in time: a first page, which
 	// most searches never go past, holds nothing open. A token minted
@@ -884,7 +882,8 @@ func (ix *Index[T]) Search(ctx context.Context, c *opensearch.Client, in repox.S
 }
 
 // sourceFilter is the _source clause a read mask asks for: the key, the
-// key fields and the fields named, as columns; nil for no mask.
+// key fields and the fields named, as columns. With no mask it is every
+// field but the typed copies, which are for filtering, not for reading.
 func (ix *Index[T]) sourceFilter(mask []string) any {
 	if len(mask) == 0 {
 		return map[string]any{"excludes": []string{"*" + filterx.OpenSearchTypedSuffix}}
