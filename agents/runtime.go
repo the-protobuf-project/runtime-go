@@ -123,6 +123,7 @@ func (r *Runtime) Start(ctx context.Context) error {
 			}
 
 			readyCh := make(chan []Endpoint, 1)
+			failCh := make(chan error, 1)
 			go func(s Service, p Placement) {
 				var once sync.Once
 				err := s.Serve(serveCtx, p, func(eps []Endpoint) {
@@ -130,13 +131,25 @@ func (r *Runtime) Start(ctx context.Context) error {
 				})
 				// A service that fails before reporting ready would otherwise
 				// hold up Start until the ready timeout, reporting a stall
-				// where there was a real error.
-				once.Do(func() { close(readyCh) })
+				// where there was a real error. Its error goes out before
+				// readyCh closes, so Start never sees the close without it.
+				once.Do(func() {
+					failCh <- err
+					close(readyCh)
+				})
 				errCh <- err
 			}(s, p)
 
 			select {
-			case eps := <-readyCh:
+			case eps, ok := <-readyCh:
+				if !ok {
+					cancel()
+					err := <-failCh
+					if err == nil {
+						err = fmt.Errorf("agents: %s stopped before it mounted", s.Protocol())
+					}
+					return fmt.Errorf("agents: %s failed to start: %w", s.Protocol(), err)
+				}
 				endpoints = append(endpoints, eps...)
 			case <-time.After(r.cfg.ReadyTimeout):
 				cancel()
@@ -144,18 +157,6 @@ func (r *Runtime) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				cancel()
 				return ctx.Err()
-			}
-
-			// The goroutine closes readyCh when Serve returns without ever
-			// reporting ready, which lands here as a zero-length read.
-			select {
-			case err := <-errCh:
-				cancel()
-				if err == nil {
-					err = fmt.Errorf("agents: %s stopped before it mounted", s.Protocol())
-				}
-				return fmt.Errorf("agents: %s failed to start: %w", s.Protocol(), err)
-			default:
 			}
 		}
 	}
