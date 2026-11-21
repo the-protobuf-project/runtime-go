@@ -8,7 +8,11 @@ strategies, implemented once, running on whichever server you point them at.
 | Redis | [`cache/redis`](./redis) | implemented |
 | Dragonfly | [`cache/dragonfly`](./dragonfly) | implemented |
 | memcached | [`cache/memcached`](./memcached) | implemented |
+| Cloudflare Workers KV | [`cache/workerskv`](./workerskv) | implemented (official SDK; eventually consistent, no conditional writes) |
 | Any RESP server | [`cache/resp`](./resp) | the driver the first two are presets over |
+
+To purge what Cloudflare's CDN has cached for a zone - by URL, tag, host or
+prefix - see [`cache/cdn`](./cdn).
 
 For durable records that never expire see [`database`](../database); for
 messaging see [`streams`](../streams).
@@ -256,16 +260,19 @@ missing capability reports `cache.ErrUnsupported` with a message naming the
 backend and why - the field is never nil, because a nil field panics far from the
 wiring mistake that caused it.
 
-| | Redis / Dragonfly | memcached |
-| --- | --- | --- |
-| `Document` | full | store and fetch by id only |
-| `Volatile` | full | full (`Touch` is native, and cleaner than `EXPIRE XX`) |
-| `Indexed` | full | none - no sets to index with |
-| `Aside` | full, with a cross-process lock | full, collapsing loads per process |
-| `SetDatabase(name)` | a key namespace | a key namespace - identical |
-| `SelectIndex(n)` | a real database, via `SELECT` | a key namespace, `db3:` |
-| `DropDatabase(name)` | cursor walk and batched deletes | none - no cursor to find its keys |
-| Enumeration cost | one pipelined round trip per 256 ids | same, via multi-get |
+| | Redis / Dragonfly | memcached | Workers KV |
+| --- | --- | --- | --- |
+| `Document` | full | store and fetch by id only | store and fetch by id; no `Update` - no conditional write |
+| `Volatile` | full | full (`Touch` is native, and cleaner than `EXPIRE XX`) | all but `Touch`; leases under 60s become 60s |
+| `Indexed` | full | none - no sets to index with | none - no sets to index with |
+| `Aside` | full, with a cross-process lock | full, collapsing loads per process | full, collapsing loads per process |
+| `SetDatabase(name)` | a key namespace | a key namespace - identical | a key namespace - identical |
+| `SelectIndex(n)` | a real database, via `SELECT` | a key namespace, `db3:` | a key namespace, `db3:` |
+| `DropDatabase(name)` | cursor walk and batched deletes | none - no cursor to find its keys | prefix listing and bulk deletes |
+| Enumeration cost | one pipelined round trip per 256 ids | same, via multi-get | none - no index to enumerate |
+
+Workers KV is also eventually consistent: a write can take up to a minute to be
+seen at other locations, and a key takes at most one write a second.
 
 ## Adding a backend
 

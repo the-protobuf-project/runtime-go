@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/bradfitz/gomemcache v0.0.0-20260422231931-4d751bb6e37c
+	github.com/cloudflare/cloudflare-go/v7 v7.15.0
 	github.com/redis/go-redis/v9 v9.23.0
 	github.com/the-protobuf-project/runtime-go/observability v0.0.0-20261118052056-98385b147b4d
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
@@ -60,6 +61,10 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/the-protobuf-project/telemetry/telemetry-go v1.3.3 // indirect
+	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/xo/terminfo v1.3.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
