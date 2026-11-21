@@ -178,7 +178,7 @@ sensor, err := bridge.CapnProto(data).Sensor()   // cap'n proto -> proto
 </details>
 
 <details>
-<summary><b>cache</b> (7 packages)</summary>
+<summary><b>cache</b> (9 packages)</summary>
 
 **Install**
 
@@ -197,12 +197,14 @@ db, err := c.SetDatabase(ctx, "orders")
 | Package | What it does |
 | --- | --- |
 | [`cache`](cache) | The contract for runtime-go's cache layer: the interfaces, and nothing that implements them. |
+| [`cache/cdn`](cache/cdn) | Purges what Cloudflare's CDN has cached for a zone, through the official cloudflare-go SDK. |
 | [`cache/core`](cache/core) | Implements every cache strategy once, over a Driver. |
 | [`cache/dragonfly`](cache/dragonfly) | The Dragonfly preset. |
 | [`cache/memcached`](cache/memcached) | The memcached backend, and the argument for the driver split. |
 | [`cache/redis`](cache/redis) | The Redis preset. |
 | [`cache/resp`](cache/resp) | The driver for anything speaking the Redis serialization protocol: Redis itself, Dragonfly, Valkey, KeyDB. |
 | [`cache/shared`](cache/shared) | Holds the telemetry this module's code logs and measures through. |
+| [`cache/workerskv`](cache/workerskv) | The Cloudflare Workers KV backend, reached through the REST API by the official cloudflare-go SDK. |
 
 Examples and tools:
 
@@ -211,7 +213,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>database</b> (13 packages)</summary>
+<summary><b>database</b> (14 packages)</summary>
 
 **Install**
 
@@ -242,6 +244,7 @@ b, _ := books.Get(ctx, id)
 | [`database/arangodb`](database/arangodb) | Implements the backend-agnostic store.Driver over ArangoDB, and the graph capability alongside it. |
 | [`database/cached`](database/cached) | Puts a read-through cache in front of any store.Driver, so a record read repeatedly is fetched from the backing store once. |
 | [`database/core`](database/core) | The code every store driver would otherwise copy. |
+| [`database/d1`](database/d1) | Implements the backend-agnostic store.Driver over Cloudflare D1, through the official cloudflare-go SDK. |
 | [`database/filterx`](database/filterx) | The filter/order/list SDK the generated specs build on: the Condition vocabulary an AIP-160 filter parses into, the Spec data model the per-schema filters.go files instantiate, the shared semantics (enum normalization, date/number validation, ILIKE escaping, sort allowlists, page math), and the chainable engines built from a Spec - Gorm[M] for SQL, Hasura[M] for GraphQL, and OpenSearch for the query DSL. |
 | [`database/mongodb`](database/mongodb) | Implements the backend-agnostic store.Driver over MongoDB. |
 | [`database/orm`](database/orm) | Implements the backend-agnostic store.Driver over GORM. |
