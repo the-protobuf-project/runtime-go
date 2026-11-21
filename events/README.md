@@ -57,7 +57,7 @@ secret:
 
 ```go
 if err := events.CheckEndpoint(uri, events.EndpointPolicy{}); err != nil { ... } // *EndpointError{Reason, What, Fix}
-secret, _ := events.NewSecret()   // "whsec_…", returned to the caller once
+secret, _ := events.NewSecret()   // "whsec_...", returned to the caller once
 sealed, _ := sealer.Seal(secret)  // what the store keeps
 ```
 
@@ -135,7 +135,7 @@ metrics under `Options.MetricPrefix`.
 | Superseded versions | A change whose record moved on before it was fetched is left to the read of its new version. |
 | Retries | 30 s, doubling to 6 h; `FAILED` after `MaxAttempts` (8) or when the webhook was deleted; a paused webhook's deliveries wait. |
 | Signing | [Standard Webhooks](https://www.standardwebhooks.com): `webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64 HMAC-SHA256>`; after a rotation the previous secret signs too for `RotationGrace` (24 h). `Verify` checks one as a receiver would. |
-| Secrets at rest | `Sealer`: AES-256-GCM, `enc:v1:<key id>:…`, current key plus the keys it replaced; unsealed values are read as they are. |
+| Secrets at rest | `Sealer`: AES-256-GCM, `enc:v1:<key id>:...`, current key plus the keys it replaced; unsealed values are read as they are. |
 | SSRF | The default client connects only to public addresses (checked on the address DNS returned), follows no redirects, uses no proxy. |
 | Retention | Finished deliveries are pruned after `Retention` (30 days). |
 | Metrics | `<prefix>.attempts{outcome=succeeded\|retrying\|failed}`, `<prefix>.delivery_lag` (s); for an outbox also `outbox.claims{result=claimed\|contended\|empty}`, and for the stream sink `stream.attempts` with `dead_lettered`. |

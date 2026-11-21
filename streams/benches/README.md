@@ -1,6 +1,6 @@
 # Throughput benchmark results
 
-[How to run](RUNNING.md) · [Streams guide](../README.md) · [runtime-rs results](../../../runtime-rs/streams/benches/README.md)
+[How to run](RUNNING.md) | [Streams guide](../README.md) | [runtime-rs results](../../../runtime-rs/streams/benches/README.md)
 
 ## Run
 
@@ -17,7 +17,7 @@
 | Subjects | 10 |
 | Paced run | 5 s of messages at the target rate, at least 100,000 |
 | Unpaced run | 500,000 messages (20,000 with sync every message) |
-| Target held | nothing lost or undecodable, delivered ≥ 95% of the target |
+| Target held | nothing lost or undecodable, delivered >= 95% of the target |
 | Host | Apple Silicon Mac, Docker Desktop VM (8 GB), broker and client on one machine |
 | Harness | `go build -tags live ./benches/throughput`, one binary for every run |
 
@@ -262,9 +262,9 @@ Go: label `go-official,go-official-mqttfix,go-official-fix2,go-official-fix3`. R
 
 ### Delivered rate
 
-`no` marks a run that did not hold its target. Go ÷ Rust is delivered msg/s.
+`no` marks a run that did not hold its target. Go / Rust is delivered msg/s.
 
-| Backend | Profile | Scenario | Target | Go msg/s | Rust msg/s | Go ÷ Rust |
+| Backend | Profile | Scenario | Target | Go msg/s | Rust msg/s | Go / Rust |
 | --- | --- | --- | --- | ---: | ---: | ---: |
 | ZeroMQ | plain | fanout | 20k | 19,956 | 19,943 | 1.00 |
 | ZeroMQ | plain | fanout | 50k | 49,890 | 49,862 | 1.00 |
@@ -562,39 +562,39 @@ Go: label `go-official,go-official-mqttfix,go-official-fix2,go-official-fix3`. R
 | OPC UA PubSub | tls-prod | batch | 3.0 | 4.0 | 6.7 | 7.6 |
 | OPC UA PubSub | tls-prod | group | 6.1 | 1.6 | 18.0 | 14.3 |
 
-### Go ÷ Rust, unpaced fanout, plaintext
+### Go / Rust, unpaced fanout, plaintext
 
 ```mermaid
 xychart-beta horizontal
     x-axis ["ZeroMQ", "NATS core", "NATS JetStream", "Redis pub/sub", "Redis Streams", "Kafka", "RabbitMQ", "MQTT", "OPC UA client/server", "OPC UA PubSub"]
-    y-axis "Go ÷ Rust" 0 --> 2.62
+    y-axis "Go / Rust" 0 --> 2.62
     bar [1.01, 0.88, 0.86, 0.65, 0.70, 2.38, 0.77, 0.93, 0.98, 0.90]
 ```
 
-### Go ÷ Rust, unpaced batch, plaintext
+### Go / Rust, unpaced batch, plaintext
 
 ```mermaid
 xychart-beta horizontal
     x-axis ["ZeroMQ", "NATS core", "NATS JetStream", "Redis pub/sub", "Redis Streams", "Kafka", "RabbitMQ", "MQTT", "OPC UA client/server", "OPC UA PubSub"]
-    y-axis "Go ÷ Rust" 0 --> 10.23
+    y-axis "Go / Rust" 0 --> 10.23
     bar [9.30, 0.91, 1.05, 0.87, 0.90, 1.34, 0.58, 0.50, 0.95, 0.71]
 ```
 
-### Go ÷ Rust, unpaced fanout, tls, production durability
+### Go / Rust, unpaced fanout, tls, production durability
 
 ```mermaid
 xychart-beta horizontal
     x-axis ["NATS core", "NATS JetStream", "Redis pub/sub", "Redis Streams", "Kafka", "RabbitMQ", "MQTT", "OPC UA client/server", "OPC UA PubSub"]
-    y-axis "Go ÷ Rust" 0 --> 3.61
+    y-axis "Go / Rust" 0 --> 3.61
     bar [0.62, 0.89, 1.62, 0.69, 3.28, 0.74, 0.94, 0.97, 0.47]
 ```
 
-### Go ÷ Rust, unpaced batch, tls, production durability
+### Go / Rust, unpaced batch, tls, production durability
 
 ```mermaid
 xychart-beta horizontal
     x-axis ["NATS core", "NATS JetStream", "Redis pub/sub", "Redis Streams", "Kafka", "RabbitMQ", "MQTT", "OPC UA client/server", "OPC UA PubSub"]
-    y-axis "Go ÷ Rust" 0 --> 2.79
+    y-axis "Go / Rust" 0 --> 2.79
     bar [0.71, 1.03, 1.00, 0.81, 2.54, 0.53, 1.09, 0.98, 0.67]
 ```
 
@@ -611,7 +611,7 @@ xychart-beta horizontal
 
 Same machine, same broker, both through Docker Desktop's port forward. Tool figures from the runtime-rs baseline run (`native-baseline.sh`, shared by both runtimes).
 
-| Broker | Official tool | Tool msg/s | Scenario | Go msg/s | Go ÷ tool | Rust msg/s | Rust ÷ tool |
+| Broker | Official tool | Tool msg/s | Scenario | Go msg/s | Go / tool | Rust msg/s | Rust / tool |
 | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | NATS core | `nats bench` pub + sub, 1 client each | 509,981 | fanout, unpaced | 395,264 | 78% | 450,360 | 88% |
 | NATS JetStream | `nats bench js pub async`, message ids | 195,332 | batch, unpaced | 130,255 | 67% | 124,506 | 64% |

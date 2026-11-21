@@ -68,7 +68,11 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	updated, err := splice(string(current), section(pkgs))
+	generated, err := plain(section(pkgs))
+	if err != nil {
+		fatal(err)
+	}
+	updated, err := splice(string(current), generated)
 	if err != nil {
 		fatal(err)
 	}
@@ -317,7 +321,7 @@ func section(pkgs []pkg) string {
 				libs = append(libs, p)
 			}
 		}
-		fmt.Fprintf(&b, "\n<details>\n<summary><b>%s</b> · %s</summary>\n\n", m, count(len(libs), "package"))
+		fmt.Fprintf(&b, "\n<details>\n<summary><b>%s</b> (%s)</summary>\n\n", m, count(len(libs), "package"))
 		writeStart(&b, modulePathOf(byModule[m]), lead(m, byModule[m]))
 		if len(libs) > 0 {
 			b.WriteString("| Package | What it does |\n| --- | --- |\n")
@@ -427,6 +431,35 @@ func splice(current, section string) (string, error) {
 		return current[:at] + section + "\n\n" + current[at:], nil
 	}
 	return strings.TrimRight(current, "\n") + "\n\n" + section + "\n", nil
+}
+
+// asciiFor is what each non-ASCII character a package doc may carry becomes in
+// the README, which is plain ASCII: no emoji, no symbols, and "yes" or "no"
+// where a mark would have said it.
+var asciiFor = map[rune]string{
+	'\u2014': "-", '\u2013': "-", '\u00b7': "|", '\u2026': "...",
+	'\u2018': "'", '\u2019': "'", '\u201c': `"`, '\u201d': `"`,
+	'\u2192': "->", '\u2265': ">=", '\u2264': "<=", '\u2248': "~", '\u00f7': "/",
+	'\u00d7': "x", '\u2212': "-", '\u00b1': "+/-", '\u00a9': "(c)",
+	'\u2705': "yes", '\u2713': "yes", '\u2714': "yes", '\u2717': "no", '\u2718': "no", '\u274c': "no",
+	'\u2500': "-", '\u2502': "|", '\u251c': "|", '\u2514': "`", '\u250c': "+", '\u2510': "+", '\u2518': "+",
+}
+
+// plain rewrites the generated block in ASCII, and refuses a character it has
+// no word for rather than letting it through or dropping it unseen.
+func plain(s string) (string, error) {
+	var b strings.Builder
+	for _, r := range s {
+		switch rep, ok := asciiFor[r]; {
+		case r < 0x80:
+			b.WriteRune(r)
+		case ok:
+			b.WriteString(rep)
+		default:
+			return "", fmt.Errorf("README text has %q (U+%04X), which has no ASCII form here; reword the doc comment or add it to asciiFor", r, r)
+		}
+	}
+	return b.String(), nil
 }
 
 func fatal(err error) {

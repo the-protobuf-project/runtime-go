@@ -47,7 +47,7 @@ c := dragonfly.New(client, cache.Config{Prefix: "example"})
 
 `SetDatabase` takes a name, and the name is a namespace: it qualifies every key
 the database touches and leaves the connection alone. That is the one selection
-form whose meaning does not change underneath you — `orders` means the same
+form whose meaning does not change underneath you - `orders` means the same
 thing on Redis, Dragonfly and memcached, there is no registry to keep, no
 allocation to race over, no ceiling, and it works on Redis Cluster, which has
 only database 0.
@@ -78,7 +78,7 @@ db, _ := c.SetDatabase(ctx, "ordres")
 ```
 
 `DropDatabase` deletes everything under a name. It is a cursor walk and batched
-deletes, not a `FLUSHDB` — proportional to the whole keyspace, not to the
+deletes, not a `FLUSHDB` - proportional to the whole keyspace, not to the
 database being dropped, and not atomic. Fine for a teardown; think twice
 elsewhere. memcached has no cursor and reports `ErrUnsupported`.
 
@@ -99,7 +99,7 @@ db.Document.Create(ctx, bob, cache.TTL(24*time.Hour))  // this one, longer
 ```
 
 A zero TTL means *no expiry*, which for a cache is rarely what silence was meant
-to say — and for `Aside` it is a leak, since a read-through cache with no lease
+to say - and for `Aside` it is a leak, since a read-through cache with no lease
 keeps every id it was ever asked for. `RequireTTL` turns that silence into an
 error at the first write:
 
@@ -112,12 +112,12 @@ db.Document.Create(ctx, bob, cache.TTL(0))
 //   with cache.NoExpiry()
 ```
 
-It targets the forgotten lease, not the deliberate one — `cache.NoExpiry()` says
+It targets the forgotten lease, not the deliberate one - `cache.NoExpiry()` says
 an entry is meant to be permanent and is always allowed. Off by default.
 
 ## The four strategies
 
-A `DB` is not one more cache interface — it is a set of named strategies over one
+A `DB` is not one more cache interface - it is a set of named strategies over one
 database, because storing a value you will enumerate, one you will only read back
 by key, and one you want found by e-mail address are three jobs with three
 different costs.
@@ -180,7 +180,7 @@ err := users.GetOrLoad(ctx, id, &u, cache.TTL(time.Minute), cache.Stale(time.Min
 ```
 
 - **No stampede.** Concurrent loads of one id collapse into one execution, and no
-  caller blocks past its own context — a request that gives up leaves the load
+  caller blocks past its own context - a request that gives up leaves the load
   running for the others waiting on it.
 - **Absence is cached.** A loader reporting `cache.ErrNotFound` has that
   remembered, so requests for something that does not exist stop reaching it.
@@ -188,7 +188,7 @@ err := users.GetOrLoad(ctx, id, &u, cache.TTL(time.Minute), cache.Stale(time.Min
   entry is served immediately and refreshed behind the reader. Off by default:
   serving old data is a policy, not an optimization to switch on quietly.
 
-Use `Refresh` rather than `Invalidate` for a value you know just changed —
+Use `Refresh` rather than `Invalidate` for a value you know just changed -
 dropping the entry leaves a window where every reader misses at once.
 
 ## What this costs under load
@@ -206,7 +206,7 @@ build rather than a pager:
 | Concurrent distinct loads | capped at 2048 per database; joining one is never capped |
 
 Past that cap `Aside` reports `cache.ErrOverloaded` rather than queueing. Loads
-grow with distinct ids — a cold start, a client walking ids nobody asked for —
+grow with distinct ids - a cold start, a client walking ids nobody asked for -
 and one goroutine per id with no ceiling is not a slow cache but a dead process.
 A caller seeing it can fall back to its own loader, shed the request, or retry.
 
@@ -214,7 +214,7 @@ A caller seeing it can fall back to its own loader, shed the request, or retry.
 cluster every write touches one node however many are in the ring, and `Keys`
 and `List` are `O(entries)` whatever they do. They are built for thousands to low
 millions of entries at a modest write rate. `Volatile` and `Aside` have no index,
-no hot key and nothing to sweep — those are the ones that scale out.
+no hot key and nothing to sweep - those are the ones that scale out.
 
 ### Typed views
 
@@ -246,30 +246,30 @@ the other two shapes. The older `WithLoggingMiddleware` and
 `WithTelemetryMiddleware` still work.
 
 The outermost wrapper runs first, so the order above times the whole retried
-operation. `WithRetry` retries reads and deletes but **not** writes — `Create`
+operation. `WithRetry` retries reads and deletes but **not** writes - `Create`
 and `Update` are not idempotent. `ErrNotFound` is never retried.
 
 ## What a backend cannot do
 
 Backends differ, and the differences are load-bearing. A strategy that needs a
 missing capability reports `cache.ErrUnsupported` with a message naming the
-backend and why — the field is never nil, because a nil field panics far from the
+backend and why - the field is never nil, because a nil field panics far from the
 wiring mistake that caused it.
 
 | | Redis / Dragonfly | memcached |
 | --- | --- | --- |
 | `Document` | full | store and fetch by id only |
 | `Volatile` | full | full (`Touch` is native, and cleaner than `EXPIRE XX`) |
-| `Indexed` | full | none — no sets to index with |
+| `Indexed` | full | none - no sets to index with |
 | `Aside` | full, with a cross-process lock | full, collapsing loads per process |
-| `SetDatabase(name)` | a key namespace | a key namespace — identical |
+| `SetDatabase(name)` | a key namespace | a key namespace - identical |
 | `SelectIndex(n)` | a real database, via `SELECT` | a key namespace, `db3:` |
-| `DropDatabase(name)` | cursor walk and batched deletes | none — no cursor to find its keys |
+| `DropDatabase(name)` | cursor walk and batched deletes | none - no cursor to find its keys |
 | Enumeration cost | one pipelined round trip per 256 ids | same, via multi-get |
 
 ## Adding a backend
 
-Implement [`core.Driver`](./core/driver.go) — eight single-key methods — plus any
+Implement [`core.Driver`](./core/driver.go) - eight single-key methods - plus any
 of the optional capabilities in [`core/capabilities.go`](./core/capabilities.go)
 your server has. Every strategy then works, because none of them is written per
 backend. A RESP-speaking server needs even less: see

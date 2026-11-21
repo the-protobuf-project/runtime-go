@@ -8,7 +8,7 @@ register the protocols it should answer, start it.
 | Model Context Protocol | [`agents/mcp`](./mcp) | a model, calling your tools | implemented |
 | Agent2Agent | [`agents/a2a`](./a2a) | another agent, delegating a task | implemented |
 
-[`agents/shared`](./shared) holds what both would otherwise copy — currently
+[`agents/shared`](./shared) holds what both would otherwise copy - currently
 the HTTP-header-to-gRPC-metadata forwarding each needs at the same boundary.
 
 ## Usage
@@ -38,15 +38,15 @@ err := rt.Serve(ctx)
 Two protocols, one port, each under its own base path, one shutdown that drains
 both. `rt.Endpoints()` reports where each came up.
 
-`Serve` blocks until the context ends and then drains — the shape for a process
+`Serve` blocks until the context ends and then drains - the shape for a process
 that does nothing else. A host with its own lifecycle uses `Start`, which
 returns as soon as everything is answering, and `Shutdown` when it is done.
 
 ### Why one object
 
 The protocols are unrelated. A process serving both still has to make the same
-four decisions either way — what it calls itself, where it listens, what owns
-the listener, what drains it — and made twice, they drift. The identity on an
+four decisions either way - what it calls itself, where it listens, what owns
+the listener, what drains it - and made twice, they drift. The identity on an
 A2A card and the identity an MCP client is told are the same string here
 because they came from the same `Config`, not because somebody kept them in
 step.
@@ -115,8 +115,8 @@ name the ones you import.
 
 ## Per-protocol docs
 
-- [`agents/mcp`](./mcp/README.md) — serving tools to a model
-- [`agents/a2a`](./a2a/README.md) — serving an agent to other agents
+- [`agents/mcp`](./mcp/README.md) - serving tools to a model
+- [`agents/a2a`](./a2a/README.md) - serving an agent to other agents
 
 ## License
 

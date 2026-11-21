@@ -5,13 +5,13 @@ kept for what they encode about each backend rather than to be compiled.
 
 The directory name begins with an underscore, so the Go tool ignores it: the
 code imports `github.com/machanirobotics/loom/...`, which no longer resolves,
-and it would otherwise break the build. Their `go.mod` files have been removed —
+and it would otherwise break the build. Their `go.mod` files have been removed -
 they existed only to keep this code out of the parent module, which the
 underscore now does.
 
 What was taken from it, and what was deliberately not:
 
-- **Kept**: the ArangoDB graph model — a named graph over edge definitions, each
+- **Kept**: the ArangoDB graph model - a named graph over edge definitions, each
   declaring which vertex collections an edge may join. `database.EdgeDefinition`
   is that idea, generalized so Neo4j fits it too.
 - **Kept**: the manager-per-concern shape (`Graph` / `Collection` / `Document`),
