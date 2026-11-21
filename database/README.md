@@ -11,6 +11,7 @@ graphs; a driver implements what its backend can do and says so where it cannot.
 | Redis | [`database/redis`](./redis) | implemented |
 | ArangoDB | [`database/arangodb`](./arangodb) | implemented (documents + graph) |
 | TimescaleDB | [`database/timescale`](./timescale) | implemented (SQL + time series) |
+| Cloudflare D1 | [`database/d1`](./d1) | implemented (SQLite over the REST API, official SDK) |
 | Neo4j | `database/neo4j` | next |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for messaging see
@@ -77,6 +78,7 @@ from the wiring that caused it.
 | **redis** | yes | no | yes | yes | no | no | no |
 | **arangodb** | yes | yes | yes | yes | no | yes | no |
 | **timescale** | yes | yes | yes | no | no | no | yes |
+| **d1** | yes | no | yes | yes | no | no | no |
 | **neo4j** | yes | yes | yes | no | no | yes | no |
 
 The split is by what a backend can do, not by what it is called. GORM and
