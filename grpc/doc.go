@@ -37,6 +37,13 @@
 //	srv := grpc.NewHybridServer(opts, grpc.WithConnect())
 //	// POST /pkg.v1.Service/Method, Content-Type: application/proto or application/json
 //
+// Every call shape is served. Unary calls use application/proto or
+// application/json; server-streaming, client-streaming and bidi calls use
+// application/connect+proto or application/connect+json, each message in an
+// envelope, ending with Connect's end-stream envelope. Bidi needs a
+// full-duplex connection, which the HTTP port's HTTP/2 (TLS or cleartext)
+// and HTTP/3 give it.
+//
 // Calls go through the server's own gRPC services in-process, so interceptors,
 // validation and telemetry apply. Errors use Connect's JSON error body, with
 // google.rpc.Status details as base64 protobuf.
