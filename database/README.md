@@ -11,7 +11,7 @@ graphs; a driver implements what its backend can do and says so where it cannot.
 | Redis | [`database/redis`](./redis) | implemented |
 | ArangoDB | [`database/arangodb`](./arangodb) | implemented (documents + graph) |
 | TimescaleDB | [`database/timescale`](./timescale) | implemented (SQL + time series) |
-| Cloudflare D1 | [`database/d1`](./d1) | implemented (SQLite over the REST API, official SDK) |
+| Cloudflare D1 | [`database/d1`](./d1) | implemented (SQLite over the REST API, official SDK); `d1.Client` runs SQL without proto |
 | Neo4j | `database/neo4j` | next |
 
 For ephemeral, TTL-bound entries see [`cache`](../cache); for messaging see

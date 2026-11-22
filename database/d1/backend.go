@@ -7,23 +7,25 @@ import (
 )
 
 // Registers the D1 driver with the database registry, so
-// store.NewDriver(store.D1, d1.Config{...}) works once this package is linked
-// in — whether imported directly or for its side effect alone.
+// store.NewDriver(store.D1, client) works once this package is linked in —
+// whether imported directly or for its side effect alone.
 func init() {
 	store.Register(store.D1, open)
 }
 
-// open adapts the registry's untyped config to this driver's constructor.
+// open adapts the registry's untyped config to this driver's constructor. The
+// config must be the *Client the driver runs on, and the database it drives is
+// the client's [Config.DatabaseID].
 func open(cfg any) (store.Driver, error) {
-	c, ok := cfg.(Config)
+	c, ok := cfg.(*Client)
 	if !ok {
-		return nil, fmt.Errorf("%w: d1 driver needs a d1.Config, got %T", store.ErrBadConfig, cfg)
+		return nil, fmt.Errorf("%w: d1 driver needs a *d1.Client, got %T", store.ErrBadConfig, cfg)
 	}
-	if err := c.check(); err != nil {
-		return nil, err
+	if c == nil {
+		return nil, fmt.Errorf("%w: d1 driver was given a nil client", store.ErrBadConfig)
 	}
-	if c.DatabaseID == "" {
-		return nil, fmt.Errorf("%w: d1 driver needs a database id", store.ErrBadConfig)
+	if c.cfg.DatabaseID == "" {
+		return nil, fmt.Errorf("%w: d1 driver needs a client with a database id", store.ErrBadConfig)
 	}
-	return New(c), nil
+	return New(c, c.cfg.DatabaseID), nil
 }

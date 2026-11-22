@@ -24,7 +24,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *store.Resource, msgs []pro
 	results := make([]store.WriteResult, 0, len(msgs))
 	for start := 0; start < len(msgs); start += batchSize {
 		chunk := msgs[start:min(start+batchSize, len(msgs))]
-		stmts := make([]statement, len(chunk))
+		stmts := make([]Statement, len(chunk))
 		stored := make([]map[string]any, len(chunk))
 		for i, msg := range chunk {
 			s, cols, err := insert(res, msg)
@@ -33,7 +33,7 @@ func (d *Driver) CreateMany(ctx context.Context, res *store.Resource, msgs []pro
 			}
 			stmts[i], stored[i] = s, cols
 		}
-		if _, err := d.batch(ctx, stmts); err != nil {
+		if _, err := d.runBatch(ctx, stmts); err != nil {
 			return results, err
 		}
 		for _, cols := range stored {
@@ -54,15 +54,15 @@ func (d *Driver) GetMany(ctx context.Context, res *store.Resource, keys []string
 	found := make(map[string]proto.Message, len(keys))
 	for start := 0; start < len(keys); start += maxParams {
 		chunk := keys[start:min(start+maxParams, len(keys))]
-		out, err := d.exec(ctx, statement{
-			sql: fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)",
+		out, err := d.run(ctx, Statement{
+			SQL: fmt.Sprintf("SELECT * FROM %s WHERE %s IN (%s)",
 				quote(res.Table), quote(res.PKColumn), placeholders(len(chunk))),
-			args: chunk,
+			Args: chunk,
 		})
 		if err != nil {
 			return nil, err
 		}
-		for _, row := range out.rows {
+		for _, row := range out.Rows {
 			key := fmt.Sprint(row[res.PKColumn])
 			m, merr := message(res, row)
 			if merr != nil {

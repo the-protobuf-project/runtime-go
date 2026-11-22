@@ -3,11 +3,22 @@
 //
 // D1 is SQLite served over HTTP. A program running outside a Worker reaches it
 // through the REST API's query endpoint, one statement — or one batch of them —
-// per request, which shapes everything below:
+// per request, which shapes everything below.
 //
-//	client := cloudflare.NewClient(option.WithAPIToken(os.Getenv("CLOUDFLARE_API_TOKEN")))
-//	p := d1.NewProvider(d1.Config{Client: client, AccountID: account, DatabaseID: id})
-//	db, _ := p.SetDatabase(ctx, "")         // the configured database
+// Two layers, as mongodb has a Client under its driver and orm a *gorm.DB:
+//
+// [Client] is SQL in and rows out, and knows nothing about proto. [NewClient]
+// builds it from an account and an API token; [Wrap] adopts an SDK client you
+// configured yourself.
+//
+//	client, _ := d1.NewClient(d1.Config{AccountID: account, APIToken: token, DatabaseID: id})
+//	res, _ := client.Query(ctx, id, d1.Statement{SQL: "SELECT * FROM notes WHERE id = ?", Args: []string{"a"}})
+//
+// [Driver] is the records contract over it: proto messages read and written
+// through their descriptors, the same as every other database driver.
+//
+//	p := d1.NewProvider(client)
+//	db, _ := p.SetDatabase(ctx, "")             // the configured database
 //	tenant, _ := p.SetDatabase(ctx, "tenant_a") // the D1 database named tenant_a
 //
 //	db.Schema.EnsureSchema(ctx, res)
@@ -50,5 +61,5 @@
 // for a record that is there — set option.WithMaxRetries(0) on the client if that
 // matters more than riding out a transient failure.
 //
-// The client is yours: this package does not build it and does not close it.
+// The SDK client inside a [Client] holds nothing that needs closing.
 package d1
