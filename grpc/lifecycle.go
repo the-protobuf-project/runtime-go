@@ -82,6 +82,12 @@ func (s *HybridServer) Stop() error {
 
 	errs := s.drainHTTP(ctx)
 
+	// The HTTP surfaces have drained, so no Connect call is still in flight.
+	if b := s.connectBridge; b != nil {
+		_ = b.conn.Close()
+		s.connectBridge = nil
+	}
+
 	if s.grpcServer != nil {
 		shared.Telemetry().Logger.Debugf("Stop: calling GracefulStop on gRPC server")
 		if err := stopGRPC(ctx, s.grpcServer); err != nil {

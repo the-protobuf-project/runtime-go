@@ -11,9 +11,6 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // startHTTPGateway initializes and runs the HTTP reverse-proxy gateway.
@@ -25,24 +22,9 @@ func (s *HybridServer) startHTTPGateway() error {
 	grpcEndpoint := fmt.Sprintf("%s:%d", s.opts.GRPC.Host, s.opts.GRPC.Port)
 	shared.Telemetry().Logger.Debugf("HTTP/1.1: gateway will proxy to gRPC endpoint %s", grpcEndpoint)
 
-	var dialOpts []grpc.DialOption
-	if s.cert != nil {
-		shared.Telemetry().Logger.Debugf("HTTP/1.1: dialing gRPC with TLS (InsecureSkipVerify for dev)")
-		tlsConf := &tls.Config{
-			InsecureSkipVerify: true, // dev only; swap for RootCAs in prod
-			ServerName:         "localhost",
-			NextProtos:         []string{"h2"},
-			MinVersion:         tls.VersionTLS13,
-		}
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConf)))
-	} else {
-		shared.Telemetry().Logger.Debugf("HTTP/1.1: dialing gRPC with plaintext (no TLS)")
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	}
-
 	// Whatever endpoint the handlers dial, their connections land on the
 	// in-memory gateway listener, which outlives HTTP draining on Stop.
-	dialOpts = append(dialOpts, s.gatewayDialOption())
+	dialOpts := s.inProcessDialOptions()
 
 	shared.Telemetry().Logger.Debugf("HTTP/1.1: registering %d HTTP gateway handler(s)", len(s.httpServiceFuncs))
 	for i, svc := range s.httpServiceFuncs {
