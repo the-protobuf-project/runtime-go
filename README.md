@@ -90,7 +90,7 @@ comes with them. The summaries are the packages' own docs, collected by
 ## Package index
 
 <details>
-<summary><b>agents</b> · 4 packages</summary>
+<summary><b>agents</b> (4 packages)</summary>
 
 **Install**
 
@@ -125,7 +125,7 @@ err := rt.Serve(ctx)
 </details>
 
 <details>
-<summary><b>blockchain</b> · 2 packages</summary>
+<summary><b>blockchain</b> (2 packages)</summary>
 
 **Install**
 
@@ -136,7 +136,7 @@ go get github.com/the-protobuf-project/runtime-go/blockchain
 **Usage**
 
 ```go
-book, _ := evm.NewContract(bookABIJSON, common.HexToAddress("0x…")) // abis/Book.json
+book, _ := evm.NewContract(bookABIJSON, common.HexToAddress("0x...")) // abis/Book.json
 driver := evm.New(evm.Config{
     Backend:   client, // *ethclient.Client
     Signer:    txOpts, // *bind.TransactOpts; nil disables writes
@@ -153,7 +153,7 @@ svc := adapter.New(driver, store.NewRegistry(grpcx.Resources...))
 </details>
 
 <details>
-<summary><b>buffers</b> · 1 package</summary>
+<summary><b>buffers</b> (1 package)</summary>
 
 **Install**
 
@@ -178,7 +178,7 @@ sensor, err := bridge.CapnProto(data).Sensor()   // cap'n proto -> proto
 </details>
 
 <details>
-<summary><b>cache</b> · 7 packages</summary>
+<summary><b>cache</b> (7 packages)</summary>
 
 **Install**
 
@@ -206,12 +206,12 @@ db, err := c.SetDatabase(ctx, "orders")
 
 Examples and tools:
 
-- [`cache/example`](cache/example): Runs the cache's three steps — build a client, declare the cache, select a database — against every backend this module supports, and exercises all four strategies over each.
+- [`cache/example`](cache/example): Runs the cache's three steps - build a client, declare the cache, select a database - against every backend this module supports, and exercises all four strategies over each.
 
 </details>
 
 <details>
-<summary><b>database</b> · 13 packages</summary>
+<summary><b>database</b> (13 packages)</summary>
 
 **Install**
 
@@ -242,7 +242,7 @@ b, _ := books.Get(ctx, id)
 | [`database/arangodb`](database/arangodb) | Implements the backend-agnostic store.Driver over ArangoDB, and the graph capability alongside it. |
 | [`database/cached`](database/cached) | Puts a read-through cache in front of any store.Driver, so a record read repeatedly is fetched from the backing store once. |
 | [`database/core`](database/core) | The code every store driver would otherwise copy. |
-| [`database/filterx`](database/filterx) | The filter/order/list SDK the generated specs build on: the Condition vocabulary an AIP-160 filter parses into, the Spec data model the per-schema filters.go files instantiate, the shared semantics (enum normalization, date/number validation, ILIKE escaping, sort allowlists, page math), and the chainable engines built from a Spec — Gorm[M] for SQL, Hasura[M] for GraphQL, and OpenSearch for the query DSL. |
+| [`database/filterx`](database/filterx) | The filter/order/list SDK the generated specs build on: the Condition vocabulary an AIP-160 filter parses into, the Spec data model the per-schema filters.go files instantiate, the shared semantics (enum normalization, date/number validation, ILIKE escaping, sort allowlists, page math), and the chainable engines built from a Spec - Gorm[M] for SQL, Hasura[M] for GraphQL, and OpenSearch for the query DSL. |
 | [`database/mongodb`](database/mongodb) | Implements the backend-agnostic store.Driver over MongoDB. |
 | [`database/orm`](database/orm) | Implements the backend-agnostic store.Driver over GORM. |
 | [`database/osx`](database/osx) | The runtime the generated OpenSearch indices build on: a (store.v1.projection) copied from its Postgres table into OpenSearch and searched there. |
@@ -267,7 +267,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>events</b> · 1 package</summary>
+<summary><b>events</b> (1 package)</summary>
 
 **Install**
 
@@ -298,7 +298,7 @@ d.Start(ctx, 5*time.Second, func(err error) { log.Print(err) })
 </details>
 
 <details>
-<summary><b>events/stream</b> · 1 package</summary>
+<summary><b>events/stream</b> (1 package)</summary>
 
 **Install**
 
@@ -322,7 +322,7 @@ d := events.NewDispatcher(store, feeds, events.Options{Sink: sink, Outboxes: out
 </details>
 
 <details>
-<summary><b>grpc</b> · 7 packages</summary>
+<summary><b>grpc</b> (7 packages)</summary>
 
 **Install**
 
@@ -358,12 +358,12 @@ srv.Start() // blocks until signal
 | [`grpc/options`](grpc/options) | Holds the configuration for the grpc HybridServer: service identity (name, description, version), the gRPC/HTTP/MCP endpoints, the environment mode, the health/HTTP-3 toggles, and the OpenTelemetry metric selection. |
 | [`grpc/problem`](grpc/problem) | Turns a service's typed errors into google.rpc.Status errors a developer can act on (AIP-193): a status code, a message that says what is wrong and what to do, an ErrorInfo with a stable reason, and the detail the error calls for -- BadRequest for a field, PreconditionFailure for a blocked call, ResourceInfo for a missing resource. |
 | [`grpc/servicex`](grpc/servicex) | The shared runtime of the generated servers: the options every server takes, the error vocabulary they speak (AIP-193 google.rpc.Status with an ErrorInfo reason), the request checks the standard methods share, and the change-event boundary a dispatcher implements. |
-| [`grpc/shared`](grpc/shared) | Holds the process-wide singletons the grpc server initializes once and tears down on exit — currently the Pulse observability client ([Pulse]), constructed in an init with the service identity, log level, and tracing enabled. |
+| [`grpc/shared`](grpc/shared) | Holds the process-wide singletons the grpc server initializes once and tears down on exit - currently the Pulse observability client ([Pulse]), constructed in an init with the service identity, log level, and tracing enabled. |
 
 </details>
 
 <details>
-<summary><b>interfaces</b> · 1 package</summary>
+<summary><b>interfaces</b> (1 package)</summary>
 
 **Install**
 
@@ -387,7 +387,7 @@ book, err := svc.Get(ctx, "Book", "books/dune") // ErrNotFound -> codes.NotFound
 </details>
 
 <details>
-<summary><b>network</b> · 3 packages</summary>
+<summary><b>network</b> (3 packages)</summary>
 
 **Install**
 
@@ -411,7 +411,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>observability</b> · 1 package</summary>
+<summary><b>observability</b> (1 package)</summary>
 
 **Install**
 
@@ -422,8 +422,8 @@ go get github.com/the-protobuf-project/runtime-go/observability
 **Usage**
 
 ```go
-observability ──> telemetry-go ──> telemetry
-      └─────────────────────────────>┘
+observability --> telemetry-go --> telemetry
+      `----------------------------->+
 ```
 
 | Package | What it does |
@@ -433,7 +433,7 @@ observability ──> telemetry-go ──> telemetry
 </details>
 
 <details>
-<summary><b>rfc</b> · 3 packages</summary>
+<summary><b>rfc</b> (3 packages)</summary>
 
 **Install**
 
@@ -461,7 +461,7 @@ data, err    := rfc.Event(e).JCal()           // Event           -> jCal
 </details>
 
 <details>
-<summary><b>streams</b> · 13 packages</summary>
+<summary><b>streams</b> (13 packages)</summary>
 
 **Install**
 
@@ -512,7 +512,7 @@ Examples and tools:
 </details>
 
 <details>
-<summary><b>telemetry</b> · 2 packages</summary>
+<summary><b>telemetry</b> (2 packages)</summary>
 
 **Install**
 
@@ -539,7 +539,7 @@ runtime.ingestion.queue.depth {record}     admitted records not yet written
 </details>
 
 <details>
-<summary><b>ulid</b> · 1 package</summary>
+<summary><b>ulid</b> (1 package)</summary>
 
 **Install**
 
@@ -604,4 +604,4 @@ Issues and pull requests are welcome. Please open an issue before submitting a l
 
 Apache 2.0, see [LICENSE](LICENSE).
 
-Copyright © 2026 The Protobuf Project Authors. All rights reserved.
+Copyright (c) 2026 The Protobuf Project Authors. All rights reserved.

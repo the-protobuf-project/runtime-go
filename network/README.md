@@ -216,11 +216,11 @@ type ConnectionOptions struct {
 
 ### Connectivity Verification
 
-By default, `WithOpts` (and each client’s `Connect`) verifies that the target is reachable before returning:
+By default, `WithOpts` (and each client's `Connect`) verifies that the target is reachable before returning:
 
 - **GraphQL**: Sends a small introspection query (default `query { __typename }`, or `GraphQLConnectivityQuery` if set). On failure, `Connect` returns an error.
 - **HTTP**: Sends a **HEAD** request to the configured URL. If the server returns **405 Method Not Allowed**, a **GET** is sent instead and the response body is drained (up to 1 MiB) so the connection can be reused. On network or unreachable host, `Connect` returns an error.
-- **WebSocket**: Connection is established by **Dial**. There is no separate “check”; `SkipConnectivityCheck` is ignored.
+- **WebSocket**: Connection is established by **Dial**. There is no separate "check"; `SkipConnectivityCheck` is ignored.
 
 Set `SkipConnectivityCheck: true` when you know the server is up or when the first request will effectively act as the check (e.g. to avoid an extra round-trip or when the server does not support HEAD/introspection). Use `GraphQLConnectivityQuery` to supply a custom query for the GraphQL connectivity check (e.g. `network.DefaultGraphQLConnectivityQuery` or a server-specific query).
 
@@ -478,13 +478,13 @@ go test -v -cover ./...
 
 ```
 network/
-├── http.go           # HTTP client implementation
-├── graphql.go        # GraphQL client implementation
-├── websocket.go      # WebSocket client implementation
-├── network.go        # Core types and factory
-├── shared/
-│   └── pulse.go      # Logging and telemetry
-└── example/          # Example applications
+|-- http.go           # HTTP client implementation
+|-- graphql.go        # GraphQL client implementation
+|-- websocket.go      # WebSocket client implementation
+|-- network.go        # Core types and factory
+|-- shared/
+|   `-- pulse.go      # Logging and telemetry
+`-- example/          # Example applications
 ```
 
 ### Design Patterns

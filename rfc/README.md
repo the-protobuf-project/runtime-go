@@ -74,6 +74,6 @@ golangci-lint run ./...
 ```
 
 `caldav/caldav_test.go` drives a calendar client's whole session over HTTP
-against `memstore` — discovery, MKCALENDAR, zoned recurring series, overrides,
+against `memstore` - discovery, MKCALENDAR, zoned recurring series, overrides,
 expand, free-busy with RFC 7953 availability, THISANDFUTURE splits and their
 retries; `caldav/protocol_test.go` checks the protocol edges one by one.

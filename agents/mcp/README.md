@@ -10,8 +10,8 @@ Two ways, and neither wraps the other.
 
 ### Directly
 
-When the process serves MCP and nothing else — a local tool over stdio, a
-sidecar, a binary an IDE launches — the runtime owns the listener and blocks.
+When the process serves MCP and nothing else - a local tool over stdio, a
+sidecar, a binary an IDE launches - the runtime owns the listener and blocks.
 Hand a generated `Serve*MCP` function your gRPC server implementation and a
 config:
 
@@ -43,7 +43,7 @@ function to a runtime and lets it decide where to sit:
 rt.Register(mcp.Service(yourpb.ServeYourServiceMCP))
 ```
 
-`mcp.ServiceGroup` takes several at once — they share a listener, each at its
+`mcp.ServiceGroup` takes several at once - they share a listener, each at its
 own proto-derived base path. Through the HybridServer the same registration is
 `grpc.WithMCPServices(...)`, which re-exports `MCPServerConfig`, `MCPOption` and
 `ElicitField` so a program taking that route never imports `agents/mcp`
@@ -54,7 +54,7 @@ An agent connects to one MCP endpoint at a time, so a process with ten services
 on ten base paths asks the agent to connect ten times. Combining them serves
 every service's tools, prompts and resources from ONE server at one path
 (`/mcp` by default). It works on the generated `Serve*MCP` functions as they
-are — no regeneration:
+are - no regeneration:
 
 ```go
 // On the HybridServer: every WithMCPServices service, also served at /mcp.
@@ -145,7 +145,7 @@ transports := mcp.ParseTransports(os.Getenv("MCP_TRANSPORT"))
 | `Addr` | Listen address for HTTP (default `:8080`) |
 | `BasePath` | HTTP path prefix (default `/mcp`) |
 | `GeneratedBasePath` | Proto-derived path; takes precedence |
-| `HeaderMappings` | HTTP header → gRPC metadata forwarding |
+| `HeaderMappings` | HTTP header -> gRPC metadata forwarding |
 | `Stateless` | Streamable HTTP without sessions, for replicas behind a load balancer (see above) |
 | `ReadTimeout` | Cap on reading a request; 0 means no limit |
 | `WriteTimeout` | Cap on writing a response; keep 0 or long-running progress is cut off |
@@ -173,20 +173,20 @@ cfg := &mcp.MCPServerConfig{
 
 ## What the MCP runtime provides
 
-- **Server** — `MCPServerConfig`, `StartServer`, `NewMCPServer`, `ServerEndpoint`
-- **Transports** — `Transport`, `ParseTransports`, the three constants above
-- **Errors** — `HandleError` turns a gRPC status into an MCP tool error result
-- **Schemas** — `MustParseSchema`, `MustCreateTool`, `PrepareToolWithExtras`
-- **Elicitation** — `RunElicitation`, `ElicitField`, `ElicitSchema`
-- **Metadata** — `ForwardMetadata`, `HeadersMiddleware`, `IncomingHeadersMiddleware`,
+- **Server** - `MCPServerConfig`, `StartServer`, `NewMCPServer`, `ServerEndpoint`
+- **Transports** - `Transport`, `ParseTransports`, the three constants above
+- **Errors** - `HandleError` turns a gRPC status into an MCP tool error result
+- **Schemas** - `MustParseSchema`, `MustCreateTool`, `PrepareToolWithExtras`
+- **Elicitation** - `RunElicitation`, `ElicitField`, `ElicitSchema`
+- **Metadata** - `ForwardMetadata`, `HeadersMiddleware`, `IncomingHeadersMiddleware`,
   `DefaultHeaderMappings`
-- **Prompts and resources** — `DefaultPromptHandler`, `DefaultResourceHandler`,
+- **Prompts and resources** - `DefaultPromptHandler`, `DefaultResourceHandler`,
   `DefaultAppResourceHandler`, `AppResourceURI`, `SetToolAppMeta`, and
   `WithResourceHandler` to serve a declared resource's real content while its
   metadata keeps coming from the proto
-- **Progress** — `SendProgressFromProto`, `SendDoneProgress`, `WithProgressToken`,
+- **Progress** - `SendProgressFromProto`, `SendDoneProgress`, `WithProgressToken`,
   and the `ProgressMessage` interface any generated `MCPProgress` satisfies
-- **Streaming** — `InProcessServerStream`, which lets a generated handler call a
+- **Streaming** - `InProcessServerStream`, which lets a generated handler call a
   gRPC streaming method in-process with no network hop
 
 Cancellation is handled for you: on `notifications/cancelled` the SDK cancels
@@ -208,7 +208,7 @@ A confirmation dialog before a tool runs. It is a multi round-trip request
 ([SEP-2322]): protocol version `2026-07-28` forbids the server from asking the
 client anything while it is serving a request, so the first pass returns a
 pending result carrying the question and the client retries the tool call with
-the answer. **The handler body therefore runs twice** — anything it does before
+the answer. **The handler body therefore runs twice** - anything it does before
 the elicitation must be safe to do again.
 
 ```go
@@ -227,7 +227,7 @@ if result.Action != "accept" {
 }
 ```
 
-Clients that negotiated an older protocol version still work unchanged — the
+Clients that negotiated an older protocol version still work unchanged - the
 go-sdk's server middleware performs the round trip on their behalf and
 reinvokes the handler.
 
@@ -235,7 +235,7 @@ reinvokes the handler.
 
 ## Protocol types
 
-The SDK types a caller needs are re-exported from `sdk.go` — `Server`,
+The SDK types a caller needs are re-exported from `sdk.go` - `Server`,
 `Resource`, `ResourceTemplate`, `Annotations`, `Icon`, `Prompt`,
 `CallToolRequest`/`Result`, `ElicitParams`/`Result`, the client-side types, and
 so on. Generated code and service binaries therefore import this package alone:
@@ -250,7 +250,7 @@ Two reasons, beyond the cosmetic one that both packages are called `mcp` and so
 one of them would need an import alias at every call site. A consumer's `go.mod`
 no longer takes a direct dependency on the SDK, so generated code and this
 runtime cannot drift onto different SDK versions. And this package depends on no
-build of the MCP annotations at all — `SendProgressFromProto` accepts the
+build of the MCP annotations at all - `SendProgressFromProto` accepts the
 [`ProgressMessage`] interface rather than a generated `*MCPProgress`, because
 Go's protobuf registry rejects two packages claiming the same extension numbers
 and pinning one build here would make a binary that links a differently-built

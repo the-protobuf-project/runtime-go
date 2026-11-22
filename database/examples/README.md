@@ -3,7 +3,7 @@
 Two sets, because there are two ways to use this module and they suit different
 programs.
 
-## [`simple/`](./simple) — a Go struct is the schema
+## [`simple/`](./simple) - a Go struct is the schema
 
 Start here. No protobuf, no descriptors, no generator.
 
@@ -27,11 +27,11 @@ b, _ := books.Get(ctx, id)   // already a Book
 | [`simple/mongodb`](./simple/mongodb) | MongoDB | `mongodb` |
 | [`simple/timescale`](./simple/timescale) | TimescaleDB | `timescaledb` |
 
-`simple/sql` and `simple/mongodb` store the **same struct with the same calls** —
+`simple/sql` and `simple/mongodb` store the **same struct with the same calls** -
 only the lines that open a client differ. That pair is where the portability
 claim is checked rather than asserted.
 
-## [`store/`](./store) — a proto message is the schema
+## [`store/`](./store) - a proto message is the schema
 
 For a program whose schema already comes from a proto file, where protorm
 generates the descriptor and the gRPC adapter serves it. Same rows, same tables,
@@ -65,11 +65,11 @@ repeatedly and in any order.
 
 Use `simple/` unless your schema is already a proto file. It derives the same
 descriptor the generator would emit, so a struct stored through it and a message
-stored through `store` are the same rows — and `Coll.Resource()` hands you the
+stored through `store` are the same rows - and `Coll.Resource()` hands you the
 descriptor whenever you need to reach the layer underneath for a graph edge, a
 time-series window, or a transaction.
 
 Use `store/` when the proto is the source of truth, when the gRPC adapter is
-serving the same resources, or when a chain driver is involved — those all speak
+serving the same resources, or when a chain driver is involved - those all speak
 descriptors already, and going through `simple/` would derive one you already
 have.

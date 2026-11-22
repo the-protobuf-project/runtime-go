@@ -70,12 +70,12 @@ has.
 | --- | --- | --- |
 | Redis | `Connect`, `ConnectScheduled`, `ConnectDurable` | `Use`, `UseScheduled`, `UseDurable` |
 | NATS | `Connect`, `ConnectJetStream` | `Use`, `UseJetStream` |
-| Kafka | `Connect` | — |
+| Kafka | `Connect` | - |
 | RabbitMQ | `Connect` | `Use` |
 | MQTT | `Connect` | `Use` |
-| ZeroMQ | `Publish`, `Subscribe` | — |
+| ZeroMQ | `Publish`, `Subscribe` | - |
 | OPC UA | `Connect` | `Use` |
-| OPC UA PubSub | `Connect` | — |
+| OPC UA PubSub | `Connect` | - |
 
 MQTT connections reconnect on their own, and take TLS and credentials:
 
@@ -221,7 +221,7 @@ users := streams.For[User](m)
 users.Publish(ctx, "user.created", u)
 
 msgs, _ := users.Subscribe(ctx, "user.created")
-for u := range msgs { … }   // u is a User
+for u := range msgs { ... }   // u is a User
 ```
 
 A message that fails to decode as `T` is skipped rather than delivered as a zero
@@ -291,8 +291,8 @@ OPC UA PubSub,Headers,1
 OPC UA PubSub,Expiry,1
 ```
 
-`Publisher` and `Subscriber` are the honest intersection — send a value, receive
-it, no promise it survives a restart — because that is what Redis pub/sub and
+`Publisher` and `Subscriber` are the honest intersection - send a value, receive
+it, no promise it survives a restart - because that is what Redis pub/sub and
 core NATS actually do. Anything past that is a capability a provider has or does
 not, and asking for one it lacks returns `ErrUnsupported` naming the provider
 rather than silently downgrading to weaker delivery than you asked for.
@@ -327,7 +327,7 @@ into at-most-once, which is the guarantee you were avoiding by reaching for
 The consumer name is the identity that survives a restart. Two processes under
 one name share its position and split the work; a process that dies and comes
 back resumes where the name left off. `Delivery.Attempt` counts how many times
-the message has been delivered — it is the one signal for breaking a redelivery
+the message has been delivered - it is the one signal for breaking a redelivery
 loop, since the same bytes arriving for the fifth time look exactly like the
 first.
 
@@ -400,7 +400,7 @@ Every provider reports through the `telemetry.Meter` it was given:
 | `streams_inflight` | up/down counter | delivered and not yet settled |
 | `streams_consumer_lag` | gauge | how far behind a named consumer is |
 
-Lag is reported only where the backend can answer the question — Redis from its
+Lag is reported only where the backend can answer the question - Redis from its
 pending list today. Where it cannot, the series is **absent rather than zero**: a
 consumer that looks caught up because nothing can measure it is worse than one
 that does not appear at all.
@@ -409,7 +409,7 @@ that does not appear at all.
 
 `Batch` publishes several values in one call. Every provider implements it, so
 a caller writes one shape of code; where the backend has a real batch primitive
-it is used, and where it does not the provider publishes in turn — which is
+it is used, and where it does not the provider publishes in turn - which is
 what the caller would otherwise write.
 
 ```go
@@ -425,7 +425,7 @@ with network latency, so it is far larger against a remote broker than a local
 one.
 
 Ids come back one per value and in order, including when the error is non-nil,
-so a partial failure can be lined up against the input. `ID` is refused — one
+so a partial failure can be lined up against the input. `ID` is refused - one
 identifier cannot name several messages.
 
 ### Ordering
@@ -441,7 +441,7 @@ m.Publish(ctx, "order.shipped", b, streams.PartitionKey(accountID))
 ```
 
 Redis and NATS order everything in one place and have no partition to choose, so
-they ignore it — which is safe, and is what the contract permits: a backend that
+they ignore it - which is safe, and is what the contract permits: a backend that
 orders everything loses nothing by being told what could have shared an order.
 
 Kafka also acknowledges **sequentially**. It tracks one offset per partition
@@ -459,7 +459,7 @@ deliveries, _ := p.ConsumeFrom(ctx, "order.placed", "audit", streams.FromEarlies
 ```
 
 The position applies when the consumer is created and not after. A consumer that
-already exists keeps the position it has — resetting on every attach would
+already exists keeps the position it has - resetting on every attach would
 replay the log on every restart, which is the opposite of what a durable
 consumer is for.
 
@@ -473,21 +473,21 @@ genuinely has.
 
 | Provider | Durable | Positioned | `Attempt` | `Nak` returns it |
 | --- | --- | --- | --- | --- |
-| Redis Streams | ✓ | ✓ | counted | after the reclaim interval |
-| NATS JetStream | ✓ | ✓ | counted | immediately |
-| Kafka | ✓ | ✓ | 0 — cannot count | on partition reassignment |
-| RabbitMQ | ✓ | ✗ | counted | immediately |
-| MQTT 5 | ✓ | ✗ | 0 — cannot count | on reconnect |
-| Redis pub/sub, core NATS, ZeroMQ, OPC UA | ✗ | ✗ | — | — |
+| Redis Streams | yes | yes | counted | after the reclaim interval |
+| NATS JetStream | yes | yes | counted | immediately |
+| Kafka | yes | yes | 0 - cannot count | on partition reassignment |
+| RabbitMQ | yes | no | counted | immediately |
+| MQTT 5 | yes | no | 0 - cannot count | on reconnect |
+| Redis pub/sub, core NATS, ZeroMQ, OPC UA | no | no | n/a | n/a |
 
-RabbitMQ and MQTT are durable without being replayable — a queue and a session
+RabbitMQ and MQTT are durable without being replayable - a queue and a session
 both hold what a consumer has not handled, but neither is a log you can seek in.
 Kafka cannot count redeliveries; RabbitMQ counts them on quorum queues and
 otherwise reports at least the second attempt from the redelivered flag.
 
 ### Scheduled delivery
 
-Some providers deliver when a TTL expires rather than on publish — a reminder, a
+Some providers deliver when a TTL expires rather than on publish - a reminder, a
 lease timeout, a delayed retry. On Redis that is a separate constructor with its
 own key namespace:
 
@@ -502,7 +502,7 @@ _, err := nm.Publish(ctx, "pill", Reminder{Body: "take a pill"},
     streams.TTL(30*time.Minute))
 ```
 
-A TTL is **required** there — delivery is the expiry, so a message without one
+A TTL is **required** there - delivery is the expiry, so a message without one
 could never fire. Conversely every other provider **rejects** a TTL rather than
 publishing now and letting you believe it was scheduled.
 
@@ -559,7 +559,7 @@ m.Publish(ctx, "ns=2;s=Line1.LastBatch", batch)      // framed into a ByteString
 
 A value OPC UA has a type for is written as itself, so the PLCs and HMIs
 around the server read a number, not this module's frame; anything else goes
-through the codec into a ByteString. Go's `int` is refused — pass the width the
+through the codec into a ByteString. Go's `int` is refused - pass the width the
 node holds. A `*ua.DataValue` is written as given, with its status and source
 timestamp. Nothing is lent, so `Durable` and `Positioned` both refuse, and so
 do `Group`, `TTL`, headers, `Expires` and `Retain`. `PublishBatch` writes each
@@ -615,13 +615,13 @@ Every option has a default that is the recommended setting.
 | --- | --- | --- |
 | Kafka | `WithPrefix`, `WithPartitions`, `WithReplicationFactor` | none, 1, 1 |
 | Kafka | `WithProducers`: producers publishes are spread over; a keyed message always uses the same one | 8 |
-| Kafka | `WithClientOptions`: applied after `acks=all` and idempotence, so they win | — |
+| Kafka | `WithClientOptions`: applied after `acks=all` and idempotence, so they win | - |
 | NATS | `WithQueueGroup`, `WithAckWait`, `WithMaxDeliver` | none, server's, server's |
 | NATS | `WithInactiveThreshold`: how long an idle consumer lives on the server | 30 s |
 | RabbitMQ | `WithPrefix`, `WithPrefetch` | none, 32 |
 | RabbitMQ | `WithPublishChannels`: confirm-mode channels publishes are spread over | 4 |
-| RabbitMQ | `WithTLS`, `WithCredentials`, `WithReconnectDelay` | —, —, 2 s |
-| Redis | `WithPrefix`, `WithDatabase`, `WithMaxLen`, `WithAuth` | none, client's, unbounded, — |
+| RabbitMQ | `WithTLS`, `WithCredentials`, `WithReconnectDelay` | -, -, 2 s |
+| Redis | `WithPrefix`, `WithDatabase`, `WithMaxLen`, `WithAuth` | none, client's, unbounded, - |
 | Redis | `WithReclaimAfter`: how long an entry may sit unacknowledged; also the longest delayed nak | 30 s |
 | Redis | `WithConfirmAcks`: whether `Ack` waits for the XACK | true |
 | Redis | `WithAutoPipeline`: single publishes share pipelines through go-redis's (experimental) auto-pipeliner, as runtime-rs pipelines them | off |
@@ -724,14 +724,14 @@ pub := streams.ChainPublisher(m,
 
 Retrying a publish is safe in a way a store write is not: a redelivered message
 is a duplicate the consumer can dedupe, whereas a dropped one is simply lost.
-`ErrUnknownSubject`, `ErrUnsupported` and `ErrInvalidHeader` are never retried —
+`ErrUnknownSubject`, `ErrUnsupported` and `ErrInvalidHeader` are never retried -
 none of those answers changes on a second attempt.
 
 On JetStream the message id is also sent as the JetStream message id, so a retry
 after an ambiguous failure is collapsed by the server rather than appended twice.
 
 `WithSubscriberLogging` records when a subscription opens, each delivery, and
-when it closes — the close record carries the delivered count, and its absence
+when it closes - the close record carries the delivered count, and its absence
 is how you spot a consumer that leaked.
 
 ## Tests
@@ -742,7 +742,7 @@ installed either: Kafka via `kfake`, NATS via its embedded server, MQTT via
 `mochi-mqtt`, OPC UA via gopcua's own server package. ZeroMQ is brokerless,
 so it needs nothing at all.
 
-Redis and RabbitMQ are the exceptions. Both skip without a live server — Redis
+Redis and RabbitMQ are the exceptions. Both skip without a live server - Redis
 also needs the keyspace events the scheduled tests rely on, which is why the
 compose file sets `--notify-keyspace-events Ex`:
 
@@ -775,6 +775,6 @@ STREAMS_E2E_RESTART=1 go test -race -tags live ./kafka/...
 [`benches`](./benches) holds the throughput benchmark, the Go port of
 runtime-rs's, writing the same report so the two compare run for run.
 
-A runnable demonstration of every provider lives in [`examples`](./examples) —
+A runnable demonstration of every provider lives in [`examples`](./examples) -
 one directory each, showing what that backend does that the others cannot. The
 ZeroMQ and OPC UA ones need nothing running at all.

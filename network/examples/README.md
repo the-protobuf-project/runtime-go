@@ -6,17 +6,17 @@ This directory contains comprehensive examples for all three network client type
 
 ```
 example/
-├── README.md              # This file
-├── EXAMPLES_SUMMARY.md    # Quick start guide
-├── http/
-│   └── main.go           # HTTP client examples
-├── graphql/
-│   ├── main.go           # Main entry point
-│   ├── query.go          # GraphQL query examples
-│   ├── mutation.go       # GraphQL mutation examples
-│   └── README.md         # GraphQL guide
-└── websocket/
-    └── main.go           # WebSocket client examples
+|-- README.md              # This file
+|-- EXAMPLES_SUMMARY.md    # Quick start guide
+|-- http/
+|   `-- main.go           # HTTP client examples
+|-- graphql/
+|   |-- main.go           # Main entry point
+|   |-- query.go          # GraphQL query examples
+|   |-- mutation.go       # GraphQL mutation examples
+|   `-- README.md         # GraphQL guide
+`-- websocket/
+    `-- main.go           # WebSocket client examples
 ```
 
 ## Running Examples

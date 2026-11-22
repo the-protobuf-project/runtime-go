@@ -3,7 +3,7 @@
 Agent2Agent is the other direction: not a model reaching your tools, but
 another agent delegating work to yours. It is a facade over
 [a2aproject/a2a-go](https://github.com/a2aproject/a2a-go) v2, adding the part
-that is the same in every service — one config that resolves the transports,
+that is the same in every service - one config that resolves the transports,
 the listen address and the agent card together, so the card cannot advertise an
 endpoint the server is not serving.
 
@@ -38,7 +38,7 @@ That serves JSON-RPC at `/a2a` and the public card at
 `/.well-known/agent-card.json`, and blocks until `ctx` is canceled.
 
 On a runtime it is shorter, because the identity comes from the `Config` rather
-than being restated — skills are the part a runtime cannot know:
+than being restated - skills are the part a runtime cannot know:
 
 ```go
 rt.Register(a2a.Service(agent, a2a.Skill{
@@ -47,12 +47,12 @@ rt.Register(a2a.Service(agent, a2a.Skill{
 }))
 ```
 
-`a2a.ServiceWith` takes options — transports, base path, a prebuilt card — and
+`a2a.ServiceWith` takes options - transports, base path, a prebuilt card - and
 `a2a.ServiceFrom` registers a `ServiceFunc` instead of an executor, for a
 generated entrypoint or a host that wants the assembled config in hand.
 
-For anything that streams — work with progress, artifacts, a task that outlives
-one call — implement `Executor` directly and yield events:
+For anything that streams - work with progress, artifacts, a task that outlives
+one call - implement `Executor` directly and yield events:
 
 ```go
 agent := a2a.ExecutorFunc(func(ctx context.Context, ec *a2a.ExecutorContext) a2a.Events {
@@ -75,7 +75,7 @@ agent := a2a.ExecutorFunc(func(ctx context.Context, ec *a2a.ExecutorContext) a2a
 | Transport | Value | Where it lands |
 | --- | --- | --- |
 | `TransportJSONRPC` | `jsonrpc` | HTTP listener, at the base path. Every client speaks it, so it is the default |
-| `TransportGRPC` | `grpc` | The caller's own `grpc.Server` — never a listener of its own |
+| `TransportGRPC` | `grpc` | The caller's own `grpc.Server` - never a listener of its own |
 | `TransportREST` | `rest` | HTTP listener, the HTTP+JSON binding beneath the base path |
 
 Several run at once, and every one the agent serves is declared on its card.
@@ -86,7 +86,7 @@ environment; entries naming nothing known are dropped rather than fatal.
 
 `BuildCard` assembles the card from the same config that starts the server, so
 the two cannot drift. Set `PublicURL` when there is a proxy or a container in
-front — without it the card advertises the listen address, which is right
+front - without it the card advertises the listen address, which is right
 locally and wrong past any hop. A caller who already has a card (signed, or
 from a registry) sets `ServerConfig.Card` and it is served untouched.
 
@@ -98,8 +98,8 @@ caller can act on:
 
 | Code | Task state |
 | --- | --- |
-| `Canceled` | `canceled` — the client stopped it; it did not fail |
-| `Unauthenticated`, `PermissionDenied` | `rejected` — the server declined the work |
+| `Canceled` | `canceled` - the client stopped it; it did not fail |
+| `Unauthenticated`, `PermissionDenied` | `rejected` - the server declined the work |
 | anything else | `failed` |
 
 ```go
@@ -126,7 +126,7 @@ rt.Register(a2a.ServiceWith(agent, skills, []a2a.ServiceOption{
 }))
 ```
 
-The server must not be serving yet — gRPC refuses a registration once it has
+The server must not be serving yet - gRPC refuses a registration once it has
 started. That is why the HybridServer starts its agent runtime during gRPC
 setup rather than after it.
 
