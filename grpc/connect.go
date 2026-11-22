@@ -34,7 +34,7 @@ const connectMaxBody = 4 << 20
 // Connect paths never clash with REST ones: a Connect path's first segment is
 // a fully qualified service name and so contains a dot, which a REST route's
 // does not. HTTP/1.1 and HTTP/3 serve it alike, behind CORS when configured.
-// It serves unary calls only; Connect streaming is out of scope.
+// This change serves unary calls; server, client and bidi streaming follow.
 func WithConnect() Option {
 	return func(s *HybridServer) {
 		shared.Telemetry().Logger.Debugf("WithConnect: serving Connect unary calls on the HTTP port")
