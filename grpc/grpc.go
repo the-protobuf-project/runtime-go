@@ -10,6 +10,7 @@ import (
 	"github.com/the-protobuf-project/runtime-go/grpc/shared"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/reflection"
@@ -80,7 +81,7 @@ func (s *HybridServer) startGRPCServer() error {
 	go s.serveGRPC(s.grpcServer, lis, grpcAddr)
 	go s.serveGRPC(s.grpcServer, s.gatewayListener, "the in-memory gateway listener")
 
-	return nil
+	return s.startConnect()
 }
 
 // serveGRPC serves the gRPC server on lis until it stops. Serve fails when
@@ -90,6 +91,36 @@ func (s *HybridServer) serveGRPC(srv *grpc.Server, lis net.Listener, name string
 	if err := srv.Serve(lis); err != nil && !s.draining.Load() {
 		shared.Telemetry().Logger.Fatalf("gRPC server on %s stopped: %v", name, err)
 	}
+}
+
+// inProcessDialOptions dial this server over the in-memory gateway listener,
+// with TLS when the server has a certificate. The REST gateway and the
+// Connect bridge both reach the services this way.
+func (s *HybridServer) inProcessDialOptions() []grpc.DialOption {
+	creds := insecure.NewCredentials()
+	if s.cert != nil {
+		creds = credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true, // in-process connection to this server's own certificate
+			ServerName:         "localhost",
+			NextProtos:         []string{"h2"},
+			MinVersion:         tls.VersionTLS13,
+		})
+	}
+	return []grpc.DialOption{grpc.WithTransportCredentials(creds), s.gatewayDialOption()}
+}
+
+// startConnect builds the Connect bridge over the in-memory listener. The
+// client is lazy, so this only records how to reach the server.
+func (s *HybridServer) startConnect() error {
+	if !s.connect {
+		return nil
+	}
+	conn, err := grpc.NewClient("passthrough:///connect", s.inProcessDialOptions()...)
+	if err != nil {
+		return fmt.Errorf("failed to build the Connect bridge: %w", err)
+	}
+	s.connectBridge = &connectBridge{conn: conn}
+	return nil
 }
 
 // gatewayDialOption routes the REST gateway's connections to the in-memory

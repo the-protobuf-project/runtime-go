@@ -27,6 +27,20 @@
 //
 //	srv.Start() // blocks until signal
 //
+// # Connect
+//
+// [WithConnect] serves the Connect protocol's unary calls on the HTTP port,
+// beside the REST gateway, so a Connect client (connect-go, connect-es, the
+// TypeScript runtime's connectTransport) reaches every unary method, with or
+// without a google.api.http binding:
+//
+//	srv := grpc.NewHybridServer(opts, grpc.WithConnect())
+//	// POST /pkg.v1.Service/Method, Content-Type: application/proto or application/json
+//
+// Calls go through the server's own gRPC services in-process, so interceptors,
+// validation and telemetry apply. Errors use Connect's JSON error body, with
+// google.rpc.Status details as base64 protobuf.
+//
 // # TLS
 //
 // Pass [options.TLSOptions] via [options.Options.TLS] to load certificate/key

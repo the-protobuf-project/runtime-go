@@ -29,8 +29,17 @@ func (s *HybridServer) serveHandler() http.Handler {
 }
 
 // routedHandler is serveHandler before CORS: the gateway mux, or the replacement handler
-// with /health kept alongside it.
+// with /health kept alongside it, with Connect calls sent to the bridge under [WithConnect].
 func (s *HybridServer) routedHandler() http.Handler {
+	h := s.restHandler()
+	if s.connectBridge != nil {
+		h = s.connectBridge.withConnect(h)
+	}
+	return h
+}
+
+// restHandler is the gateway mux, or the replacement handler with /health beside it.
+func (s *HybridServer) restHandler() http.Handler {
 	if s.httpHandler == nil {
 		return s.mux
 	}
