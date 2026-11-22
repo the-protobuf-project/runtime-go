@@ -27,6 +27,8 @@ const (
 	// It is PostgreSQL underneath, so the relational driver serves it too — what
 	// the timescale package adds is the partitioning.
 	TimescaleDB Backend = "timescaledb"
+	// D1 is Cloudflare's SQLite-over-HTTP driver, in the database/d1 package.
+	D1 Backend = "d1"
 
 	EVM Backend = "evm"
 	// Fabric is the Hyperledger Fabric driver, in the blockchain/fabric package.
