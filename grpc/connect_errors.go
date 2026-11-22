@@ -60,6 +60,21 @@ func writeConnectError(w http.ResponseWriter, httpStatus int, st *status.Status,
 	if httpStatus == 0 {
 		httpStatus = c.http
 	}
+	body := connectErrorBody(st)
+	writeMetadata(w.Header(), header, "")
+	writeMetadata(w.Header(), trailer, "Trailer-")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(httpStatus)
+	_ = json.NewEncoder(w).Encode(body)
+}
+
+// connectErrorBody is st as Connect's error object, used for unary error
+// responses and in a stream's end-stream envelope.
+func connectErrorBody(st *status.Status) connectError {
+	c, ok := connectCodes[st.Code()]
+	if !ok {
+		c = connectCodes[codes.Unknown]
+	}
 	body := connectError{Code: c.name, Message: st.Message()}
 	for _, d := range st.Proto().GetDetails() {
 		body.Details = append(body.Details, connectDetail{
@@ -67,9 +82,5 @@ func writeConnectError(w http.ResponseWriter, httpStatus int, st *status.Status,
 			Value: base64.RawStdEncoding.EncodeToString(d.GetValue()),
 		})
 	}
-	writeMetadata(w.Header(), header, "")
-	writeMetadata(w.Header(), trailer, "Trailer-")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(httpStatus)
-	_ = json.NewEncoder(w).Encode(body)
+	return body
 }
