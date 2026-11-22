@@ -189,7 +189,7 @@ func TestConnectStream_BidiIsFullDuplex(t *testing.T) {
 	go func() {
 		req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, base+"FullDuplexCall", pr)
 		req.Header.Set("Content-Type", "application/connect+proto")
-		r, err := client.Do(req)
+		r, err := client.Do(req) //nolint:bodyclose // handed to the test, which closes it
 		if err != nil {
 			t.Errorf("POST: %v", err)
 			close(resp)
