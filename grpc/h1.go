@@ -51,6 +51,7 @@ func (s *HybridServer) startHTTPGateway() error {
 		Addr:              httpAddr,
 		Handler:           s.serveHandler(),
 		ReadHeaderTimeout: 30 * time.Second,
+		Protocols:         httpProtocols(),
 	}
 	if s.cert != nil {
 		shared.Telemetry().Logger.Debugf("HTTP/1.1: starting HTTPS server on %s (TLS 1.3)", httpAddr)
@@ -85,4 +86,16 @@ func (s *HybridServer) registerHealthzHandler(gw *runtime.ServeMux) error {
 			healthz(w, r)
 		},
 	)
+}
+
+// httpProtocols is what the HTTP port speaks: HTTP/1.1, HTTP/2 over TLS (by
+// ALPN) and HTTP/2 in cleartext (h2c, prior knowledge), so a client gets
+// multiplexing and full-duplex streams with or without a certificate. gRPC
+// keeps its own port; this is the REST and Connect surface.
+func httpProtocols() *http.Protocols {
+	p := new(http.Protocols)
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	p.SetUnencryptedHTTP2(true)
+	return p
 }

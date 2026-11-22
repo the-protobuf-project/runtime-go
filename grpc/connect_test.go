@@ -177,3 +177,22 @@ func TestConnect_OffByDefault(t *testing.T) {
 		t.Fatal("Connect answered without WithConnect")
 	}
 }
+
+// The HTTP port speaks cleartext HTTP/2 (h2c) as well as HTTP/1.1, so a
+// Connect client gets multiplexing and full-duplex streams without TLS.
+func TestHTTPPort_ServesCleartextHTTP2(t *testing.T) {
+	base := connectServer(t, nil)
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	client := &http.Client{Transport: &http.Transport{Protocols: protocols}}
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodPost, base+healthCheck, bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("h2c POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.ProtoMajor != 2 || resp.StatusCode != http.StatusOK {
+		t.Fatalf("got %s %d, want HTTP/2 200", resp.Proto, resp.StatusCode)
+	}
+}
