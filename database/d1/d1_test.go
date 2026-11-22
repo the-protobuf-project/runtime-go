@@ -205,12 +205,58 @@ func client(srv *httptest.Server) *cloudflare.Client {
 	)
 }
 
+// wrap is a D1 client over the stand-in, driving databaseID by default.
+func wrap(t *testing.T, srv *httptest.Server, databaseID string) *d1.Client {
+	t.Helper()
+	c, err := d1.Wrap(client(srv), d1.Config{AccountID: account, DatabaseID: databaseID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// The client alone: SQL in, rows out, no descriptor and no proto anywhere.
+func TestClientRunsSQLWithoutProto(t *testing.T) {
+	srv := newFake(t, map[string]string{"main": mainID})
+	c := wrap(t, srv, mainID)
+	ctx := t.Context()
+
+	if _, err := c.Query(ctx, mainID, d1.Statement{SQL: "CREATE TABLE notes (id TEXT PRIMARY KEY, words INTEGER)"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	put, err := c.Batch(ctx, mainID,
+		d1.Statement{SQL: "INSERT INTO notes VALUES (?, ?)", Args: []string{"a", "3"}},
+		d1.Statement{SQL: "INSERT INTO notes VALUES (?, ?)", Args: []string{"b", "10"}},
+	)
+	if err != nil || len(put) != 2 || put[0].Changes != 1 {
+		t.Fatalf("batch: %v, %+v", err, put)
+	}
+	got, err := c.Query(ctx, mainID, d1.Statement{SQL: "SELECT id, words FROM notes ORDER BY words DESC"})
+	if err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	// Bound as text, stored as numbers: 10 sorts above 3.
+	if len(got.Rows) != 2 || got.Rows[0]["id"] != "b" || got.Rows[0]["words"].(json.Number).String() != "10" {
+		t.Fatalf("rows: %+v", got.Rows)
+	}
+	_, err = c.Query(ctx, mainID, d1.Statement{SQL: "INSERT INTO notes VALUES (?, ?)", Args: []string{"a", "1"}})
+	if !errors.Is(err, d1.ErrUnique) {
+		t.Fatalf("duplicate: got %v, want ErrUnique", err)
+	}
+	if err := c.Ping(ctx, "nope"); err == nil {
+		t.Fatal("Ping reached a database that is not there")
+	}
+	if _, err := d1.NewClient(d1.Config{AccountID: account}); err == nil {
+		t.Fatal("NewClient accepted a config with no API token")
+	}
+}
+
 // setup returns the configured database over a fresh fake, with the user table
 // created.
 func setup(t *testing.T) (*store.DB, *store.Resource, protoreflect.MessageDescriptor) {
 	t.Helper()
 	srv := newFake(t, map[string]string{"main": mainID, "tenant_a": "22222222-2222-2222-2222-222222222222"})
-	p := d1.NewProvider(d1.Config{Client: client(srv), AccountID: account, DatabaseID: mainID})
+	p := d1.NewProvider(wrap(t, srv, mainID))
 	db, err := p.SetDatabase(t.Context(), "")
 	if err != nil {
 		t.Fatalf("SetDatabase: %v", err)
@@ -490,7 +536,7 @@ func TestSchemaAndCapabilities(t *testing.T) {
 
 func TestSetDatabaseByName(t *testing.T) {
 	srv := newFake(t, map[string]string{"tenant_a": "22222222-2222-2222-2222-222222222222", "tenant_ab": "33333333-3333-3333-3333-333333333333"})
-	p := d1.NewProvider(d1.Config{Client: client(srv), AccountID: account})
+	p := d1.NewProvider(wrap(t, srv, ""))
 	ctx := context.Background()
 
 	md := userMD(t)
@@ -525,7 +571,7 @@ func TestRegistered(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	srv := newFake(t, map[string]string{"main": mainID})
-	if _, err := store.NewDriver(store.D1, d1.Config{Client: client(srv), AccountID: account, DatabaseID: mainID}); err != nil {
+	if _, err := store.NewDriver(store.D1, wrap(t, srv, mainID)); err != nil {
 		t.Fatal(err)
 	}
 }

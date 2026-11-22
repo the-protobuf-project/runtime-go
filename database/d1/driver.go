@@ -5,24 +5,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cloudflare/cloudflare-go/v7"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/the-protobuf-project/runtime-go/database/core"
 	"github.com/the-protobuf-project/runtime-go/database/store"
 )
 
-// Driver is a store.Driver over one D1 database.
+// Driver is a store.Driver over one D1 database: proto records, read and written
+// through their descriptors, on top of a [Client] that knows nothing of them.
 type Driver struct {
-	client     *cloudflare.Client
-	accountID  string
+	client     *Client
 	databaseID string
 }
 
-// New returns a driver over the database cfg names. Use [NewProvider] to select
+// New returns a driver over database databaseID. Use [NewProvider] to select
 // one by name at runtime instead.
-func New(cfg Config) *Driver {
-	return &Driver{client: cfg.Client, accountID: cfg.AccountID, databaseID: cfg.DatabaseID}
+func New(client *Client, databaseID string) *Driver {
+	return &Driver{client: client, databaseID: databaseID}
 }
 
 // compile-time proof the D1 driver satisfies the contract and the capabilities
@@ -38,7 +37,7 @@ func (d *Driver) Create(ctx context.Context, res *store.Resource, msg proto.Mess
 	if err != nil {
 		return store.WriteResult{}, err
 	}
-	if _, xerr := d.exec(ctx, s); xerr != nil {
+	if _, xerr := d.run(ctx, s); xerr != nil {
 		return store.WriteResult{}, xerr
 	}
 	// What was stored, generated key and audit timestamps included, so a caller
@@ -54,10 +53,10 @@ func (d *Driver) Create(ctx context.Context, res *store.Resource, msg proto.Mess
 //
 // A nil column is left out rather than bound, because the endpoint binds text
 // and NULL has none; an omitted column is NULL all the same.
-func insert(res *store.Resource, msg proto.Message) (statement, map[string]any, error) {
+func insert(res *store.Resource, msg proto.Message) (Statement, map[string]any, error) {
 	cols, err := store.MessageToColumns(res, msg)
 	if err != nil {
-		return statement{}, nil, err
+		return Statement{}, nil, err
 	}
 	core.FillManaged(res, cols, true)
 
@@ -72,25 +71,25 @@ func insert(res *store.Resource, msg proto.Message) (statement, map[string]any, 
 		args = append(args, text)
 	}
 	if len(names) == 0 {
-		return statement{}, nil, fmt.Errorf("d1: %s has nothing to insert", res.Name)
+		return Statement{}, nil, fmt.Errorf("d1: %s has nothing to insert", res.Name)
 	}
 	sql := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
 		quote(res.Table), strings.Join(names, ", "), placeholders(len(names)))
-	return statement{sql: sql, args: args}, cols, nil
+	return Statement{SQL: sql, Args: args}, cols, nil
 }
 
 func (d *Driver) Get(ctx context.Context, res *store.Resource, key string) (proto.Message, error) {
-	out, err := d.exec(ctx, statement{
-		sql:  fmt.Sprintf("SELECT * FROM %s WHERE %s = ? LIMIT 1", quote(res.Table), quote(res.PKColumn)),
-		args: []string{key},
+	out, err := d.run(ctx, Statement{
+		SQL:  fmt.Sprintf("SELECT * FROM %s WHERE %s = ? LIMIT 1", quote(res.Table), quote(res.PKColumn)),
+		Args: []string{key},
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(out.rows) == 0 {
+	if len(out.Rows) == 0 {
 		return nil, store.ErrNotFound
 	}
-	return message(res, out.rows[0])
+	return message(res, out.Rows[0])
 }
 
 func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Message) (store.WriteResult, error) {
@@ -131,15 +130,15 @@ func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Mess
 			return store.WriteResult{}, store.ErrNotFound
 		}
 	} else {
-		out, xerr := d.exec(ctx, statement{
-			sql: fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?",
+		out, xerr := d.run(ctx, Statement{
+			SQL: fmt.Sprintf("UPDATE %s SET %s WHERE %s = ?",
 				quote(res.Table), strings.Join(sets, ", "), quote(res.PKColumn)),
-			args: append(args, key),
+			Args: append(args, key),
 		})
 		if xerr != nil {
 			return store.WriteResult{}, xerr
 		}
-		if out.changes == 0 {
+		if out.Changes == 0 {
 			return store.WriteResult{}, store.ErrNotFound
 		}
 	}
@@ -151,14 +150,14 @@ func (d *Driver) Update(ctx context.Context, res *store.Resource, msg proto.Mess
 }
 
 func (d *Driver) Delete(ctx context.Context, res *store.Resource, key string) error {
-	out, err := d.exec(ctx, statement{
-		sql:  fmt.Sprintf("DELETE FROM %s WHERE %s = ?", quote(res.Table), quote(res.PKColumn)),
-		args: []string{key},
+	out, err := d.run(ctx, Statement{
+		SQL:  fmt.Sprintf("DELETE FROM %s WHERE %s = ?", quote(res.Table), quote(res.PKColumn)),
+		Args: []string{key},
 	})
 	if err != nil {
 		return err
 	}
-	if out.changes == 0 {
+	if out.Changes == 0 {
 		return store.ErrNotFound
 	}
 	return nil
@@ -186,13 +185,13 @@ func (d *Driver) List(ctx context.Context, res *store.Resource, opts store.ListO
 	sql += fmt.Sprintf(" ORDER BY %s LIMIT %d OFFSET %d",
 		orderClause(res, opts.OrderBy), core.FetchLimit(limit, opts.OmitTotal), offset)
 
-	out, err := d.exec(ctx, statement{sql: sql, args: args})
+	out, err := d.run(ctx, Statement{SQL: sql, Args: args})
 	if err != nil {
 		return store.ListResult{}, err
 	}
 	// Trimmed before decoding, so the row read only to prove another page exists
 	// is never turned into a message nobody will see.
-	rows, next := core.TrimPage(out.rows, offset, limit, total, opts.OmitTotal)
+	rows, next := core.TrimPage(out.Rows, offset, limit, total, opts.OmitTotal)
 
 	items := make([]proto.Message, 0, len(rows))
 	for _, row := range rows {
@@ -218,14 +217,14 @@ func (d *Driver) count(ctx context.Context, res *store.Resource, where string, a
 	if where != "" {
 		sql += " WHERE " + where
 	}
-	out, err := d.exec(ctx, statement{sql: sql, args: args})
+	out, err := d.run(ctx, Statement{SQL: sql, Args: args})
 	if err != nil {
 		return 0, err
 	}
-	if len(out.rows) == 0 {
+	if len(out.Rows) == 0 {
 		return 0, nil
 	}
-	n, err := fromWire(store.KindInt, out.rows[0]["n"])
+	n, err := fromWire(store.KindInt, out.Rows[0]["n"])
 	if err != nil {
 		return 0, fmt.Errorf("d1: cannot read a count: %w", err)
 	}
@@ -233,14 +232,14 @@ func (d *Driver) count(ctx context.Context, res *store.Resource, where string, a
 }
 
 func (d *Driver) Exists(ctx context.Context, res *store.Resource, key string) (bool, error) {
-	out, err := d.exec(ctx, statement{
-		sql:  fmt.Sprintf("SELECT 1 FROM %s WHERE %s = ? LIMIT 1", quote(res.Table), quote(res.PKColumn)),
-		args: []string{key},
+	out, err := d.run(ctx, Statement{
+		SQL:  fmt.Sprintf("SELECT 1 FROM %s WHERE %s = ? LIMIT 1", quote(res.Table), quote(res.PKColumn)),
+		Args: []string{key},
 	})
 	if err != nil {
 		return false, err
 	}
-	return len(out.rows) > 0, nil
+	return len(out.Rows) > 0, nil
 }
 
 // message decodes one result row into the resource's message.

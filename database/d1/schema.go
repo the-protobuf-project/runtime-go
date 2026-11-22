@@ -37,7 +37,7 @@ func (d *Driver) EnsureSchema(ctx context.Context, res *store.Resource) error {
 	}
 
 	stmt := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (%s)", quote(res.Table), strings.Join(cols, ", "))
-	if _, err := d.exec(ctx, statement{sql: stmt}); err != nil {
+	if _, err := d.run(ctx, Statement{SQL: stmt}); err != nil {
 		return fmt.Errorf("d1: cannot create %s: %w", res.Table, err)
 	}
 	return nil
@@ -48,7 +48,7 @@ func (d *Driver) DropSchema(ctx context.Context, res *store.Resource) error {
 	if res == nil {
 		return fmt.Errorf("d1: DropSchema needs a resource")
 	}
-	if _, err := d.exec(ctx, statement{sql: "DROP TABLE IF EXISTS " + quote(res.Table)}); err != nil {
+	if _, err := d.run(ctx, Statement{SQL: "DROP TABLE IF EXISTS " + quote(res.Table)}); err != nil {
 		return fmt.Errorf("d1: cannot drop %s: %w", res.Table, err)
 	}
 	return nil
@@ -59,14 +59,14 @@ func (d *Driver) HasSchema(ctx context.Context, res *store.Resource) (bool, erro
 	if res == nil {
 		return false, fmt.Errorf("d1: HasSchema needs a resource")
 	}
-	out, err := d.exec(ctx, statement{
-		sql:  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-		args: []string{res.Table},
+	out, err := d.run(ctx, Statement{
+		SQL:  "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+		Args: []string{res.Table},
 	})
 	if err != nil {
 		return false, err
 	}
-	return len(out.rows) > 0, nil
+	return len(out.Rows) > 0, nil
 }
 
 // columnType is the SQLite type a kind is stored as.

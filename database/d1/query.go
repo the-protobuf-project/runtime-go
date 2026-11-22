@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/cloudflare/cloudflare-go/v7"
-	cfd1 "github.com/cloudflare/cloudflare-go/v7/d1"
 
 	"github.com/the-protobuf-project/runtime-go/database/store"
 )
@@ -24,98 +22,26 @@ const maxParams = 100
 // RFC3339Nano drops trailing zeros, and "…:05Z" sorts after "…:05.5Z".
 const stampLayout = "2006-01-02T15:04:05.000000000Z"
 
-// statement is one SQL statement and the values bound into it.
-type statement struct {
-	sql  string
-	args []string
+// run sends one statement to the driver's database, reporting a failure in the
+// records contract's terms.
+func (d *Driver) run(ctx context.Context, s Statement) (Result, error) {
+	r, err := d.client.Query(ctx, d.databaseID, s)
+	return r, contract(err)
 }
 
-// outcome is what one statement produced.
-type outcome struct {
-	rows    []map[string]any
-	changes int64
+// runBatch sends statements in one request, which D1 applies as a single unit.
+func (d *Driver) runBatch(ctx context.Context, stmts []Statement) ([]Result, error) {
+	r, err := d.client.Batch(ctx, d.databaseID, stmts...)
+	return r, contract(err)
 }
 
-// exec runs one statement.
-func (d *Driver) exec(ctx context.Context, s statement) (outcome, error) {
-	body := cfd1.DatabaseQueryParamsBodyD1SingleQuery{Sql: cloudflare.F(s.sql)}
-	if len(s.args) > 0 {
-		body.Params = cloudflare.F(s.args)
-	}
-	out, err := d.send(ctx, body, 1)
-	if err != nil {
-		return outcome{}, err
-	}
-	return out[0], nil
-}
-
-// batch runs statements in one request, which D1 applies as a single unit.
-func (d *Driver) batch(ctx context.Context, stmts []statement) ([]outcome, error) {
-	items := make([]cfd1.DatabaseQueryParamsBodyMultipleQueriesBatch, len(stmts))
-	for i, s := range stmts {
-		items[i] = cfd1.DatabaseQueryParamsBodyMultipleQueriesBatch{Sql: cloudflare.F(s.sql)}
-		if len(s.args) > 0 {
-			items[i].Params = cloudflare.F(s.args)
-		}
-	}
-	return d.send(ctx, cfd1.DatabaseQueryParamsBodyMultipleQueries{Batch: cloudflare.F(items)}, len(stmts))
-}
-
-// send posts a query body and decodes one outcome per statement.
-func (d *Driver) send(ctx context.Context, body cfd1.DatabaseQueryParamsBodyUnion, want int) ([]outcome, error) {
-	page, err := d.client.D1.Database.Query(ctx, d.databaseID, cfd1.DatabaseQueryParams{
-		AccountID: cloudflare.F(d.accountID),
-		Body:      body,
-	})
-	if err != nil {
-		return nil, classify(err)
-	}
-	if len(page.Result) != want {
-		return nil, fmt.Errorf("d1: sent %d statements and got %d results back", want, len(page.Result))
-	}
-	out := make([]outcome, len(page.Result))
-	for i := range page.Result {
-		r := &page.Result[i]
-		if !r.Success {
-			return nil, fmt.Errorf("d1: statement %d did not succeed", i+1)
-		}
-		rows, derr := decodeRows(r.JSON.Results.Raw())
-		if derr != nil {
-			return nil, derr
-		}
-		out[i] = outcome{rows: rows, changes: int64(r.Meta.Changes)}
-	}
-	return out, nil
-}
-
-// decodeRows reads the rows of one result, keeping every number as written.
-//
-// Decoding into float64 — what the SDK hands back — rounds an integer past 2^53
-// before this package sees it. [json.Number] keeps the text, and the column's
-// kind decides what it becomes; see [typed].
-func decodeRows(raw string) ([]map[string]any, error) {
-	if raw == "" || raw == "null" {
-		return nil, nil
-	}
-	dec := json.NewDecoder(strings.NewReader(raw))
-	dec.UseNumber()
-	var rows []map[string]any
-	if err := dec.Decode(&rows); err != nil {
-		return nil, fmt.Errorf("d1: cannot read result rows: %w", err)
-	}
-	return rows, nil
-}
-
-// classify maps a D1 failure to the sentinel a caller tests for.
-//
-// SQLite says UNIQUE for both a duplicate primary key and a duplicate unique
-// column, and D1 passes the message through, so the text is the only signal
-// there is.
-func classify(err error) error {
-	if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+// contract maps the client's [ErrUnique] to [store.ErrAlreadyExists], the
+// sentinel a records caller tests for, and leaves every other failure alone.
+func contract(err error) error {
+	if errors.Is(err, ErrUnique) {
 		return fmt.Errorf("%w: %w", store.ErrAlreadyExists, err)
 	}
-	return fmt.Errorf("d1: %w", err)
+	return err
 }
 
 // bind renders a value as the text D1 binds. The second result is false for a
