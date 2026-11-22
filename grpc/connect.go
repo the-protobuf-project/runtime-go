@@ -34,7 +34,10 @@ const connectMaxBody = 4 << 20
 // Connect paths never clash with REST ones: a Connect path's first segment is
 // a fully qualified service name and so contains a dot, which a REST route's
 // does not. HTTP/1.1 and HTTP/3 serve it alike, behind CORS when configured.
-// This change serves unary calls; server, client and bidi streaming follow.
+// Unary calls use application/proto or application/json; server-streaming,
+// client-streaming and bidi calls use application/connect+proto or
+// application/connect+json, enveloped. Bidi needs a full-duplex connection:
+// HTTP/2 (the port speaks it in cleartext too) or HTTP/3.
 func WithConnect() Option {
 	return func(s *HybridServer) {
 		shared.Telemetry().Logger.Debugf("WithConnect: serving Connect unary calls on the HTTP port")
@@ -66,9 +69,13 @@ func (b *connectBridge) withConnect(next http.Handler) http.Handler {
 }
 
 func (b *connectBridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if format, ok := streamFormat(r.Header.Get("Content-Type")); ok {
+		b.serveStream(w, r, format)
+		return
+	}
 	format, ok := connectFormat(r.Header.Get("Content-Type"))
 	if !ok {
-		w.Header().Set("Accept-Post", "application/proto, application/json")
+		w.Header().Set("Accept-Post", "application/proto, application/json, application/connect+proto, application/connect+json")
 		writeConnectError(w, http.StatusUnsupportedMediaType, status.New(codes.Unknown,
 			"unsupported content type: send application/proto or application/json"), nil, nil)
 		return
