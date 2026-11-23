@@ -11,7 +11,7 @@ module github.com/the-protobuf-project/runtime-go/streams/examples
 go 1.26.4
 
 require (
-	github.com/gopcua/opcua v0.9.1
+	github.com/gopcua/opcua v0.9.2
 	github.com/the-protobuf-project/runtime-go/streams v0.0.0-20261118052056-98385b147b4d
 	github.com/the-protobuf-project/runtime-go/telemetry v0.0.0-20261118052056-98385b147b4d
 )
@@ -22,23 +22,25 @@ require (
 	github.com/go-zeromq/goczmq/v4 v4.2.2 // indirect
 	github.com/go-zeromq/zmq4 v0.17.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/klauspost/compress v1.20.3 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/nats-io/nats.go v1.55.0 // indirect
-	github.com/nats-io/nkeys v0.4.16 // indirect
+	github.com/nats-io/nkeys v0.4.17 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.2 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
 	github.com/rabbitmq/amqp091-go v1.16.0 // indirect
 	github.com/redis/go-redis/v9 v9.23.0 // indirect
 	github.com/the-protobuf-project/runtime-go/ulid v0.0.0-20261118052056-98385b147b4d // indirect
-	github.com/twmb/franz-go v1.22.2 // indirect
-	github.com/twmb/franz-go/pkg/kadm v1.19.0 // indirect
-	github.com/twmb/franz-go/pkg/kmsg v1.15.0 // indirect
+	github.com/twmb/franz-go v1.22.3 // indirect
+	github.com/twmb/franz-go/pkg/kadm v1.20.0 // indirect
+	github.com/twmb/franz-go/pkg/kmsg v1.15.1 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 )
 
 replace github.com/the-protobuf-project/runtime-go/streams => ../
