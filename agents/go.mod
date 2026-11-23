@@ -3,7 +3,7 @@ module github.com/the-protobuf-project/runtime-go/agents
 go 1.26.4
 
 require (
-	github.com/a2aproject/a2a-go/v2 v2.8.0
+	github.com/a2aproject/a2a-go/v2 v2.9.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b
