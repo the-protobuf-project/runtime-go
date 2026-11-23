@@ -2,12 +2,14 @@ package grpc
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -222,5 +224,59 @@ func TestConnectStream_BidiIsFullDuplex(t *testing.T) {
 	_ = pw.Close()
 	if replies, end := readStream(t, r.Body); len(replies) != 0 || end.Error != nil {
 		t.Fatalf("after close: %d replies, end %+v", len(replies), end)
+	}
+}
+
+// A server may end a call while the client's side is still open. The caller gets the
+// end-stream envelope then, not when it finally closes its side.
+func TestConnectStream_ServerEndsBeforeTheClient(t *testing.T) {
+	base, h2 := streamingServer(t)
+	for name, client := range map[string]*http.Client{"HTTP/2": h2, "HTTP/1.1": {Transport: &http.Transport{}}} {
+		t.Run(name, func(t *testing.T) {
+			pr, pw := io.Pipe()
+			t.Cleanup(func() { _ = pw.Close() })
+			go func() {
+				// An empty envelope, and then the request side stays open.
+				_, _ = pw.Write([]byte{0, 0, 0, 0, 0})
+			}()
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"NoSuchMethod", pr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", "application/connect+proto")
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatalf("POST: %v", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if _, end := readStream(t, resp.Body); end.Error == nil || end.Error.Code != "unimplemented" {
+				t.Fatalf("end %+v", end)
+			}
+		})
+	}
+}
+
+// A deadline ends a stream whose client is still sending.
+func TestConnectStream_DeadlineEndsAnOpenStream(t *testing.T) {
+	base, client := streamingServer(t)
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { _ = pw.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"FullDuplexCall", pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/connect+proto")
+	req.Header.Set("Connect-Timeout-Ms", "300")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if _, end := readStream(t, resp.Body); end.Error == nil || end.Error.Code != "deadline_exceeded" {
+		t.Fatalf("end %+v", end)
 	}
 }

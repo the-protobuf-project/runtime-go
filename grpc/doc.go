@@ -29,9 +29,9 @@
 //
 // # Connect
 //
-// [WithConnect] serves the Connect protocol's unary calls on the HTTP port,
-// beside the REST gateway, so a Connect client (connect-go, connect-es, the
-// TypeScript runtime's connectTransport) reaches every unary method, with or
+// [WithConnect] serves the Connect protocol on the HTTP port, beside the
+// REST gateway, so a Connect client (connect-go, connect-es, the TypeScript
+// runtime's connectTransport) reaches every method, with or
 // without a google.api.http binding:
 //
 //	srv := grpc.NewHybridServer(opts, grpc.WithConnect())
