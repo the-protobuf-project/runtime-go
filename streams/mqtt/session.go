@@ -108,7 +108,23 @@ func (s *store) open(ctx context.Context, clientID string, resume bool, expiry u
 	// Writes are gathered across packets, as runtime-rs's client gathers
 	// them: paho writes each packet on its own, which over TLS is two records
 	// and two system calls per packet, PUBACKs included.
-	if dial := batchconn.Dialer(s.server, schemes[s.server.Scheme], s.cfg.tls); dial != nil {
+	//
+	// The dialer also reports a server's DISCONNECT as it is read. A session
+	// taken over must stop this connection from dialing again, and autopaho
+	// runs OnServerDisconnect (below) on a goroutine of its own while it
+	// starts reconnecting, so that callback alone loses the race on a loaded
+	// host: this connection then takes the session back, and both end. The
+	// callback still covers websockets and proxies, which this dialer does
+	// not wrap.
+	var onDisconnect func(reason byte)
+	if tune.onTakenOver != nil {
+		onDisconnect = func(reason byte) {
+			if reason == reasonSessionTakenOver {
+				taken.Store(true)
+			}
+		}
+	}
+	if dial := batchconn.Dialer(s.server, schemes[s.server.Scheme], s.cfg.tls, onDisconnect); dial != nil {
 		cfg.AttemptConnection = dial
 	}
 	if tune.session != nil {
