@@ -16,7 +16,7 @@ import (
 // in its order.
 func TestConnKeepsPacketsWhole(t *testing.T) {
 	client, server := net.Pipe()
-	c := newConn(client)
+	c := newConn(client, nil)
 
 	const writers, packets = 8, 200
 	got := make(chan []byte, 1)
@@ -65,7 +65,7 @@ func TestConnKeepsPacketsWhole(t *testing.T) {
 // Close writes what was still queued before closing.
 func TestConnCloseWritesWhatIsQueued(t *testing.T) {
 	client, server := net.Pipe()
-	c := newConn(client)
+	c := newConn(client, nil)
 	got := make(chan []byte, 1)
 	go func() {
 		b, _ := io.ReadAll(server)
@@ -87,7 +87,7 @@ func TestConnCloseWritesWhatIsQueued(t *testing.T) {
 func TestConnReportsAFailedWrite(t *testing.T) {
 	client, server := net.Pipe()
 	_ = server.Close()
-	c := newConn(client)
+	c := newConn(client, nil)
 	defer func() { _ = c.Close() }()
 
 	_, _ = c.Write([]byte("lost"))

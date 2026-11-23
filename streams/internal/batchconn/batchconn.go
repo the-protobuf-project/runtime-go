@@ -43,10 +43,16 @@ type conn struct {
 	err     error
 	closing bool
 	done    chan struct{}
+
+	// Read side, used only by the client's one reader.
+	watch *disconnects
 }
 
-func newConn(nc net.Conn) *conn {
+func newConn(nc net.Conn, onDisconnect func(reason byte)) *conn {
 	c := &conn{Conn: nc, done: make(chan struct{})}
+	if onDisconnect != nil {
+		c.watch = &disconnects{report: onDisconnect}
+	}
 	c.changed = sync.NewCond(&c.mu)
 	go c.flush()
 	return c
@@ -55,6 +61,16 @@ func newConn(nc net.Conn) *conn {
 // Lock and Unlock hold the connection for one packet's writes.
 func (c *conn) Lock()   { c.packet.Lock() }
 func (c *conn) Unlock() { c.packet.Unlock() }
+
+// Read reads from the connection, reporting a server DISCONNECT's reason as
+// soon as its bytes arrive.
+func (c *conn) Read(p []byte) (int, error) {
+	n, err := c.Conn.Read(p)
+	if c.watch != nil && n > 0 {
+		c.watch.read(p[:n])
+	}
+	return n, err
+}
 
 // Write queues p. It reports a failure of an earlier write, which is how a
 // dropped connection reaches the writer.
@@ -124,7 +140,12 @@ func (c *conn) Close() error {
 // autopaho does (over TLS with tlsCfg when secure) and wrapping the connection
 // so its writes are gathered. It returns nil for a websocket address or when
 // all_proxy names a proxy, which autopaho then dials itself.
-func Dialer(server *url.URL, secure bool, tlsCfg *tls.Config) func(context.Context, autopaho.ClientConfig, *url.URL) (net.Conn, error) {
+//
+// onDisconnect, when set, is called with the reason code of a DISCONNECT the
+// server sends, from the client's reader and before the client acts on it:
+// unlike autopaho's OnServerDisconnect, which runs on a goroutine of its own,
+// it is known before autopaho starts reconnecting.
+func Dialer(server *url.URL, secure bool, tlsCfg *tls.Config, onDisconnect func(reason byte)) func(context.Context, autopaho.ClientConfig, *url.URL) (net.Conn, error) {
 	if os.Getenv("all_proxy") != "" || strings.HasPrefix(strings.ToLower(server.Scheme), "ws") {
 		return nil
 	}
@@ -143,6 +164,6 @@ func Dialer(server *url.URL, secure bool, tlsCfg *tls.Config) func(context.Conte
 		if err != nil {
 			return nil, err
 		}
-		return newConn(nc), nil
+		return newConn(nc, onDisconnect), nil
 	}
 }

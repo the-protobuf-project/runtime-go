@@ -125,7 +125,7 @@ func (p *Provider) dial(ctx context.Context, c connection) (*autopaho.Connection
 		ClientConfig: paho.ClientConfig{ClientID: c.clientID},
 	}
 	// Writes are gathered across packets, as in the mqtt package.
-	if dial := batchconn.Dialer(p.server, schemes[p.server.Scheme], p.cfg.tls); dial != nil {
+	if dial := batchconn.Dialer(p.server, schemes[p.server.Scheme], p.cfg.tls, nil); dial != nil {
 		cfg.AttemptConnection = dial
 	}
 	if c.onPublish != nil {
