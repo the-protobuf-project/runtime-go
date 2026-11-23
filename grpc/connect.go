@@ -20,14 +20,13 @@ import (
 // maximum received message size so the two surfaces refuse the same payloads.
 const connectMaxBody = 4 << 20
 
-// WithConnect serves the Connect protocol's unary calls on the HTTP port,
-// beside the REST gateway: POST /<package.Service>/<Method> with an
-// application/proto or application/json body.
+// WithConnect serves the Connect protocol on the HTTP port, beside the REST
+// gateway: POST /<package.Service>/<Method>.
 //
 // Each call is forwarded to this server's own gRPC services over the
 // in-memory listener the gateway uses, so interceptors, validation and
 // telemetry run exactly as for a gRPC client. A binary call needs no type
-// information and reaches every unary method, with or without a
+// information and reaches every method, with or without a
 // google.api.http binding; a JSON call resolves the method's message types
 // from the global protobuf registry, which every generated package joins.
 //
@@ -40,13 +39,12 @@ const connectMaxBody = 4 << 20
 // HTTP/2 (the port speaks it in cleartext too) or HTTP/3.
 func WithConnect() Option {
 	return func(s *HybridServer) {
-		shared.Telemetry().Logger.Debugf("WithConnect: serving Connect unary calls on the HTTP port")
+		shared.Telemetry().Logger.Debugf("WithConnect: serving Connect on the HTTP port")
 		s.connect = true
 	}
 }
 
-// connectBridge serves Connect unary calls by invoking the gRPC server
-// in-process.
+// connectBridge serves Connect calls by invoking the gRPC server in-process.
 type connectBridge struct {
 	conn *grpc.ClientConn
 }

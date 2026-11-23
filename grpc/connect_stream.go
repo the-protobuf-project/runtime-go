@@ -1,6 +1,7 @@
 package grpc
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -70,23 +72,48 @@ func (b *connectBridge) serveStream(w http.ResponseWriter, r *http.Request, form
 	}
 
 	// The request side runs alongside the replies. A bad request envelope
-	// cancels the call and is what the caller is told.
+	// cancels the call and is what the caller is told, so it is recorded
+	// before the cancel it causes.
 	sendErr := make(chan error, 1)
+	sent := make(chan struct{})
 	go func() {
-		err := pumpRequests(r.Body, stream, format, method)
-		if err != nil {
+		defer close(sent)
+		if err := pumpRequests(r.Body, stream, format, method); err != nil {
+			sendErr <- err
 			cancel()
 		}
-		sendErr <- err
 	}()
 
 	header, _ := stream.Header()
 	startStream(w, format, header)
-	final := relayReplies(w, stream, format, method)
-	if err := <-sendErr; err != nil {
+	final := relayReplies(w, stream, cancel, format, method)
+	// The call is over, whether or not the caller has finished sending: a
+	// server can end a stream early, and a deadline can too. So the end-stream
+	// envelope does not wait for the request side.
+	select {
+	case err := <-sendErr:
 		final = status.Convert(err)
+	default:
 	}
 	endStream(w, final, stream.Trailer())
+	cancel()
+	releaseRequest(w, r.Body, sent)
+}
+
+// releaseRequest unblocks the request pump and waits for it: the body must
+// not be read once the handler returns.
+func releaseRequest(w http.ResponseWriter, body io.Closer, sent <-chan struct{}) {
+	select {
+	case <-sent:
+		return
+	default:
+	}
+	// On HTTP/1.1 Close waits for the read in progress, so the read is expired
+	// first; Close is for a writer without deadlines.
+	if err := http.NewResponseController(w).SetReadDeadline(time.Now()); err != nil {
+		_ = body.Close()
+	}
+	<-sent
 }
 
 // pumpRequests sends each request envelope to the gRPC stream, then closes
@@ -115,8 +142,9 @@ func pumpRequests(body io.Reader, stream grpc.ClientStream, format connectBody, 
 }
 
 // relayReplies writes each reply as an envelope until the stream ends, and
-// returns its status.
-func relayReplies(w http.ResponseWriter, stream grpc.ClientStream, format connectBody, method string) *status.Status {
+// returns its status. When it has to give up first it cancels the call and
+// waits for it to end, which is when its trailers may be read.
+func relayReplies(w http.ResponseWriter, stream grpc.ClientStream, cancel context.CancelFunc, format connectBody, method string) *status.Status {
 	flusher := http.NewResponseController(w)
 	for {
 		var msg []byte
@@ -129,12 +157,25 @@ func relayReplies(w http.ResponseWriter, stream grpc.ClientStream, format connec
 		}
 		out, err := format.response(method, msg)
 		if err != nil {
+			abandon(stream, cancel)
 			return status.Convert(err)
 		}
 		if err := writeEnvelope(w, 0, out); err != nil {
+			abandon(stream, cancel)
 			return status.New(codes.Canceled, "the client went away")
 		}
 		_ = flusher.Flush()
+	}
+}
+
+// abandon cancels the call and drains it.
+func abandon(stream grpc.ClientStream, cancel context.CancelFunc) {
+	cancel()
+	for {
+		var msg []byte
+		if stream.RecvMsg(&msg) != nil {
+			return
+		}
 	}
 }
 
